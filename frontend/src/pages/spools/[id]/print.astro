@@ -244,7 +244,7 @@ const { id } = Astro.params
                 <label class="fm-label" id="dsl-title-tpl">Title Format</label>
                 <button class="ds-syntax-btn" id="ds-title-syntax-btn" type="button" title="Template syntax help">?</button>
               </div>
-              <input type="text" id="ds-title-tpl" value="{filament.name}" class="fm-input ds-tpl-input" placeholder="{filament.name}">
+              <textarea id="ds-title-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.name}"></textarea>
               <div class="ds-token-area" id="ds-title-token-area"></div>
             </div>
 
@@ -305,7 +305,7 @@ const { id } = Astro.params
                   <label class="fm-label" id="dsl-title2-tpl">Subtitle Format</label>
                   <button class="ds-syntax-btn" id="ds-title2-syntax-btn" type="button" title="Template syntax help">?</button>
                 </div>
-                <input type="text" id="ds-title2-tpl" value="" class="fm-input ds-tpl-input" placeholder="{filament.material}">
+                <textarea id="ds-title2-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.material}"></textarea>
                 <div class="ds-token-area" id="ds-title2-token-area"></div>
               </div>
             </div>
@@ -346,6 +346,10 @@ const { id } = Astro.params
                 <button class="ds-pill-btn active" data-val="spool" id="dsp-qr-spool">Spool URL</button>
               </div>
             </div>
+            <div id="ds-qr-url-wrap" style="display:none;">
+              <label class="fm-label" id="dsl-qr-url-tpl">Custom URL base</label>
+              <input type="text" id="ds-qr-url-tpl" class="fm-input ds-tpl-input" placeholder="https://example.com">
+            </div>
             <div class="ds-two-col-row">
               <div class="ds-field-col">
                 <label class="fm-label" id="dsl-qr-pos">Position</label>
@@ -362,10 +366,6 @@ const { id } = Astro.params
                   <button class="ds-pill-btn active" data-val="bottom" id="dsp-qr-bot">Bot</button>
                 </div>
               </div>
-            </div>
-            <div id="ds-qr-url-wrap" style="display:none;">
-              <label class="fm-label" id="dsl-qr-url-tpl">Custom URL base</label>
-              <input type="text" id="ds-qr-url-tpl" class="fm-input ds-tpl-input" placeholder="https://example.com/spool/">
             </div>
           </div>
         </details>
@@ -1201,6 +1201,16 @@ const { id } = Astro.params
     resize: vertical;
   }
 
+  .ds-tpl-textarea {
+    min-height: 42px;
+    overflow-y: hidden;
+    overflow-x: hidden;
+    resize: vertical;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.45;
+  }
+
   /* Inline row of checkboxes (fit/divider options) */
   .ds-options-row {
     display: flex;
@@ -1466,7 +1476,8 @@ const { id } = Astro.params
     border: 1px solid var(--accent);
     border-radius: 10px;
     padding: 14px 16px 12px;
-    width: 380px;
+    width: min(760px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
     box-shadow: 0 8px 32px rgba(0,0,0,0.3);
     font-size: 0.78rem;
     line-height: 1.6;
@@ -1813,11 +1824,13 @@ const { id } = Astro.params
   const tabBtns = document.querySelectorAll<HTMLButtonElement>('.tab-btn')
   const tabPanelPrint = document.getElementById('tab-panel-print')
   const tabPanelDesigner = document.getElementById('tab-panel-designer')
+  const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null
 
   function activateTab(tab: 'print' | 'designer') {
     tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === tab))
     tabPanelPrint.style.display = tab === 'print' ? '' : 'none'
     tabPanelDesigner.style.display = tab === 'designer' ? '' : 'none'
+    if (resetBtn) resetBtn.style.display = tab === 'print' ? '' : 'none'
     localStorage.setItem(ACTIVE_TAB_KEY, tab)
     // Widen sidebar for designer, narrow for print settings
     document.querySelector<HTMLElement>('.print-sidebar')?.classList.toggle('sidebar-wide', tab === 'designer')
@@ -1919,7 +1932,7 @@ const { id } = Astro.params
         marginMm:   Number((document.getElementById('ds-title-gap') as HTMLInputElement).value),
         fitToWidth: (document.getElementById('ds-title-fit') as HTMLInputElement).checked,
         align:      (document.getElementById('ds-title-align-group') as HTMLElement).dataset.value as 'left'|'center'|'right',
-        template:   (document.getElementById('ds-title-tpl') as HTMLInputElement).value,
+        template:   (document.getElementById('ds-title-tpl') as HTMLTextAreaElement).value,
         dividerAbove: (document.getElementById('ds-divider-above') as HTMLInputElement).checked,
         dividerBelow: (document.getElementById('ds-divider-below') as HTMLInputElement).checked,
       },
@@ -1929,7 +1942,7 @@ const { id } = Astro.params
         marginMm:   Number((document.getElementById('ds-title2-gap') as HTMLInputElement).value),
         fitToWidth: (document.getElementById('ds-title2-fit') as HTMLInputElement).checked,
         align:      (document.getElementById('ds-title2-align-group') as HTMLElement).dataset.value as 'left'|'center'|'right',
-        template:   (document.getElementById('ds-title2-tpl') as HTMLInputElement).value,
+        template:   (document.getElementById('ds-title2-tpl') as HTMLTextAreaElement).value,
         dividerAbove: (document.getElementById('ds-title2-divider-above') as HTMLInputElement).checked,
         dividerBelow: (document.getElementById('ds-title2-divider-below') as HTMLInputElement).checked,
       },
@@ -2007,7 +2020,7 @@ const { id } = Astro.params
     ;(document.getElementById('ds-title-gap-range') as HTMLInputElement).value = String(s.title.marginMm ?? DESIGNER_DEFAULTS.title.marginMm)
     ;(document.getElementById('ds-title-fit') as HTMLInputElement).checked = s.title.fitToWidth
     setAlignGroup('ds-title-align-group', s.title.align)
-    ;(document.getElementById('ds-title-tpl') as HTMLInputElement).value = s.title.template
+    ;(document.getElementById('ds-title-tpl') as HTMLTextAreaElement).value = s.title.template
     ;(document.getElementById('ds-divider-above') as HTMLInputElement).checked = s.title.dividerAbove ?? false
     ;(document.getElementById('ds-divider-below') as HTMLInputElement).checked = s.title.dividerBelow ?? true
     ;(document.getElementById('ds-title2-show') as HTMLInputElement).checked = s.title2.show
@@ -2018,7 +2031,7 @@ const { id } = Astro.params
     ;(document.getElementById('ds-title2-gap-range') as HTMLInputElement).value = String(s.title2.marginMm ?? DESIGNER_DEFAULTS.title2.marginMm)
     ;(document.getElementById('ds-title2-fit') as HTMLInputElement).checked = s.title2.fitToWidth
     setAlignGroup('ds-title2-align-group', s.title2.align)
-    ;(document.getElementById('ds-title2-tpl') as HTMLInputElement).value = s.title2.template
+    ;(document.getElementById('ds-title2-tpl') as HTMLTextAreaElement).value = s.title2.template
     ;(document.getElementById('ds-title2-divider-above') as HTMLInputElement).checked = s.title2.dividerAbove ?? false
     ;(document.getElementById('ds-title2-divider-below') as HTMLInputElement).checked = s.title2.dividerBelow ?? false
 
@@ -2048,6 +2061,7 @@ const { id } = Astro.params
     setAlignGroup('ds-info2-align-group', info2.hAlign)
     setPillGroup('ds-info2-valign-group', info2.vAlign)
     ;(document.getElementById('ds-info2-tpl') as HTMLTextAreaElement).value = info2.template
+    autosizeTemplateFields()
   }
 
   // Helpers for button groups
@@ -2098,6 +2112,19 @@ const { id } = Astro.params
     if (wrap) wrap.hidden = fit
     if (manualRange) manualRange.disabled = fit
     if (manualNum) manualNum.disabled = fit
+  }
+
+  function autosizeTemplateField(id: string) {
+    const el = document.getElementById(id) as HTMLTextAreaElement | null
+    if (!el) return
+    const currentHeight = el.offsetHeight || 42
+    el.style.height = 'auto'
+    el.style.height = `${Math.max(el.scrollHeight, currentHeight, 42)}px`
+  }
+
+  function autosizeTemplateFields() {
+    autosizeTemplateField('ds-title-tpl')
+    autosizeTemplateField('ds-title2-tpl')
   }
 
   function buildTokenChips(containerId: string, targetId: string, tokens: { token: string; label: string }[]) {
@@ -2163,7 +2190,11 @@ const { id } = Astro.params
   dsInputIds.forEach(id => {
     const el = document.getElementById(id)
     if (el && (el as HTMLInputElement).type !== 'checkbox') {
-      el.addEventListener('input', () => { saveDesignerSettings(); updateDesignerPreview() })
+      el.addEventListener('input', () => {
+        if (id === 'ds-title-tpl' || id === 'ds-title2-tpl') autosizeTemplateField(id)
+        saveDesignerSettings()
+        updateDesignerPreview()
+      })
     }
   })
 
@@ -2201,8 +2232,8 @@ const { id } = Astro.params
     <table>
       <tr><td>{token}</td><td>Insert token value — chips show short labels, the <code>filament.</code> prefix is added automatically when clicked<br><span class="ds-popover-eg">e.g. type → inserts {filament.type} → TPU</span></td></tr>
       <tr><td>{text{token}text}</td><td>Wrap token with literal text — the whole thing is hidden if the token is empty<br><span class="ds-popover-eg">e.g. {Ext: {filament.extruder_temp}°C} → Ext: 210°C, or nothing if temp is unset</span></td></tr>
-      <tr><td>{color_swatch[1]}</td><td>Inline color swatch from <code>filament.color_hex</code>; width defaults to <code>1ch</code> and can be set with brackets, e.g. <code>{color_swatch[10]}</code> (1..40). It also scales inside <code>[size=...]...[/size]</code> blocks.<br><span class="ds-popover-eg">e.g. [size=120%]{color_swatch[10]}[/size] {filament.color} → <span style="display:inline-block;width:10ch;height:0.82em;background:#2A5BE8;border:1px solid rgba(0,0,0,0.28);border-radius:0.14em;vertical-align:baseline;margin:0 0.2ch;"></span> Blue</span></td></tr>
-      <tr><td>[size=120%]text[/size]</td><td>Inline relative text size in % (50..300, % optional)<br><span class="ds-popover-eg">e.g. [size=140%]Nozzle:[/size] 240-270°C or [size=140]Nozzle:[/size]</span></td></tr>
+      <tr><td>{color_swatch[1]}</td><td>Inline color swatch from <code>filament.color_hex</code>; the number in brackets sets the swatch width in character units, so <code>[1]</code> is the narrow default and <code>[10]</code> makes it wider.<br><span class="ds-popover-eg">e.g. <span style="display:inline-block;width:1ch;height:0.82em;background:#2A5BE8;border:1px solid rgba(0,0,0,0.28);border-radius:0.14em;vertical-align:baseline;margin:0 0.2ch;"></span> Blue</span></td></tr>
+      <tr><td>[size=120%]text[/size]</td><td>Inline relative text size in % (50..300, % optional); works with literal text, field values, and swatches.<br><span class="ds-popover-eg">e.g. [size=140%]{filament.extruder_temp}[/size]°C or [size=120%]{color_swatch[6]}[/size] {filament.color}</span></td></tr>
       <tr><td>**text**</td><td><strong>Bold</strong></td></tr>
       <tr><td>*text*</td><td><em>Italic</em></td></tr>
       <tr><td>==text==</td><td style="background:#000;color:#fff;padding:0 2px;border-radius:2px">Inverse (white on black)</td></tr>
@@ -2356,6 +2387,7 @@ const { id } = Astro.params
   buildTokenArea('ds-title2-token-area', 'ds-title2-tpl')
   buildTokenArea('ds-info-token-area',   'ds-info-tpl')
   buildTokenArea('ds-info2-token-area',  'ds-info2-tpl')
+  autosizeTemplateFields()
   // Load persisted designer settings
   loadDesignerSettings()
 
@@ -2404,6 +2436,7 @@ const { id } = Astro.params
 
   // Track which preset is currently loaded (for dirty detection)
   let _activePresetName: string | null = null
+  let _activePresetSettings: LabelDesignerSettings | null = null
 
   function markPresetDirty(dirty: boolean) {
     const hdr = document.getElementById('dsh-presets-text')
@@ -2509,6 +2542,7 @@ const { id } = Astro.params
     }
     savePresets(presets)
     _activePresetName = name
+    _activePresetSettings = JSON.parse(JSON.stringify(settings)) as LabelDesignerSettings
     markPresetDirty(false)
     refreshPresetList(name)
   })
@@ -2555,7 +2589,7 @@ const { id } = Astro.params
     ;(document.getElementById('ds-title-gap-range') as HTMLInputElement).value = String(s.title.marginMm ?? DESIGNER_DEFAULTS.title.marginMm)
     ;(document.getElementById('ds-title-fit') as HTMLInputElement).checked = s.title.fitToWidth
     setAlignGroup('ds-title-align-group', s.title.align)
-    ;(document.getElementById('ds-title-tpl') as HTMLInputElement).value = s.title.template
+    ;(document.getElementById('ds-title-tpl') as HTMLTextAreaElement).value = s.title.template
     ;(document.getElementById('ds-divider-above') as HTMLInputElement).checked = s.title.dividerAbove ?? false
     ;(document.getElementById('ds-divider-below') as HTMLInputElement).checked = s.title.dividerBelow ?? true
     ;(document.getElementById('ds-title2-show') as HTMLInputElement).checked = s.title2.show
@@ -2566,7 +2600,7 @@ const { id } = Astro.params
     ;(document.getElementById('ds-title2-gap-range') as HTMLInputElement).value = String(s.title2.marginMm ?? DESIGNER_DEFAULTS.title2.marginMm)
     ;(document.getElementById('ds-title2-fit') as HTMLInputElement).checked = s.title2.fitToWidth
     setAlignGroup('ds-title2-align-group', s.title2.align)
-    ;(document.getElementById('ds-title2-tpl') as HTMLInputElement).value = s.title2.template
+    ;(document.getElementById('ds-title2-tpl') as HTMLTextAreaElement).value = s.title2.template
     ;(document.getElementById('ds-title2-divider-above') as HTMLInputElement).checked = s.title2.dividerAbove ?? false
     ;(document.getElementById('ds-title2-divider-below') as HTMLInputElement).checked = s.title2.dividerBelow ?? false
     ;(document.getElementById('ds-qr-show') as HTMLInputElement).checked = s.qr.show
@@ -2593,8 +2627,10 @@ const { id } = Astro.params
     setAlignGroup('ds-info2-align-group', _pi2.hAlign)
     setPillGroup('ds-info2-valign-group', _pi2.vAlign)
     ;(document.getElementById('ds-info2-tpl') as HTMLTextAreaElement).value = _pi2.template
+    autosizeTemplateFields()
     saveDesignerSettings()
     _activePresetName = name
+    _activePresetSettings = JSON.parse(JSON.stringify(s)) as LabelDesignerSettings
     presetNameInput.value = name
     markPresetDirty(false)
     updateSaveBtn()
@@ -2608,6 +2644,7 @@ const { id } = Astro.params
     savePresets(presets)
     if (_activePresetName === name) {
       _activePresetName = null
+      _activePresetSettings = null
       markPresetDirty(false)
     }
     presetNameInput.value = ''
@@ -2687,7 +2724,7 @@ const { id } = Astro.params
   }
 
   wireResetBtn('dsr-logo', () => {
-    const d = DESIGNER_DEFAULTS.logo
+    const d = (_activePresetSettings ?? DESIGNER_DEFAULTS).logo
     ;(document.getElementById('ds-logo-show') as HTMLInputElement).checked = d.show
     ;(document.getElementById('ds-logo-space') as HTMLInputElement).value = String(d.spaceMm)
     ;(document.getElementById('ds-logo-space-range') as HTMLInputElement).value = String(d.spaceMm)
@@ -2699,7 +2736,7 @@ const { id } = Astro.params
   })
 
   wireResetBtn('dsr-label', () => {
-    const d = DESIGNER_DEFAULTS.label
+    const d = (_activePresetSettings ?? DESIGNER_DEFAULTS).label
     ;(document.getElementById('ds-width') as HTMLInputElement).value = String(d.width)
     ;(document.getElementById('ds-height') as HTMLInputElement).value = String(d.height)
     ;(document.getElementById('ds-margin') as HTMLInputElement).value = String(d.marginMm)
@@ -2708,7 +2745,8 @@ const { id } = Astro.params
   })
 
   wireResetBtn('dsr-title', () => {
-    const d = DESIGNER_DEFAULTS.title
+    const base = _activePresetSettings ?? DESIGNER_DEFAULTS
+    const d = base.title
     ;(document.getElementById('ds-title-show') as HTMLInputElement).checked = d.show
     ;(document.getElementById('ds-title-size') as HTMLInputElement).value = String(d.sizeMm)
     ;(document.getElementById('ds-title-size-range') as HTMLInputElement).value = String(d.sizeMm)
@@ -2716,10 +2754,10 @@ const { id } = Astro.params
     ;(document.getElementById('ds-title-gap-range') as HTMLInputElement).value = String(d.marginMm)
     ;(document.getElementById('ds-title-fit') as HTMLInputElement).checked = d.fitToWidth
     setAlignGroup('ds-title-align-group', d.align)
-    ;(document.getElementById('ds-title-tpl') as HTMLInputElement).value = d.template
+    ;(document.getElementById('ds-title-tpl') as HTMLTextAreaElement).value = d.template
     ;(document.getElementById('ds-divider-above') as HTMLInputElement).checked = d.dividerAbove
     ;(document.getElementById('ds-divider-below') as HTMLInputElement).checked = d.dividerBelow
-    const d2 = DESIGNER_DEFAULTS.title2
+    const d2 = base.title2
     ;(document.getElementById('ds-title2-show') as HTMLInputElement).checked = d2.show
     ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = d2.show ? '' : 'none'
     ;(document.getElementById('ds-title2-size') as HTMLInputElement).value = String(d2.sizeMm)
@@ -2728,13 +2766,14 @@ const { id } = Astro.params
     ;(document.getElementById('ds-title2-gap-range') as HTMLInputElement).value = String(d2.marginMm)
     ;(document.getElementById('ds-title2-fit') as HTMLInputElement).checked = d2.fitToWidth
     setAlignGroup('ds-title2-align-group', d2.align)
-    ;(document.getElementById('ds-title2-tpl') as HTMLInputElement).value = d2.template
+    ;(document.getElementById('ds-title2-tpl') as HTMLTextAreaElement).value = d2.template
+    autosizeTemplateFields()
     ;(document.getElementById('ds-title2-divider-above') as HTMLInputElement).checked = d2.dividerAbove
     ;(document.getElementById('ds-title2-divider-below') as HTMLInputElement).checked = d2.dividerBelow
   })
 
   wireResetBtn('dsr-qr', () => {
-    const d = DESIGNER_DEFAULTS.qr
+    const d = (_activePresetSettings ?? DESIGNER_DEFAULTS).qr
     ;(document.getElementById('ds-qr-show') as HTMLInputElement).checked = d.show
     ;(document.getElementById('ds-qr-mode') as HTMLSelectElement).value = d.mode
     ;(document.getElementById('ds-qr-size') as HTMLInputElement).value = String(d.sizeMm)
@@ -2743,18 +2782,19 @@ const { id } = Astro.params
     setPillGroup('ds-qr-valign-group', d.vAlign)
     setPillGroup('ds-qr-link-group', d.linkMode)
     ;(document.getElementById('ds-qr-url-tpl') as HTMLInputElement).value = d.urlTemplate
-    ;(document.getElementById('ds-qr-url-wrap') as HTMLElement).style.display = 'none'
+    ;(document.getElementById('ds-qr-url-wrap') as HTMLElement).style.display = d.linkMode === 'url' ? '' : 'none'
   })
 
   wireResetBtn('dsr-info', () => {
-    const d = DESIGNER_DEFAULTS.info
+    const base = _activePresetSettings ?? DESIGNER_DEFAULTS
+    const d = base.info
     ;(document.getElementById('ds-info-show') as HTMLInputElement).checked = d.show
     ;(document.getElementById('ds-info-size') as HTMLInputElement).value = String(d.sizeMm)
     ;(document.getElementById('ds-info-size-range') as HTMLInputElement).value = String(d.sizeMm)
     setAlignGroup('ds-info-align-group', d.hAlign)
     setPillGroup('ds-info-valign-group', d.vAlign)
     ;(document.getElementById('ds-info-tpl') as HTMLTextAreaElement).value = d.template
-    const d2 = DESIGNER_DEFAULTS.info2
+    const d2 = base.info2
     ;(document.getElementById('ds-info2-show') as HTMLInputElement).checked = d2.show
     ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = d2.show ? '' : 'none'
     ;(document.getElementById('ds-info2-vsep') as HTMLInputElement).checked = d2.vsep
@@ -3539,9 +3579,9 @@ const { id } = Astro.params
 
       const qrUrl = s.qr.linkMode === 'url' && s.qr.urlTemplate.trim()
         ? (() => {
-            const base = s.qr.urlTemplate.trim()
-            const normalized = /[/?#]$/.test(base) ? base : `${base}/`
-            return `${normalized}${encodeURIComponent(String(labelData.id))}`
+            const base = s.qr.urlTemplate.trim().replace(/\/+$/, '')
+            // User provides only base URL; we append /spools/<id>.
+            return `${base}/spools/${encodeURIComponent(String(labelData.id))}`
           })()
         : window.location.origin + '/spools/' + labelData.id
       const qrPx = Math.min(1024, Math.max(256, Math.round(s.qr.sizeMm * (600 / 25.4))))
