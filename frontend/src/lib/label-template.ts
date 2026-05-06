@@ -66,8 +66,9 @@ export function renderTemplateText(template: string, data: SpoolData): string {
 
 /** Apply **bold**, *italic*, ==inverse== and [size=..] inline markup. */
 function applyMarkup(text: string, frag: DocumentFragment | HTMLElement): void {
-  // Regex: match [size=NNN]...[/size] or [size=NNN%]...[/size], bold (**…**), italic (*…*), inverse (==…==)
-  const regex = /(\[size=\d{1,3}%?\][\s\S]*?\[\/size\]|\*\*[\s\S]*?\*\*|\*(?!\*)([\s\S]*?)\*(?!\*)|==[\s\S]*?==)/g
+  // Regex: match [size=NNN]...[/size] or [size=NNN%]...[/size] (case-insensitive),
+  // bold (**…**), italic (*…*), inverse (==…==)
+  const regex = /(\[size=\d{1,3}%?\][\s\S]*?\[\/size\]|\*\*[\s\S]*?\*\*|\*(?!\*)([\s\S]*?)\*(?!\*)|==[\s\S]*?==)/gi
   let last = 0
 
   const appendPlainText = (raw: string, container: DocumentFragment | HTMLElement) => {
@@ -88,8 +89,8 @@ function applyMarkup(text: string, frag: DocumentFragment | HTMLElement): void {
 
     const part = match[0]
 
-    if (part.startsWith('[size=') && part.endsWith('[/size]')) {
-      const sized = part.match(/^\[size=(\d{1,3})%?\]([\s\S]*?)\[\/size\]$/)
+    if (/^\[size=/i.test(part) && /\[\/size\]$/i.test(part)) {
+      const sized = part.match(/^\[size=(\d{1,3})%?\]([\s\S]*?)\[\/size\]$/i)
       if (sized) {
         const [, rawPct, inner] = sized
         const pct = Math.max(50, Math.min(300, Number(rawPct)))

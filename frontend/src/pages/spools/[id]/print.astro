@@ -342,8 +342,8 @@ const { id } = Astro.params
             <div>
               <label class="fm-label" id="dsl-qr-link">Link mode</label>
               <div class="ds-pill-group" id="ds-qr-link-group" data-value="spool">
-                <button class="ds-pill-btn active" data-val="spool" id="dsp-qr-spool">Spool URL</button>
                 <button class="ds-pill-btn" data-val="url" id="dsp-qr-url">Custom URL</button>
+                <button class="ds-pill-btn active" data-val="spool" id="dsp-qr-spool">Spool URL</button>
               </div>
             </div>
             <div class="ds-two-col-row">
@@ -364,9 +364,8 @@ const { id } = Astro.params
               </div>
             </div>
             <div id="ds-qr-url-wrap" style="display:none;">
-              <label class="fm-label" id="dsl-qr-url-tpl">URL template</label>
-              <input type="text" id="ds-qr-url-tpl" class="fm-input ds-tpl-input" placeholder="https://example.com/{id}">
-              <div class="ds-token-hints" id="ds-qr-tokens"></div>
+              <label class="fm-label" id="dsl-qr-url-tpl">Custom URL base</label>
+              <input type="text" id="ds-qr-url-tpl" class="fm-input ds-tpl-input" placeholder="https://example.com/spool/">
             </div>
           </div>
         </details>
@@ -2355,8 +2354,6 @@ const { id } = Astro.params
   buildTokenArea('ds-title2-token-area', 'ds-title2-tpl')
   buildTokenArea('ds-info-token-area',   'ds-info-tpl')
   buildTokenArea('ds-info2-token-area',  'ds-info2-tpl')
-  buildTokenChips('ds-qr-tokens', 'ds-qr-url-tpl', [{ token: '{id}', label: 'id' }, { token: '{filament.name}', label: 'name' }])
-
   // Load persisted designer settings
   loadDesignerSettings()
 
@@ -2933,7 +2930,7 @@ const { id } = Astro.params
   document.getElementById('dsl-qr-link').textContent = t('spools.dsQrLink', 'Link mode')
   document.getElementById('dsp-qr-spool').textContent = t('spools.dsQrSpoolUrl', 'Spool URL')
   document.getElementById('dsp-qr-url').textContent = t('spools.dsQrCustomUrl', 'Custom URL')
-  document.getElementById('dsl-qr-url-tpl').textContent = t('spools.dsTemplate', 'Template')
+  document.getElementById('dsl-qr-url-tpl').textContent = t('spools.dsQrCustomBase', 'Custom URL base')
   document.getElementById('dsl-info-label').textContent = t('spools.dsInfo', 'Information')
   document.getElementById('dsl-info-size').textContent = t('spools.dsInfoSize', 'Text size (mm)')
   document.getElementById('dsl-info-halign').textContent = t('spools.dsJustification', 'Justification')
@@ -3050,6 +3047,36 @@ const { id } = Astro.params
     return img
   }
 
+  function ensureClassicPreviewLayout() {
+    if (document.getElementById('label-top') && document.getElementById('label-bottom')) return
+    labelPreview.innerHTML = `
+      <div id="label-top" class="label-top">
+        <img id="prev-logo" class="label-logo" alt="" />
+        <div id="prev-mfr-text" class="label-mfr-text"></div>
+      </div>
+      <div id="label-top-divider" class="label-divider"></div>
+
+      <div id="label-middle" class="label-middle">
+        <div class="label-middle-left">
+          <div id="prev-filament" class="label-designation"></div>
+          <div id="prev-color-row" class="label-color-row">
+            <div id="prev-color-swatch" class="label-color-swatch"></div>
+            <span id="prev-color-name" class="label-color-name"></span>
+          </div>
+        </div>
+        <div id="prev-hex-code" class="label-hex-code"></div>
+      </div>
+
+      <div id="label-bottom" class="label-bottom">
+        <div class="label-bottom-left">
+          <div id="prev-id" class="label-spool-id"></div>
+          <div id="prev-extra-fields" class="label-extra-fields"></div>
+        </div>
+        <div id="label-qr-container" class="label-qr"></div>
+      </div>
+    `
+  }
+
   async function updatePreview() {
     if (typeof (window as any).QRCode === 'undefined') {
       await new Promise((resolve, reject) => {
@@ -3061,11 +3088,15 @@ const { id } = Astro.params
       })
     }
 
+    ensureClassicPreviewLayout()
+
     const w = (widthInput as HTMLInputElement).value
     const h = (heightInput as HTMLInputElement).value
     const qrSize = (qrSizeInput as HTMLInputElement).value
     const fontSizeBase = parseInt((fontSizeInput as HTMLInputElement).value) / 100
 
+    labelPreview.style.border = 'none'
+    labelPreview.style.padding = ''
     labelPreview.style.width = w + 'mm'
     labelPreview.style.height = h + 'mm'
     labelPreview.style.setProperty('--print-label-padding', '2mm')
@@ -3207,9 +3238,8 @@ const { id } = Astro.params
 
       const canvas = qrContainer.querySelector('canvas')
       if (canvas) {
-        await decorateQrCenter(canvas as HTMLCanvasElement, qrPx, true)
         qrContainer.innerHTML = ''
-        qrContainer.appendChild(canvasToQrImage(canvas as HTMLCanvasElement, false))
+        qrContainer.appendChild(canvasToQrImage(canvas as HTMLCanvasElement, true))
       }
 
       qrContainer.style.flexShrink = '0'
@@ -3375,10 +3405,10 @@ const { id } = Astro.params
       titleEl.style.textOverflow = cfg.fitToWidth ? 'clip' : 'ellipsis'
       titleEl.style.color = 'black'
 
-      // If fit-to-width is enabled and template is exactly =={token}==,
-      // treat it as a full-row inverse style instead of only inverting glyph bounds.
-      const rowInverseMatch = cfg.template.trim().match(/^==\s*(\{[^{}]+\})\s*==$/)
-      const rowInverseEnabled = !!(cfg.fitToWidth && rowInverseMatch)
+      // If the whole title template is wrapped in ==...==,
+      // render it as a full-row inverse block (not only glyph-bounded inverse spans).
+      const rowInverseMatch = cfg.template.trim().match(/^==([\s\S]*?)==$/)
+      const rowInverseEnabled = !!rowInverseMatch
       const renderTemplate = rowInverseEnabled && rowInverseMatch ? rowInverseMatch[1] : cfg.template
       if (rowInverseEnabled) {
         titleEl.style.backgroundColor = '#000'
@@ -3506,7 +3536,11 @@ const { id } = Astro.params
       qrWrap.style.alignSelf = s.qr.vAlign === 'top' ? 'flex-start' : s.qr.vAlign === 'center' ? 'center' : 'flex-end'
 
       const qrUrl = s.qr.linkMode === 'url' && s.qr.urlTemplate.trim()
-        ? renderTemplateText(s.qr.urlTemplate, data)
+        ? (() => {
+            const base = s.qr.urlTemplate.trim()
+            const normalized = /[/?#]$/.test(base) ? base : `${base}/`
+            return `${normalized}${encodeURIComponent(String(labelData.id))}`
+          })()
         : window.location.origin + '/spools/' + labelData.id
       const qrPx = Math.min(1024, Math.max(256, Math.round(s.qr.sizeMm * (600 / 25.4))))
 
