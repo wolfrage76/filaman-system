@@ -1888,6 +1888,14 @@ const { id } = Astro.params
   const tabPanelPrint = document.getElementById('tab-panel-print') as HTMLElement | null
   const tabPanelDesigner = document.getElementById('tab-panel-designer') as HTMLElement | null
   const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null
+  let activePreviewTab: 'print' | 'designer' = 'print'
+  let previewRenderVersion = 0
+
+  function beginPreviewRender(tab: 'print' | 'designer') {
+    activePreviewTab = tab
+    const token = ++previewRenderVersion
+    return () => activePreviewTab !== tab || token !== previewRenderVersion
+  }
 
   function activateTab(tab: 'print' | 'designer') {
     if (!tabPanelPrint || !tabPanelDesigner || !labelPreview) return
@@ -1900,16 +1908,17 @@ const { id } = Astro.params
     document.querySelector<HTMLElement>('.print-sidebar')?.classList.toggle('sidebar-wide', tab === 'designer')
     // Trigger the appropriate preview when switching tabs — explicitly clear labelPreview first to ensure no cross-contamination
     if (tab === 'designer') {
+      const isStale = beginPreviewRender('designer')
       // Clear any classic preview remnants before building designer layout
       labelPreview.innerHTML = ''
       labelPreview.style.border = ''
       labelPreview.style.padding = ''
-      updateDesignerPreview()
+      updateDesignerPreview(isStale)
     } else {
+      const isStale = beginPreviewRender('print')
       // Force reset of classic layout detection before building print preview
-      const oldLayout = document.getElementById('label-top')
-      if (oldLayout) oldLayout.remove()
-      updatePreview()
+      labelPreview.innerHTML = ''
+      updatePreview(isStale)
     }
   }
 
@@ -3263,7 +3272,7 @@ const { id } = Astro.params
     `
   }
 
-  async function updatePreview() {
+  async function updatePreview(isStale = () => false) {
     if (typeof (window as any).QRCode === 'undefined') {
       await new Promise((resolve, reject) => {
         const script = document.createElement('script')
@@ -3273,6 +3282,7 @@ const { id } = Astro.params
         document.head.appendChild(script)
       })
     }
+    if (isStale()) return
 
     ensureClassicPreviewLayout()
 
@@ -3459,6 +3469,7 @@ const { id } = Astro.params
     if (oldStyle) oldStyle.remove()
     style.id = 'page-style'
     document.head.appendChild(style)
+    if (isStale()) return
     saveSettings()
   }
 
@@ -3471,7 +3482,7 @@ const { id } = Astro.params
 
   // ─── Designer preview ─────────────────────────────────────────────────────
 
-  async function updateDesignerPreview() {
+  async function updateDesignerPreview(isStale = () => false) {
     // Load QR library if needed
     if (typeof (window as any).QRCode === 'undefined') {
       await new Promise((resolve, reject) => {
@@ -3482,6 +3493,7 @@ const { id } = Astro.params
         document.head.appendChild(script)
       })
     }
+    if (isStale()) return
 
     const s = loadDesignerSettingsFromStorage()
 
@@ -3728,6 +3740,7 @@ const { id } = Astro.params
         const canvas = qrWrap.querySelector('canvas')
         if (canvas) {
           await decorateQrCenter(canvas as HTMLCanvasElement, qrPx, s.qr.mode === 'colorLogo')
+          if (isStale()) return
           qrWrap.innerHTML = ''
           qrWrap.appendChild(canvasToQrImage(canvas as HTMLCanvasElement, false))
         }
@@ -3788,7 +3801,7 @@ const { id } = Astro.params
   // Initialize: load logo then render whichever tab is active
   loadLabelLogo().then(() => {
     const activeTab = localStorage.getItem(ACTIVE_TAB_KEY)
-    if (activeTab === 'designer') updateDesignerPreview()
-    else updatePreview()
+    if (activeTab === 'designer') activateTab('designer')
+    else activateTab('print')
   })
 </script>
