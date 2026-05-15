@@ -2460,6 +2460,14 @@ const { id } = Astro.params
       opt.selected = true
       list.appendChild(opt)
     } else {
+      // Add placeholder option at the top
+      const placeholder = document.createElement('option')
+      placeholder.value = ''
+      placeholder.textContent = 'Saved presets'
+      placeholder.disabled = true
+      placeholder.selected = !selectName
+      list.appendChild(placeholder)
+      // Add preset options
       for (const p of presets) {
         const opt = document.createElement('option')
         opt.value = p.name
