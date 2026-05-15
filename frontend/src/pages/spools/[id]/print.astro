@@ -1834,9 +1834,19 @@ const { id } = Astro.params
     localStorage.setItem(ACTIVE_TAB_KEY, tab)
     // Widen sidebar for designer, narrow for print settings
     document.querySelector<HTMLElement>('.print-sidebar')?.classList.toggle('sidebar-wide', tab === 'designer')
-    // Trigger the appropriate preview when switching tabs
-    if (tab === 'designer') updateDesignerPreview()
-    else updatePreview()
+    // Trigger the appropriate preview when switching tabs — explicitly clear labelPreview first to ensure no cross-contamination
+    if (tab === 'designer') {
+      // Clear any classic preview remnants before building designer layout
+      labelPreview.innerHTML = ''
+      labelPreview.style.border = ''
+      labelPreview.style.padding = ''
+      updateDesignerPreview()
+    } else {
+      // Force reset of classic layout detection before building print preview
+      const oldLayout = document.getElementById('label-top')
+      if (oldLayout) oldLayout.remove()
+      updatePreview()
+    }
   }
 
   tabBtns.forEach(btn => {
