@@ -2094,70 +2094,109 @@ const { id } = Astro.params
     const logoSpaceMm = Number(rawLogo.spaceMm ?? rawLogo.sizeMm ?? DESIGNER_DEFAULTS.logo.spaceMm)
     const logoManualMm = Number(rawLogo.manualSizeMm ?? rawLogo.sizeMm ?? DESIGNER_DEFAULTS.logo.manualSizeMm)
 
-    ;(document.getElementById('ds-logo-show') as HTMLInputElement).checked = s.logo.show
-    ;(document.getElementById('ds-logo-space') as HTMLInputElement).value = String(logoSpaceMm)
-    ;(document.getElementById('ds-logo-space-range') as HTMLInputElement).value = String(logoSpaceMm)
-    ;(document.getElementById('ds-logo-fit') as HTMLInputElement).checked = s.logo.scaleToFit
-    ;(document.getElementById('ds-logo-manual') as HTMLInputElement).value = String(logoManualMm)
-    ;(document.getElementById('ds-logo-manual-range') as HTMLInputElement).value = String(logoManualMm)
+    // Use batch setter to apply all form values at once — consolidates ~100 lines of duplicate code
+    setFormFields([
+      // Logo section
+      { id: 'ds-logo-show', value: s.logo.show },
+      { id: 'ds-logo-space', value: logoSpaceMm, rangePartnerId: 'ds-logo-space-range' },
+      { id: 'ds-logo-fit', value: s.logo.scaleToFit },
+      { id: 'ds-logo-manual', value: logoManualMm, rangePartnerId: 'ds-logo-manual-range' },
+      // Label section
+      { id: 'ds-width', value: s.label.width },
+      { id: 'ds-height', value: s.label.height },
+      { id: 'ds-margin', value: s.label.marginMm, rangePartnerId: 'ds-margin-range' },
+      { id: 'ds-border', value: s.label.border },
+      // Title section
+      { id: 'ds-title-show', value: s.title.show },
+      { id: 'ds-title-size', value: s.title.sizeMm, rangePartnerId: 'ds-title-size-range' },
+      { id: 'ds-title-gap', value: s.title.marginMm ?? DESIGNER_DEFAULTS.title.marginMm, rangePartnerId: 'ds-title-gap-range' },
+      { id: 'ds-title-fit', value: s.title.fitToWidth },
+      { id: 'ds-title-tpl', value: s.title.template },
+      { id: 'ds-divider-above', value: s.title.dividerAbove ?? false },
+      { id: 'ds-divider-below', value: s.title.dividerBelow ?? true },
+      // Title2 section
+      { id: 'ds-title2-show', value: s.title2.show },
+      { id: 'ds-title2-size', value: s.title2.sizeMm, rangePartnerId: 'ds-title2-size-range' },
+      { id: 'ds-title2-gap', value: s.title2.marginMm ?? DESIGNER_DEFAULTS.title2.marginMm, rangePartnerId: 'ds-title2-gap-range' },
+      { id: 'ds-title2-fit', value: s.title2.fitToWidth },
+      { id: 'ds-title2-tpl', value: s.title2.template },
+      { id: 'ds-title2-divider-above', value: s.title2.dividerAbove ?? false },
+      { id: 'ds-title2-divider-below', value: s.title2.dividerBelow ?? false },
+      // QR section
+      { id: 'ds-qr-show', value: s.qr.show },
+      { id: 'ds-qr-mode', value: s.qr.mode },
+      { id: 'ds-qr-size', value: s.qr.sizeMm, rangePartnerId: 'ds-qr-size-range' },
+      { id: 'ds-qr-url-tpl', value: s.qr.urlTemplate },
+      // Info section
+      { id: 'ds-info-show', value: s.info.show },
+      { id: 'ds-info-size', value: s.info.sizeMm, rangePartnerId: 'ds-info-size-range' },
+      { id: 'ds-info-tpl', value: s.info.template },
+      // Info2 section
+      { id: 'ds-info2-show', value: s.info2.show },
+      { id: 'ds-info2-vsep', value: s.info2.vsep ?? false },
+      { id: 'ds-info2-size', value: s.info2.sizeMm, rangePartnerId: 'ds-info2-size-range' },
+      { id: 'ds-info2-tpl', value: s.info2.template },
+    ])
+
+    // Handle special cases (alignment groups, visibility toggles)
     setAlignGroup('ds-logo-align-group', s.logo.align)
-    syncLogoManualControls()
-
-    ;(document.getElementById('ds-width') as HTMLInputElement).value = String(s.label.width)
-    ;(document.getElementById('ds-height') as HTMLInputElement).value = String(s.label.height)
-    ;(document.getElementById('ds-margin') as HTMLInputElement).value = String(s.label.marginMm)
-    ;(document.getElementById('ds-margin-range') as HTMLInputElement).value = String(s.label.marginMm)
-    ;(document.getElementById('ds-border') as HTMLInputElement).checked = s.label.border
-
-    ;(document.getElementById('ds-title-show') as HTMLInputElement).checked = s.title.show
-    ;(document.getElementById('ds-title-size') as HTMLInputElement).value = String(s.title.sizeMm)
-    ;(document.getElementById('ds-title-size-range') as HTMLInputElement).value = String(s.title.sizeMm)
-    ;(document.getElementById('ds-title-gap') as HTMLInputElement).value = String(s.title.marginMm ?? DESIGNER_DEFAULTS.title.marginMm)
-    ;(document.getElementById('ds-title-gap-range') as HTMLInputElement).value = String(s.title.marginMm ?? DESIGNER_DEFAULTS.title.marginMm)
-    ;(document.getElementById('ds-title-fit') as HTMLInputElement).checked = s.title.fitToWidth
     setAlignGroup('ds-title-align-group', s.title.align)
-    ;(document.getElementById('ds-title-tpl') as HTMLTextAreaElement).value = s.title.template
-    ;(document.getElementById('ds-divider-above') as HTMLInputElement).checked = s.title.dividerAbove ?? false
-    ;(document.getElementById('ds-divider-below') as HTMLInputElement).checked = s.title.dividerBelow ?? true
-    ;(document.getElementById('ds-title2-show') as HTMLInputElement).checked = s.title2.show
-    ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = s.title2.show ? '' : 'none'
-    ;(document.getElementById('ds-title2-size') as HTMLInputElement).value = String(s.title2.sizeMm)
-    ;(document.getElementById('ds-title2-size-range') as HTMLInputElement).value = String(s.title2.sizeMm)
-    ;(document.getElementById('ds-title2-gap') as HTMLInputElement).value = String(s.title2.marginMm ?? DESIGNER_DEFAULTS.title2.marginMm)
-    ;(document.getElementById('ds-title2-gap-range') as HTMLInputElement).value = String(s.title2.marginMm ?? DESIGNER_DEFAULTS.title2.marginMm)
-    ;(document.getElementById('ds-title2-fit') as HTMLInputElement).checked = s.title2.fitToWidth
     setAlignGroup('ds-title2-align-group', s.title2.align)
-    ;(document.getElementById('ds-title2-tpl') as HTMLTextAreaElement).value = s.title2.template
-    ;(document.getElementById('ds-title2-divider-above') as HTMLInputElement).checked = s.title2.dividerAbove ?? false
-    ;(document.getElementById('ds-title2-divider-below') as HTMLInputElement).checked = s.title2.dividerBelow ?? false
-
-    ;(document.getElementById('ds-qr-show') as HTMLInputElement).checked = s.qr.show
-    ;(document.getElementById('ds-qr-mode') as HTMLSelectElement).value = s.qr.mode
-    ;(document.getElementById('ds-qr-size') as HTMLInputElement).value = String(s.qr.sizeMm)
-    ;(document.getElementById('ds-qr-size-range') as HTMLInputElement).value = String(s.qr.sizeMm)
+    setAlignGroup('ds-info-align-group', s.info.hAlign)
+    setAlignGroup('ds-info2-align-group', s.info2.hAlign)
     setPillGroup('ds-qr-pos-group', s.qr.position)
     setPillGroup('ds-qr-valign-group', s.qr.vAlign)
     setPillGroup('ds-qr-link-group', s.qr.linkMode)
-    ;(document.getElementById('ds-qr-url-tpl') as HTMLInputElement).value = s.qr.urlTemplate
+    setPillGroup('ds-info-valign-group', s.info.vAlign)
+    setPillGroup('ds-info2-valign-group', s.info2.vAlign)
+
+    // Update visibility-dependent UI state
+    ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = s.title2.show ? '' : 'none'
+    ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = s.info2.show ? '' : 'none'
     ;(document.getElementById('ds-qr-url-wrap') as HTMLElement).style.display = s.qr.linkMode === 'url' ? '' : 'none'
 
-    ;(document.getElementById('ds-info-show') as HTMLInputElement).checked = s.info.show
-    ;(document.getElementById('ds-info-size') as HTMLInputElement).value = String(s.info.sizeMm)
-    ;(document.getElementById('ds-info-size-range') as HTMLInputElement).value = String(s.info.sizeMm)
-    setAlignGroup('ds-info-align-group', s.info.hAlign)
-    setPillGroup('ds-info-valign-group', s.info.vAlign)
-    ;(document.getElementById('ds-info-tpl') as HTMLTextAreaElement).value = s.info.template
-
-    const info2 = s.info2 ?? DESIGNER_DEFAULTS.info2
-    ;(document.getElementById('ds-info2-show') as HTMLInputElement).checked = info2.show
-    ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = info2.show ? '' : 'none'
-    ;(document.getElementById('ds-info2-vsep') as HTMLInputElement).checked = info2.vsep ?? false
-    ;(document.getElementById('ds-info2-size') as HTMLInputElement).value = String(info2.sizeMm)
-    ;(document.getElementById('ds-info2-size-range') as HTMLInputElement).value = String(info2.sizeMm)
-    setAlignGroup('ds-info2-align-group', info2.hAlign)
-    setPillGroup('ds-info2-valign-group', info2.vAlign)
-    ;(document.getElementById('ds-info2-tpl') as HTMLTextAreaElement).value = info2.template
+    syncLogoManualControls()
     autosizeTemplateFields()
+  }
+
+  // ─── DOM value setter helpers to reduce duplication ────────────────────────────
+  // Set input/checkbox/select/textarea value by ID with proper type handling
+  function setElementValue(id: string, value: string | number | boolean) {
+    const el = document.getElementById(id)
+    if (!el) return
+    if (el instanceof HTMLInputElement) {
+      if (el.type === 'checkbox') {
+        el.checked = Boolean(value)
+      } else {
+        el.value = String(value)
+      }
+    } else if (el instanceof HTMLTextAreaElement) {
+      el.textContent = String(value)
+    } else if (el instanceof HTMLSelectElement) {
+      el.value = String(value)
+    } else {
+      (el as HTMLInputElement).value = String(value)
+    }
+  }
+
+  // Set value on both range and number inputs (synchronized pair)
+  function setRangeAndNumber(rangeId: string, numberId: string, value: string | number) {
+    setElementValue(rangeId, value)
+    setElementValue(numberId, value)
+  }
+
+  // Batch setter for multiple form fields — significantly reduces duplication in load functions
+  interface FormFieldSetter {
+    id: string
+    value: string | number | boolean
+    rangePartnerId?: string // If set, also updates this range input's value
+  }
+
+  function setFormFields(fields: FormFieldSetter[]) {
+    for (const { id, value, rangePartnerId } of fields) {
+      setElementValue(id, value)
+      if (rangePartnerId) setElementValue(rangePartnerId, value)
+    }
   }
 
   // Helpers for button groups
@@ -2675,68 +2714,65 @@ const { id } = Astro.params
       info:   { ...DESIGNER_DEFAULTS.info,   ...preset.settings.info },
       info2:  { ...DESIGNER_DEFAULTS.info2,  ...(preset.settings.info2 ?? {}) },
     }
-    // Apply to form
+    // Apply to form using batch setter
     const presetLogoAny = (s as any).logo ?? {}
     const presetLogoSpace = Number(presetLogoAny.spaceMm ?? presetLogoAny.sizeMm ?? DESIGNER_DEFAULTS.logo.spaceMm)
     const presetLogoManual = Number(presetLogoAny.manualSizeMm ?? presetLogoAny.sizeMm ?? DESIGNER_DEFAULTS.logo.manualSizeMm)
-    ;(document.getElementById('ds-logo-show') as HTMLInputElement).checked = s.logo.show
-    ;(document.getElementById('ds-logo-space') as HTMLInputElement).value = String(presetLogoSpace)
-    ;(document.getElementById('ds-logo-space-range') as HTMLInputElement).value = String(presetLogoSpace)
-    ;(document.getElementById('ds-logo-fit') as HTMLInputElement).checked = s.logo.scaleToFit
-    ;(document.getElementById('ds-logo-manual') as HTMLInputElement).value = String(presetLogoManual)
-    ;(document.getElementById('ds-logo-manual-range') as HTMLInputElement).value = String(presetLogoManual)
+    
+    // Use batch setter to reduce duplication from ~100 repeated lines
+    setFormFields([
+      { id: 'ds-logo-show', value: s.logo.show },
+      { id: 'ds-logo-space', value: presetLogoSpace, rangePartnerId: 'ds-logo-space-range' },
+      { id: 'ds-logo-fit', value: s.logo.scaleToFit },
+      { id: 'ds-logo-manual', value: presetLogoManual, rangePartnerId: 'ds-logo-manual-range' },
+      { id: 'ds-width', value: s.label.width },
+      { id: 'ds-height', value: s.label.height },
+      { id: 'ds-margin', value: s.label.marginMm, rangePartnerId: 'ds-margin-range' },
+      { id: 'ds-border', value: s.label.border },
+      { id: 'ds-title-show', value: s.title.show },
+      { id: 'ds-title-size', value: s.title.sizeMm, rangePartnerId: 'ds-title-size-range' },
+      { id: 'ds-title-gap', value: s.title.marginMm ?? DESIGNER_DEFAULTS.title.marginMm, rangePartnerId: 'ds-title-gap-range' },
+      { id: 'ds-title-fit', value: s.title.fitToWidth },
+      { id: 'ds-title-tpl', value: s.title.template },
+      { id: 'ds-divider-above', value: s.title.dividerAbove ?? false },
+      { id: 'ds-divider-below', value: s.title.dividerBelow ?? true },
+      { id: 'ds-title2-show', value: s.title2.show },
+      { id: 'ds-title2-size', value: s.title2.sizeMm, rangePartnerId: 'ds-title2-size-range' },
+      { id: 'ds-title2-gap', value: s.title2.marginMm ?? DESIGNER_DEFAULTS.title2.marginMm, rangePartnerId: 'ds-title2-gap-range' },
+      { id: 'ds-title2-fit', value: s.title2.fitToWidth },
+      { id: 'ds-title2-tpl', value: s.title2.template },
+      { id: 'ds-title2-divider-above', value: s.title2.dividerAbove ?? false },
+      { id: 'ds-title2-divider-below', value: s.title2.dividerBelow ?? false },
+      { id: 'ds-qr-show', value: s.qr.show },
+      { id: 'ds-qr-mode', value: s.qr.mode },
+      { id: 'ds-qr-size', value: s.qr.sizeMm, rangePartnerId: 'ds-qr-size-range' },
+      { id: 'ds-qr-url-tpl', value: s.qr.urlTemplate },
+      { id: 'ds-info-show', value: s.info.show },
+      { id: 'ds-info-size', value: s.info.sizeMm, rangePartnerId: 'ds-info-size-range' },
+      { id: 'ds-info-tpl', value: s.info.template },
+      { id: 'ds-info2-show', value: s.info2.show },
+      { id: 'ds-info2-vsep', value: s.info2.vsep ?? false },
+      { id: 'ds-info2-size', value: s.info2.sizeMm, rangePartnerId: 'ds-info2-size-range' },
+      { id: 'ds-info2-tpl', value: s.info2.template },
+    ])
+
+    // Handle alignment groups and visibility toggles
     syncLogoManualControls()
     setAlignGroup('ds-logo-align-group', s.logo.align)
-    ;(document.getElementById('ds-width') as HTMLInputElement).value = String(s.label.width)
-    ;(document.getElementById('ds-height') as HTMLInputElement).value = String(s.label.height)
-    ;(document.getElementById('ds-margin') as HTMLInputElement).value = String(s.label.marginMm)
-    ;(document.getElementById('ds-margin-range') as HTMLInputElement).value = String(s.label.marginMm)
-    ;(document.getElementById('ds-border') as HTMLInputElement).checked = s.label.border
-    ;(document.getElementById('ds-title-show') as HTMLInputElement).checked = s.title.show
-    ;(document.getElementById('ds-title-size') as HTMLInputElement).value = String(s.title.sizeMm)
-    ;(document.getElementById('ds-title-size-range') as HTMLInputElement).value = String(s.title.sizeMm)
-    ;(document.getElementById('ds-title-gap') as HTMLInputElement).value = String(s.title.marginMm ?? DESIGNER_DEFAULTS.title.marginMm)
-    ;(document.getElementById('ds-title-gap-range') as HTMLInputElement).value = String(s.title.marginMm ?? DESIGNER_DEFAULTS.title.marginMm)
-    ;(document.getElementById('ds-title-fit') as HTMLInputElement).checked = s.title.fitToWidth
     setAlignGroup('ds-title-align-group', s.title.align)
-    ;(document.getElementById('ds-title-tpl') as HTMLTextAreaElement).value = s.title.template
-    ;(document.getElementById('ds-divider-above') as HTMLInputElement).checked = s.title.dividerAbove ?? false
-    ;(document.getElementById('ds-divider-below') as HTMLInputElement).checked = s.title.dividerBelow ?? true
-    ;(document.getElementById('ds-title2-show') as HTMLInputElement).checked = s.title2.show
-    ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = s.title2.show ? '' : 'none'
-    ;(document.getElementById('ds-title2-size') as HTMLInputElement).value = String(s.title2.sizeMm)
-    ;(document.getElementById('ds-title2-size-range') as HTMLInputElement).value = String(s.title2.sizeMm)
-    ;(document.getElementById('ds-title2-gap') as HTMLInputElement).value = String(s.title2.marginMm ?? DESIGNER_DEFAULTS.title2.marginMm)
-    ;(document.getElementById('ds-title2-gap-range') as HTMLInputElement).value = String(s.title2.marginMm ?? DESIGNER_DEFAULTS.title2.marginMm)
-    ;(document.getElementById('ds-title2-fit') as HTMLInputElement).checked = s.title2.fitToWidth
     setAlignGroup('ds-title2-align-group', s.title2.align)
-    ;(document.getElementById('ds-title2-tpl') as HTMLTextAreaElement).value = s.title2.template
-    ;(document.getElementById('ds-title2-divider-above') as HTMLInputElement).checked = s.title2.dividerAbove ?? false
-    ;(document.getElementById('ds-title2-divider-below') as HTMLInputElement).checked = s.title2.dividerBelow ?? false
-    ;(document.getElementById('ds-qr-show') as HTMLInputElement).checked = s.qr.show
-    ;(document.getElementById('ds-qr-mode') as HTMLSelectElement).value = s.qr.mode
-    ;(document.getElementById('ds-qr-size') as HTMLInputElement).value = String(s.qr.sizeMm)
-    ;(document.getElementById('ds-qr-size-range') as HTMLInputElement).value = String(s.qr.sizeMm)
+    setAlignGroup('ds-info-align-group', s.info.hAlign)
+    setAlignGroup('ds-info2-align-group', s.info2.hAlign)
     setPillGroup('ds-qr-pos-group', s.qr.position)
     setPillGroup('ds-qr-valign-group', s.qr.vAlign)
     setPillGroup('ds-qr-link-group', s.qr.linkMode)
-    ;(document.getElementById('ds-qr-url-tpl') as HTMLInputElement).value = s.qr.urlTemplate
-    ;(document.getElementById('ds-qr-url-wrap') as HTMLElement).style.display = s.qr.linkMode === 'url' ? '' : 'none'
-    ;(document.getElementById('ds-info-show') as HTMLInputElement).checked = s.info.show
-    ;(document.getElementById('ds-info-size') as HTMLInputElement).value = String(s.info.sizeMm)
-    ;(document.getElementById('ds-info-size-range') as HTMLInputElement).value = String(s.info.sizeMm)
-    setAlignGroup('ds-info-align-group', s.info.hAlign)
     setPillGroup('ds-info-valign-group', s.info.vAlign)
-    ;(document.getElementById('ds-info-tpl') as HTMLTextAreaElement).value = s.info.template
-    const _pi2 = s.info2 ?? DESIGNER_DEFAULTS.info2
-    ;(document.getElementById('ds-info2-show') as HTMLInputElement).checked = _pi2.show
-    ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = _pi2.show ? '' : 'none'
-    ;(document.getElementById('ds-info2-vsep') as HTMLInputElement).checked = _pi2.vsep ?? false
-    ;(document.getElementById('ds-info2-size') as HTMLInputElement).value = String(_pi2.sizeMm)
-    ;(document.getElementById('ds-info2-size-range') as HTMLInputElement).value = String(_pi2.sizeMm)
-    setAlignGroup('ds-info2-align-group', _pi2.hAlign)
-    setPillGroup('ds-info2-valign-group', _pi2.vAlign)
-    ;(document.getElementById('ds-info2-tpl') as HTMLTextAreaElement).value = _pi2.template
+    setPillGroup('ds-info2-valign-group', s.info2.vAlign)
+
+    ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = s.title2.show ? '' : 'none'
+    ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = s.info2.show ? '' : 'none'
+    ;(document.getElementById('ds-qr-url-wrap') as HTMLElement).style.display = s.qr.linkMode === 'url' ? '' : 'none'
+
     autosizeTemplateFields()
     saveDesignerSettings()
     _activePresetName = name
@@ -2820,7 +2856,7 @@ const { id } = Astro.params
     }
   })()
 
-  // Per-section reset buttons
+  // Per-section reset buttons — consolidated with batch setter to eliminate duplication
   function wireResetBtn(id: string, applyDefaults: () => void) {
     const btn = document.getElementById(id) as HTMLButtonElement | null
     if (!btn) return
@@ -2835,84 +2871,84 @@ const { id } = Astro.params
 
   wireResetBtn('dsr-logo', () => {
     const d = (_activePresetSettings ?? DESIGNER_DEFAULTS).logo
-    ;(document.getElementById('ds-logo-show') as HTMLInputElement).checked = d.show
-    ;(document.getElementById('ds-logo-space') as HTMLInputElement).value = String(d.spaceMm)
-    ;(document.getElementById('ds-logo-space-range') as HTMLInputElement).value = String(d.spaceMm)
-    ;(document.getElementById('ds-logo-fit') as HTMLInputElement).checked = d.scaleToFit
-    ;(document.getElementById('ds-logo-manual') as HTMLInputElement).value = String(d.manualSizeMm)
-    ;(document.getElementById('ds-logo-manual-range') as HTMLInputElement).value = String(d.manualSizeMm)
+    setFormFields([
+      { id: 'ds-logo-show', value: d.show },
+      { id: 'ds-logo-space', value: d.spaceMm, rangePartnerId: 'ds-logo-space-range' },
+      { id: 'ds-logo-fit', value: d.scaleToFit },
+      { id: 'ds-logo-manual', value: d.manualSizeMm, rangePartnerId: 'ds-logo-manual-range' },
+    ])
     syncLogoManualControls()
     setAlignGroup('ds-logo-align-group', d.align)
   })
 
   wireResetBtn('dsr-label', () => {
     const d = (_activePresetSettings ?? DESIGNER_DEFAULTS).label
-    ;(document.getElementById('ds-width') as HTMLInputElement).value = String(d.width)
-    ;(document.getElementById('ds-height') as HTMLInputElement).value = String(d.height)
-    ;(document.getElementById('ds-margin') as HTMLInputElement).value = String(d.marginMm)
-    ;(document.getElementById('ds-margin-range') as HTMLInputElement).value = String(d.marginMm)
-    ;(document.getElementById('ds-border') as HTMLInputElement).checked = d.border
+    setFormFields([
+      { id: 'ds-width', value: d.width },
+      { id: 'ds-height', value: d.height },
+      { id: 'ds-margin', value: d.marginMm, rangePartnerId: 'ds-margin-range' },
+      { id: 'ds-border', value: d.border },
+    ])
   })
 
   wireResetBtn('dsr-title', () => {
     const base = _activePresetSettings ?? DESIGNER_DEFAULTS
     const d = base.title
-    ;(document.getElementById('ds-title-show') as HTMLInputElement).checked = d.show
-    ;(document.getElementById('ds-title-size') as HTMLInputElement).value = String(d.sizeMm)
-    ;(document.getElementById('ds-title-size-range') as HTMLInputElement).value = String(d.sizeMm)
-    ;(document.getElementById('ds-title-gap') as HTMLInputElement).value = String(d.marginMm)
-    ;(document.getElementById('ds-title-gap-range') as HTMLInputElement).value = String(d.marginMm)
-    ;(document.getElementById('ds-title-fit') as HTMLInputElement).checked = d.fitToWidth
-    setAlignGroup('ds-title-align-group', d.align)
-    ;(document.getElementById('ds-title-tpl') as HTMLTextAreaElement).value = d.template
-    ;(document.getElementById('ds-divider-above') as HTMLInputElement).checked = d.dividerAbove
-    ;(document.getElementById('ds-divider-below') as HTMLInputElement).checked = d.dividerBelow
     const d2 = base.title2
-    ;(document.getElementById('ds-title2-show') as HTMLInputElement).checked = d2.show
-    ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = d2.show ? '' : 'none'
-    ;(document.getElementById('ds-title2-size') as HTMLInputElement).value = String(d2.sizeMm)
-    ;(document.getElementById('ds-title2-size-range') as HTMLInputElement).value = String(d2.sizeMm)
-    ;(document.getElementById('ds-title2-gap') as HTMLInputElement).value = String(d2.marginMm)
-    ;(document.getElementById('ds-title2-gap-range') as HTMLInputElement).value = String(d2.marginMm)
-    ;(document.getElementById('ds-title2-fit') as HTMLInputElement).checked = d2.fitToWidth
+    setFormFields([
+      { id: 'ds-title-show', value: d.show },
+      { id: 'ds-title-size', value: d.sizeMm, rangePartnerId: 'ds-title-size-range' },
+      { id: 'ds-title-gap', value: d.marginMm, rangePartnerId: 'ds-title-gap-range' },
+      { id: 'ds-title-fit', value: d.fitToWidth },
+      { id: 'ds-title-tpl', value: d.template },
+      { id: 'ds-divider-above', value: d.dividerAbove },
+      { id: 'ds-divider-below', value: d.dividerBelow },
+      { id: 'ds-title2-show', value: d2.show },
+      { id: 'ds-title2-size', value: d2.sizeMm, rangePartnerId: 'ds-title2-size-range' },
+      { id: 'ds-title2-gap', value: d2.marginMm, rangePartnerId: 'ds-title2-gap-range' },
+      { id: 'ds-title2-fit', value: d2.fitToWidth },
+      { id: 'ds-title2-tpl', value: d2.template },
+      { id: 'ds-title2-divider-above', value: d2.dividerAbove },
+      { id: 'ds-title2-divider-below', value: d2.dividerBelow },
+    ])
+    setAlignGroup('ds-title-align-group', d.align)
     setAlignGroup('ds-title2-align-group', d2.align)
-    ;(document.getElementById('ds-title2-tpl') as HTMLTextAreaElement).value = d2.template
+    ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = d2.show ? '' : 'none'
     autosizeTemplateFields()
-    ;(document.getElementById('ds-title2-divider-above') as HTMLInputElement).checked = d2.dividerAbove
-    ;(document.getElementById('ds-title2-divider-below') as HTMLInputElement).checked = d2.dividerBelow
   })
 
   wireResetBtn('dsr-qr', () => {
     const d = (_activePresetSettings ?? DESIGNER_DEFAULTS).qr
-    ;(document.getElementById('ds-qr-show') as HTMLInputElement).checked = d.show
-    ;(document.getElementById('ds-qr-mode') as HTMLSelectElement).value = d.mode
-    ;(document.getElementById('ds-qr-size') as HTMLInputElement).value = String(d.sizeMm)
-    ;(document.getElementById('ds-qr-size-range') as HTMLInputElement).value = String(d.sizeMm)
+    setFormFields([
+      { id: 'ds-qr-show', value: d.show },
+      { id: 'ds-qr-mode', value: d.mode },
+      { id: 'ds-qr-size', value: d.sizeMm, rangePartnerId: 'ds-qr-size-range' },
+      { id: 'ds-qr-url-tpl', value: d.urlTemplate },
+    ])
     setPillGroup('ds-qr-pos-group', d.position)
     setPillGroup('ds-qr-valign-group', d.vAlign)
     setPillGroup('ds-qr-link-group', d.linkMode)
-    ;(document.getElementById('ds-qr-url-tpl') as HTMLInputElement).value = d.urlTemplate
     ;(document.getElementById('ds-qr-url-wrap') as HTMLElement).style.display = d.linkMode === 'url' ? '' : 'none'
   })
 
   wireResetBtn('dsr-info', () => {
     const base = _activePresetSettings ?? DESIGNER_DEFAULTS
     const d = base.info
-    ;(document.getElementById('ds-info-show') as HTMLInputElement).checked = d.show
-    ;(document.getElementById('ds-info-size') as HTMLInputElement).value = String(d.sizeMm)
-    ;(document.getElementById('ds-info-size-range') as HTMLInputElement).value = String(d.sizeMm)
-    setAlignGroup('ds-info-align-group', d.hAlign)
-    setPillGroup('ds-info-valign-group', d.vAlign)
-    ;(document.getElementById('ds-info-tpl') as HTMLTextAreaElement).value = d.template
     const d2 = base.info2
-    ;(document.getElementById('ds-info2-show') as HTMLInputElement).checked = d2.show
-    ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = d2.show ? '' : 'none'
-    ;(document.getElementById('ds-info2-vsep') as HTMLInputElement).checked = d2.vsep
-    ;(document.getElementById('ds-info2-size') as HTMLInputElement).value = String(d2.sizeMm)
-    ;(document.getElementById('ds-info2-size-range') as HTMLInputElement).value = String(d2.sizeMm)
+    setFormFields([
+      { id: 'ds-info-show', value: d.show },
+      { id: 'ds-info-size', value: d.sizeMm, rangePartnerId: 'ds-info-size-range' },
+      { id: 'ds-info-tpl', value: d.template },
+      { id: 'ds-info2-show', value: d2.show },
+      { id: 'ds-info2-vsep', value: d2.vsep },
+      { id: 'ds-info2-size', value: d2.sizeMm, rangePartnerId: 'ds-info2-size-range' },
+      { id: 'ds-info2-tpl', value: d2.template },
+    ])
+    setAlignGroup('ds-info-align-group', d.hAlign)
     setAlignGroup('ds-info2-align-group', d2.hAlign)
+    setPillGroup('ds-info-valign-group', d.vAlign)
     setPillGroup('ds-info2-valign-group', d2.vAlign)
-    ;(document.getElementById('ds-info2-tpl') as HTMLTextAreaElement).value = d2.template
+    ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = d2.show ? '' : 'none'
   })
 
   // ─── End Label Designer ────────────────────────────────────────────────────
