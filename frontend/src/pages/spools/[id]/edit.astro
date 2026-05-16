@@ -291,16 +291,16 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       }
     }
 
-    let allFilaments = []
-    let allStatuses = []
-    let allLocations = []
-    let systemFields = []
+    let allFilaments: any[] = []
+    let allStatuses: any[] = []
+    let allLocations: any[] = []
+    let systemFields: any[] = []
 
-    const customFieldsContainer = document.getElementById('custom-fields-container')
-    const btnAddField = document.getElementById('btn-add-field')
-    let customFields = []
+    const customFieldsContainer = document.getElementById('custom-fields-container') as HTMLElement
+    const btnAddField = document.getElementById('btn-add-field') as HTMLButtonElement
+    let customFields: any[] = []
 
-    function flattenObject(obj, prefix = '', res = {}) {
+    function flattenObject(obj: any, prefix = '', res: Record<string, string> = {}) {
       for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
           const val = obj[key]
@@ -315,12 +315,12 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       return res
     }
 
-    function unflattenObject(data) {
-      const result = {}
+    function unflattenObject(data: any) {
+      const result: Record<string, any> = {}
       for (const key in data) {
         if (Object.prototype.hasOwnProperty.call(data, key)) {
           const keys = key.split('.')
-          let current = result
+          let current: any = result
           for (let i = 0; i < keys.length; i++) {
             const k = keys[i]
             if (i === keys.length - 1) {
@@ -354,20 +354,20 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         customFieldsContainer.appendChild(row)
       })
 
-      document.querySelectorAll('.custom-field-key').forEach(input => {
-        input.addEventListener('input', e => {
-          customFields[parseInt(e.target.dataset.index)].key = e.target.value
+      document.querySelectorAll<HTMLInputElement>('.custom-field-key').forEach(input => {
+        input.addEventListener('input', () => {
+          customFields[parseInt(input.dataset.index ?? '0')].key = input.value
         })
       })
-      document.querySelectorAll('.custom-field-value').forEach(input => {
-        input.addEventListener('input', e => {
-          customFields[parseInt(e.target.dataset.index)].value = e.target.value
+      document.querySelectorAll<HTMLInputElement>('.custom-field-value').forEach(input => {
+        input.addEventListener('input', () => {
+          customFields[parseInt(input.dataset.index ?? '0')].value = input.value
         })
       })
       
-      document.querySelectorAll('.custom-field-remove').forEach(btn => {
-        btn.addEventListener('click', e => {
-          const index = parseInt(e.target.closest('button').dataset.index)
+      document.querySelectorAll<HTMLButtonElement>('.custom-field-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const index = parseInt(btn.dataset.index ?? '0')
           customFields.splice(index, 1)
           renderCustomFields()
         })
@@ -379,7 +379,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       renderCustomFields()
     })
 
-    function applyFilamentDefaults(selectedFilamentId) {
+    function applyFilamentDefaults(selectedFilamentId: any) {
       const filament = allFilaments.find((f) => f.id === selectedFilamentId)
       if (!filament) return
 
@@ -501,9 +501,9 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
     async function loadFilaments() {
       try {
         const data = await cachedFetchAllPages(CACHE_KEYS.FILAMENTS, '/api/v1/filaments')
-        const select = document.getElementById('filament_id')
+        const select = document.getElementById('filament_id') as HTMLSelectElement
         allFilaments = data.items
-        allFilaments.forEach(f => {
+        allFilaments.forEach((f: any) => {
           const option = document.createElement('option')
           option.value = String(f.id)
           const mfgName = f.manufacturer?.name || ''
@@ -523,8 +523,8 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
           if (!response.ok) throw new Error('Failed to fetch statuses')
           return response.json()
         })
-        const select = document.getElementById('status_id')
-        allStatuses.forEach(s => {
+        const select = document.getElementById('status_id') as HTMLSelectElement
+        allStatuses.forEach((s: any) => {
           const option = document.createElement('option')
           option.value = String(s.id)
           const i18nKey = 'spools.status' + s.key.charAt(0).toUpperCase() + s.key.slice(1)
@@ -540,9 +540,9 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
     async function loadLocations() {
       try {
         const data = await cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
-        const select = document.getElementById('location_id')
+        const select = document.getElementById('location_id') as HTMLSelectElement
         allLocations = data.items
-        allLocations.forEach(l => {
+        allLocations.forEach((l: any) => {
           const option = document.createElement('option')
           option.value = String(l.id)
           option.textContent = l.name
@@ -565,9 +565,9 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       }
     }
 
-    function renderSystemFields(spoolCustomFieldsFlat = {}) {
-      const container = document.getElementById('system-fields-container')
-      const grid = document.getElementById('system-fields-grid')
+    function renderSystemFields(spoolCustomFieldsFlat: Record<string, any> = {}) {
+      const container = document.getElementById('system-fields-container') as HTMLElement
+      const grid = document.getElementById('system-fields-grid') as HTMLElement
       if (!systemFields || systemFields.length === 0) {
         container.style.display = 'none'
         return
@@ -610,14 +610,14 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       })
     }
 
-    function escapeHtml(str) {
+    function escapeHtml(str: any) {
       if (!str) return ''
       const div = document.createElement('div')
       div.textContent = str
       return div.innerHTML
     }
 
-    function prefillForm(s) {
+    function prefillForm(s: any) {
       document.getElementById('filament_id').value = String(s.filament_id)
 
       if (s.status_id) {
