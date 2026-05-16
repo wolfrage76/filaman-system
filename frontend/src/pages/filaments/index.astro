@@ -268,9 +268,10 @@ import Layout from '../../layouts/Layout.astro'
     function sortFilaments(filaments: any[]): any[] {
       if (!sortKey || !sortDirection) return filaments
       if (sortKey === 'spool_count') return filaments  // server-only sort: skip client re-sort
+      const sortBy = sortKey
       return [...filaments].sort((a, b) => {
-        const aVal = getSortValue(a, sortKey)
-        const bVal = getSortValue(b, sortKey)
+        const aVal = getSortValue(a, sortBy)
+        const bVal = getSortValue(b, sortBy)
         let cmp = 0
         if (aVal == null && bVal == null) cmp = 0
         else if (aVal == null) cmp = 1
