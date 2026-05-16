@@ -142,7 +142,7 @@ import Layout from '../../layouts/Layout.astro'
   import { t, initI18n } from '../../lib/i18n'
 
   ;(window as any).filamanPrint = function() {
-    try { document.execCommand('print', false, null) } catch { window.print() }
+    try { document.execCommand('print', false, undefined) } catch { window.print() }
   }
 
   const SETTINGS_KEY = 'filaman-label-settings'
