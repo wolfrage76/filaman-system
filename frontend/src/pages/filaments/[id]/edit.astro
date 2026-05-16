@@ -901,7 +901,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
     async function loadColors(): Promise<void> {
       try {
         const data = await cachedFetchAllPages(CACHE_KEYS.COLORS, '/api/v1/colors')
-        allColors = data.items
+        allColors = data.items as { id: number; name: string; hex_code: string }[]
         renderColorGrid()
       } catch (error) {
         if (isAbortError(error)) return
