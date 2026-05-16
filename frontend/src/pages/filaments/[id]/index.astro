@@ -406,7 +406,7 @@ const { id } = Astro.params
         const archivedStatusId = archivedStatus ? archivedStatus.id : -1
 
         // 1. Render Table (exclude archived)
-        const activeSpools = allSpools.filter(s => s.status_id !== archivedStatusId)
+        const activeSpools = allSpools.filter((s: any) => s.status_id !== archivedStatusId)
         document.getElementById('spools-section')!.classList.remove('hidden')
         renderSpools(activeSpools)
 
