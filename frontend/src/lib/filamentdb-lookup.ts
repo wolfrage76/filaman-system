@@ -188,7 +188,7 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
 
     try {
       const data = await request<unknown>(`${endpoint}?${params.toString()}`)
-      let items = extractItems(data)
+      let items: T[] = extractItems(data)
 
       // Sort by fuzzy score if a scoring function is provided
       if (fuzzyScore && items.length > 0) {
