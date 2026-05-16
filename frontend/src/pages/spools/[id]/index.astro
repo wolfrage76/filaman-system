@@ -174,16 +174,16 @@ const { id } = Astro.params
       window.location.href = '/spools'
     }
 
-    let spool = null
-    let statuses = []
-    let locations = []
+    let spool: any = null
+    let statuses: any[] = []
+    let locations: any[] = []
     // RFID state
-    let activeDevices = []
-    let currentRfidSpoolId = null
-    let printersList = []
-    let currentPrinterParams = []
-    let fieldDefinitions = []
-    let filamentPrinterParams = []
+    let activeDevices: any[] = []
+    let currentRfidSpoolId: any = null
+    let printersList: any[] = []
+    let currentPrinterParams: any[] = []
+    let fieldDefinitions: any[] = []
+    let filamentPrinterParams: any[] = []
     let spoolSystemFieldMap: Record<string, any> = {}
     let filamentSystemFieldMap: Record<string, any> = {}
     // Pending slot assignment state (for animated ring feedback)
@@ -1341,7 +1341,7 @@ const { id } = Astro.params
 
     // -- Slot context menu ---------------------------------------------------
 
-    let activeSlotMenu = null
+    let activeSlotMenu: Element | null = null
 
     function closeSlotMenu() {
       if (activeSlotMenu) {
