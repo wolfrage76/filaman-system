@@ -444,18 +444,18 @@ const { id } = Astro.params
         deleteCheckbox.checked = false
         deleteWarning?.classList.add('hidden')
         deleteConfirmBtn.textContent = t('spools.archiveSpool')
-        document.getElementById('delete-modal-title').textContent = t('spools.archiveSpool')
+        ;(document.getElementById('delete-modal-title') as HTMLElement).textContent = t('spools.archiveSpool')
       })
       
       deleteCheckbox?.addEventListener('change', () => {
         if (deleteCheckbox.checked) {
           deleteWarning?.classList.remove('hidden')
           deleteConfirmBtn.textContent = t('spools.deleteSpool')
-          document.getElementById('delete-modal-title').textContent = t('spools.deleteSpool')
+          ;(document.getElementById('delete-modal-title') as HTMLElement).textContent = t('spools.deleteSpool')
         } else {
           deleteWarning?.classList.add('hidden')
           deleteConfirmBtn.textContent = t('spools.archiveSpool')
-          document.getElementById('delete-modal-title').textContent = t('spools.archiveSpool')
+          ;(document.getElementById('delete-modal-title') as HTMLElement).textContent = t('spools.archiveSpool')
         }
       })
       
@@ -499,7 +499,7 @@ const { id } = Astro.params
         if (!response.ok) throw new Error('Failed to fetch events')
         
         const data = await response.json()
-        document.getElementById('events-section').classList.remove('hidden')
+        document.getElementById('events-section')?.classList.remove('hidden')
         renderEvents(data.items)
       } catch (error) {
         if (isAbortError(error)) return
@@ -507,8 +507,8 @@ const { id } = Astro.params
       }
     }
     
-    function renderEvents(events) {
-      const tbody = document.getElementById('events-table')
+    function renderEvents(events: any) {
+      const tbody = document.getElementById('events-table') as HTMLElement
       
       if (events.length === 0) {
         tbody.innerHTML = `
@@ -519,7 +519,7 @@ const { id } = Astro.params
         return
       }
       
-      tbody.innerHTML = events.map(e => `
+      tbody.innerHTML = events.map((e: any) => `
         <tr>
           <td style="padding: 12px;">
             <span class="fm-pill" style="${getEventTypeStyle(e.event_type)}">${e.event_type}</span>
@@ -536,7 +536,7 @@ const { id } = Astro.params
       `).join('')
     }
     
-    function getEventTypeStyle(type) {
+    function getEventTypeStyle(type: any) {
       const styles = {
         measurement: 'border-color: var(--accent-2); color: var(--accent-2);',
         adjustment: 'border-color: var(--accent); color: var(--accent);',
@@ -544,7 +544,7 @@ const { id } = Astro.params
         status_change: 'border-color: var(--accent-3); color: var(--accent-3);',
         move_location: 'border-color: var(--accent); color: var(--accent);',
       }
-      return styles[type] || ''
+      return styles[type as keyof typeof styles] || ''
     }
     
     function setupActions() {
@@ -559,7 +559,7 @@ const { id } = Astro.params
           (window as any).__fmAlert(t('rfid.noDeviceOnline'))
           return
         }
-        window.openRfidModal()
+        window.openRfidModal?.()
       })
 
       // Print Label button
@@ -809,11 +809,11 @@ const { id } = Astro.params
       }
     })
     
-    function showModal(type) {
-      const container = document.getElementById('modal-container')
-      const title = document.getElementById('modal-title')
-      const fields = document.getElementById('modal-fields')
-      const error = document.getElementById('modal-error')
+    function showModal(type: any) {
+      const container = document.getElementById('modal-container') as HTMLElement
+      const title = document.getElementById('modal-title') as HTMLElement
+      const fields = document.getElementById('modal-fields') as HTMLElement
+      const error = document.getElementById('modal-error') as HTMLElement
       
       error.classList.add('hidden')
       fields.innerHTML = ''
@@ -824,7 +824,7 @@ const { id } = Astro.params
         status: t('spools.modalChangeStatus'),
         move: t('spools.modalMove'),
       }
-      title.textContent = titles[type]
+      title.textContent = titles[type as keyof typeof titles]
       
       if (type === 'measurement') {
         fields.innerHTML = `
@@ -864,9 +864,9 @@ const { id } = Astro.params
           </div>
         `
         document.getElementById('field-adjustment-type')?.addEventListener('change', (e) => {
-          const val = e.target.value
-          document.getElementById('field-delta-container').classList.toggle('hidden', val !== 'relative')
-          document.getElementById('field-measured-container').classList.toggle('hidden', val === 'relative')
+          const val = (e.target as HTMLSelectElement).value
+          document.getElementById('field-delta-container')?.classList.toggle('hidden', val !== 'relative')
+          document.getElementById('field-measured-container')?.classList.toggle('hidden', val === 'relative')
         })
       } else if (type === 'status') {
         fields.innerHTML = `
@@ -916,45 +916,37 @@ const { id } = Astro.params
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
       
-      const container = document.getElementById('modal-container')
+      const container = document.getElementById('modal-container') as HTMLElement
       const type = container.dataset.type
-      const error = document.getElementById('modal-error')
-      const submitBtn = document.getElementById('modal-submit')
+      const error = document.getElementById('modal-error') as HTMLElement
+      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       
       let url = ''
-      let body = {}
+      const body: Record<string, unknown> = {}
       
       if (type === 'measurement') {
         url = `/api/v1/spools/${id}/measurements`
-        body = {
-          measured_weight_g: parseFloat(document.getElementById('field-weight').value),
-          note: document.getElementById('field-note').value || null,
-        }
+        body.measured_weight_g = parseFloat((document.getElementById('field-weight') as HTMLInputElement).value)
+        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
       } else if (type === 'adjustment') {
         url = `/api/v1/spools/${id}/adjustments`
-        const adjType = document.getElementById('field-adjustment-type').value
-        body = {
-          adjustment_type: adjType,
-          note: document.getElementById('field-note').value || null,
-        }
+        const adjType = (document.getElementById('field-adjustment-type') as HTMLInputElement).value
+        body.adjustment_type = adjType
+        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
         if (adjType === 'relative') {
-          body.delta_weight_g = parseFloat(document.getElementById('field-delta').value) || null
+          body.delta_weight_g = parseFloat((document.getElementById('field-delta') as HTMLInputElement).value) || null
         } else {
-          body.measured_weight_g = parseFloat(document.getElementById('field-measured').value) || null
+          body.measured_weight_g = parseFloat((document.getElementById('field-measured') as HTMLInputElement).value) || null
         }
       } else if (type === 'status') {
         url = `/api/v1/spools/${id}/status`
-        body = {
-          status: document.getElementById('field-status').value,
-          note: document.getElementById('field-note').value || null,
-        }
+        body.status = (document.getElementById('field-status') as HTMLInputElement).value
+        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
       } else if (type === 'move') {
         url = `/api/v1/spools/${id}/move`
-        const locId = document.getElementById('field-location').value
-        body = {
-          location_id: locId ? parseInt(locId) : null,
-          note: document.getElementById('field-note').value || null,
-        }
+        const locId = (document.getElementById('field-location') as HTMLInputElement).value
+        body.location_id = locId ? parseInt(locId) : null
+        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
       }
       
       error.classList.add('hidden')
@@ -982,7 +974,7 @@ const { id } = Astro.params
         loadData()
       } catch (err) {
         if (isAbortError(err)) return
-        error.textContent = err.message
+        error.textContent = (err instanceof Error ? err.message : null) || t('spools.failedSubmit')
         error.classList.remove('hidden')
       } finally {
         submitBtn.disabled = false
@@ -1001,7 +993,7 @@ const { id } = Astro.params
         document.getElementById('printer-params-section')!.classList.remove('hidden')
         const select = document.getElementById('printer-select') as HTMLSelectElement
         select.innerHTML = '<option value="">\u2014</option>' +
-          printersList.map(p => `<option value="${p.id}" data-driver="${p.driver_key || ''}">${p.name}</option>`).join('')
+          printersList.map((p: any) => `<option value="${p.id}" data-driver="${p.driver_key || ''}">${p.name}</option>`).join('')
 
         select.addEventListener('change', async () => {
           const printerId = select.value
@@ -1089,7 +1081,7 @@ const { id } = Astro.params
         const inheritedStyle = isInherited ? ' opacity: 0.6; font-style: italic;' : ''
 
         if (fd.field_type === 'dropdown' && fd.options) {
-          const opts = fd.options.map(o => {
+          const opts = fd.options.map((o: any) => {
             const selected = value === o ? ' selected' : ''
             return `<option value="${o}"${selected}>${o}</option>`
           }).join('')
@@ -1199,7 +1191,7 @@ const { id } = Astro.params
         if (printers.length === 0) return
 
         const healthResults = await Promise.allSettled(
-          printers.map(p =>
+          printers.map((p: any) =>
             fetch(`/api/v1/printers/${p.id}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
               .then(r => r.ok ? r.json() : null)
               .then(h => h ? { printer: p, health: h } : null)
@@ -1299,8 +1291,8 @@ const { id } = Astro.params
         container.querySelectorAll<HTMLElement>('.slot-dot[data-slot]').forEach(dot => {
           dot.addEventListener('click', (e) => {
             e.stopPropagation()
-            const slotData = JSON.parse(dot.dataset.slot)
-            const pId = parseInt(dot.dataset.printerId)
+            const slotData = JSON.parse(dot.dataset.slot!)
+            const pId = parseInt(dot.dataset.printerId!)
             showSlotContextMenu(dot, slotData, pId)
           })
         })
@@ -1551,7 +1543,7 @@ const { id } = Astro.params
         })
         if (res.ok) {
           // Track expected color for polling comparison
-          const expectedColor = (filamentData.color || 'FFFFFF').slice(0, 6)
+          const expectedColor = ((filamentData.color as string) || 'FFFFFF').slice(0, 6)
           pendingSlotAssign = { slotIndex, printerId, expectedColor }
           // Absolute timeout fallback (15s)
           pendingSlotTimeout = setTimeout(() => {
@@ -1654,6 +1646,7 @@ const { id } = Astro.params
       interface Window {
         __fmAlert?: (msg: string) => void
         __fmSuccess?: (msg: string) => void
+        openRfidModal?: () => void
       }
     }
 

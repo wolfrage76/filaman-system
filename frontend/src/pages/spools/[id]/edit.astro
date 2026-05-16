@@ -419,7 +419,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       }
     }
 
-    document.getElementById('filament_id').addEventListener('change', (e) => {
+    document.getElementById('filament_id')?.addEventListener('change', (e) => {
       const selectedId = parseInt((e.target as HTMLSelectElement).value)
       if (selectedId) {
         applyFilamentDefaults(selectedId)
@@ -585,7 +585,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
             inputHtml = `<input type="number" class="fm-input system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}" value="${escapeHtml(currentValue)}" step="any" />`
             break
           case 'dropdown': {
-            const opts = (field.options || []).map(opt => {
+            const opts = (field.options || []).map((opt: any) => {
               const selected = opt === currentValue ? ' selected' : ''
               return `<option value="${escapeHtml(opt)}"${selected}>${escapeHtml(opt)}</option>`
             }).join('')
@@ -801,13 +801,13 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         const spool = await response.json()
         prefillForm(spool)
 
-        document.getElementById('edit-loading').classList.add('hidden')
-        document.getElementById('edit-form-wrapper').classList.remove('hidden')
+        document.getElementById('edit-loading')?.classList.add('hidden')
+        document.getElementById('edit-form-wrapper')?.classList.remove('hidden')
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load spool for editing:', error)
-        document.getElementById('edit-loading').classList.add('hidden')
-        document.getElementById('edit-error').classList.remove('hidden')
+        document.getElementById('edit-loading')?.classList.add('hidden')
+        document.getElementById('edit-error')?.classList.remove('hidden')
       }
     }
 
