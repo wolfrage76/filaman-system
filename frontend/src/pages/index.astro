@@ -508,7 +508,8 @@ interface PaginatedResponse<T> {
       if (!currentVersion) return
 
       const lang = getLang() || 'en'
-      const changes = currentVersion.changes[lang] || currentVersion.changes['en'] || []
+      const localizedChanges = currentVersion.changes as Record<string, { type: string; text: string }[]>
+      const changes = localizedChanges[lang] || localizedChanges['en'] || []
       if (changes.length === 0) return
 
       const overlay = document.getElementById('fm-changelog-overlay')
