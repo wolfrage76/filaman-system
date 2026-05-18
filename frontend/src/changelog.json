@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Spool-ID auf gedruckten Labels wird jetzt auch bei IDs ab 100 vollständig angezeigt" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Spool ID on printed labels is now fully displayed for IDs of 100 and above" }
+        ]
+      }
+    },
+    {
       "version": "1.2.16",
       "date": "",
       "changes": {
