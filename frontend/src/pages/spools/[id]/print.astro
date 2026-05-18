@@ -1878,7 +1878,6 @@ const { id } = Astro.params
   const checkColor = document.getElementById('check-color') as HTMLInputElement
   const checkColorSwatch = document.getElementById('check-color-swatch') as HTMLInputElement
   const labelPreview = document.getElementById('label-preview') as HTMLElement
-  const qrContainer = document.getElementById('label-qr-container') as HTMLElement
 
   const LABEL_SETTINGS_KEY = 'filaman-label-settings'
   const ACTIVE_TAB_KEY = 'filaman-label-active-tab'
@@ -2097,7 +2096,7 @@ const { id } = Astro.params
   }
 
   function loadDesignerSettings() {
-    let s: LabelDesignerSettings = loadDesignerSettingsFromStorage()
+    const s: LabelDesignerSettings = loadDesignerSettingsFromStorage()
 
     const rawLogo = (s as any).logo ?? {}
     const logoSpaceMm = Number(rawLogo.spaceMm ?? rawLogo.sizeMm ?? DESIGNER_DEFAULTS.logo.spaceMm)
@@ -3273,6 +3272,7 @@ const { id } = Astro.params
   }
 
   async function updatePreview(isStale = () => false) {
+    if (activePreviewTab !== 'print') return
     if (typeof (window as any).QRCode === 'undefined') {
       await new Promise((resolve, reject) => {
         const script = document.createElement('script')
@@ -3282,9 +3282,10 @@ const { id } = Astro.params
         document.head.appendChild(script)
       })
     }
-    if (isStale()) return
+    if (isStale() || activePreviewTab !== 'print') return
 
     ensureClassicPreviewLayout()
+    const qrContainer = document.getElementById('label-qr-container') as HTMLElement
 
     const widthMm = clampInputValue(widthInput, 20, 200, 60, 0)
     const heightMm = clampInputValue(heightInput, 10, 120, 40, 0)
@@ -3421,7 +3422,7 @@ const { id } = Astro.params
       const url = window.location.origin + '/spools/' + labelData.id
       const qrPx = Math.min(1024, Math.max(256, Math.round(qrSizeMm * (PRINT_DPI / 25.4))))
 
-      // @ts-ignore
+      // @ts-expect-error — QRCode loaded dynamically
       new QRCode(qrContainer, {
         text: url,
         width: qrPx,
@@ -3469,7 +3470,7 @@ const { id } = Astro.params
     if (oldStyle) oldStyle.remove()
     style.id = 'page-style'
     document.head.appendChild(style)
-    if (isStale()) return
+    if (isStale() || activePreviewTab !== 'print') return
     saveSettings()
   }
 
@@ -3483,6 +3484,7 @@ const { id } = Astro.params
   // ─── Designer preview ─────────────────────────────────────────────────────
 
   async function updateDesignerPreview(isStale = () => false) {
+    if (activePreviewTab !== 'designer') return
     // Load QR library if needed
     if (typeof (window as any).QRCode === 'undefined') {
       await new Promise((resolve, reject) => {
@@ -3493,7 +3495,7 @@ const { id } = Astro.params
         document.head.appendChild(script)
       })
     }
-    if (isStale()) return
+    if (isStale() || activePreviewTab !== 'designer') return
 
     const s = loadDesignerSettingsFromStorage()
 
@@ -3731,7 +3733,7 @@ const { id } = Astro.params
       const qrUrl = buildSafeQrUrl(s.qr.linkMode, s.qr.urlTemplate, labelData.id)
       const qrPx = Math.min(1024, Math.max(256, Math.round(s.qr.sizeMm * (PRINT_DPI / 25.4))))
 
-      // @ts-ignore
+      // @ts-expect-error — QRCode loaded dynamically
       new QRCode(qrWrap, {
         text: qrUrl, width: qrPx, height: qrPx,
         colorDark: '#000000', colorLight: '#ffffff',
@@ -3743,7 +3745,7 @@ const { id } = Astro.params
         const canvas = qrWrap.querySelector('canvas')
         if (canvas) {
           await decorateQrCenter(canvas as HTMLCanvasElement, qrPx, s.qr.mode === 'colorLogo')
-          if (isStale()) return
+          if (isStale() || activePreviewTab !== 'designer') return
           qrWrap.innerHTML = ''
           qrWrap.appendChild(canvasToQrImage(canvas as HTMLCanvasElement, false))
         }
