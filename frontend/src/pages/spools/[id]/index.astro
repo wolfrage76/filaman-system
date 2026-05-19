@@ -174,16 +174,16 @@ const { id } = Astro.params
       window.location.href = '/spools'
     }
 
-    let spool = null
-    let statuses = []
-    let locations = []
+    let spool: any = null
+    let statuses: any[] = []
+    let locations: any[] = []
     // RFID state
-    let activeDevices = []
-    let currentRfidSpoolId = null
-    let printersList = []
-    let currentPrinterParams = []
-    let fieldDefinitions = []
-    let filamentPrinterParams = []
+    let activeDevices: any[] = []
+    let currentRfidSpoolId: any = null
+    let printersList: any[] = []
+    let currentPrinterParams: any[] = []
+    let fieldDefinitions: any[] = []
+    let filamentPrinterParams: any[] = []
     let spoolSystemFieldMap: Record<string, any> = {}
     let filamentSystemFieldMap: Record<string, any> = {}
     // Pending slot assignment state (for animated ring feedback)
@@ -191,7 +191,7 @@ const { id } = Astro.params
     let pendingSlotTimeout: ReturnType<typeof setTimeout> | null = null
     let pendingSlotPollTimer: ReturnType<typeof setTimeout> | null = null
     
-    function flattenObject(obj, prefix = '', res = {}) {
+    function flattenObject(obj: any, prefix = '', res: Record<string, string> = {}) {
       for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
           const val = obj[key]
@@ -206,12 +206,12 @@ const { id } = Astro.params
       return res
     }
 
-    function unflattenObject(data) {
-      const result = {}
+    function unflattenObject(data: any) {
+      const result: Record<string, any> = {}
       for (const key in data) {
         if (Object.prototype.hasOwnProperty.call(data, key)) {
           const keys = key.split('.')
-          let current = result
+          let current: any = result
           for (let i = 0; i < keys.length; i++) {
             const k = keys[i]
             if (i === keys.length - 1) {
@@ -262,7 +262,7 @@ const { id } = Astro.params
         
         if (!spoolRes.ok) {
           if (spoolRes.status === 404) {
-            document.getElementById('spool-content').innerHTML = `<div style="color: var(--error-text);">${t('spools.notFound')}</div>`
+            document.getElementById('spool-content')!.innerHTML = `<div style="color: var(--error-text);">${t('spools.notFound')}</div>`
             return
           }
           throw new Error('Failed to fetch spool')
@@ -290,18 +290,18 @@ const { id } = Astro.params
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load spool:', error)
-        document.getElementById('spool-content').innerHTML = `<div style="color: var(--error-text);">${t('spools.failedLoadSingle')}</div>`
+        document.getElementById('spool-content')!.innerHTML = `<div style="color: var(--error-text);">${t('spools.failedLoadSingle')}</div>`
       }
     }
     
-    function getStatusLabel(statusId) {
+    function getStatusLabel(statusId: any) {
       const s = statuses.find(s => s.id === statusId)
       if (!s) return `#${statusId}`
       const i18nKey = `spools.status${s.key.charAt(0).toUpperCase() + s.key.slice(1)}`
       return t(i18nKey) || s.label
     }
     
-    function getLocationName(locationId) {
+    function getLocationName(locationId: any) {
       if (!locationId) return t('spools.noLocation')
       const l = locations.find(l => l.id === locationId)
       return l ? l.name : `#${locationId}`
@@ -317,7 +317,7 @@ const { id } = Astro.params
       if (isEmpty) statusStyle = 'background: var(--error-bg); border-color: var(--error-border);'
       else if (isLow) statusStyle = 'background: rgba(247, 200, 106, 0.15); border: 1px solid rgba(247, 200, 106, 0.4);'
       
-      document.getElementById('spool-content').innerHTML = `
+      document.getElementById('spool-content')!.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; gap: 16px;">
           <div>
             <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${t('spools.spoolId', { id: spool.id })}</h1>
@@ -374,7 +374,7 @@ const { id } = Astro.params
           })()}">
             <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.filament')}</div>
             <div style="display: flex; align-items: center; gap: 10px;">
-              ${(spool.filament?.colors && spool.filament.colors.length > 0) ? spool.filament.colors.map(fc => `<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${fc.color?.hex_code || 'var(--border)'}; border: 2px solid var(--border); flex-shrink: 0;"></span>`).join('') : '<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-soft); border: 2px solid var(--border); flex-shrink: 0;"></span>'}
+              ${(spool.filament?.colors && spool.filament.colors.length > 0) ? spool.filament.colors.map((fc: any) => `<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${fc.color?.hex_code || 'var(--border)'}; border: 2px solid var(--border); flex-shrink: 0;"></span>`).join('') : '<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-soft); border: 2px solid var(--border); flex-shrink: 0;"></span>'}
               <div style="min-width: 0;">
                 <div style="font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${spool.filament?.designation || '-'}</div>
                 <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${spool.filament?.manufacturer?.name || '-'} · ${spool.filament?.material_type || '-'}</div>
@@ -422,13 +422,13 @@ const { id } = Astro.params
       const printBtn = document.getElementById('btn-print-label') as HTMLAnchorElement
       if (printBtn) printBtn.href = `/spools/print?ids=${spool.id}&back=${spool.id}`
       
-      document.getElementById('actions-section').classList.remove('hidden')
+      document.getElementById('actions-section')!.classList.remove('hidden')
       
       // Delete Modal Logic
       const deleteModal = document.getElementById('delete-modal')
       const deleteCheckbox = document.getElementById('delete-permanent-checkbox') as HTMLInputElement
       const deleteWarning = document.getElementById('delete-permanent-warning')
-      const deleteConfirmBtn = document.getElementById('btn-delete-confirm')
+      const deleteConfirmBtn = document.getElementById('btn-delete-confirm') as HTMLButtonElement
       
       document.getElementById('btn-duplicate-spool')?.addEventListener('click', () => {
         const dupData = { ...spool }
@@ -444,18 +444,18 @@ const { id } = Astro.params
         deleteCheckbox.checked = false
         deleteWarning?.classList.add('hidden')
         deleteConfirmBtn.textContent = t('spools.archiveSpool')
-        document.getElementById('delete-modal-title').textContent = t('spools.archiveSpool')
+        ;(document.getElementById('delete-modal-title') as HTMLElement).textContent = t('spools.archiveSpool')
       })
       
       deleteCheckbox?.addEventListener('change', () => {
         if (deleteCheckbox.checked) {
           deleteWarning?.classList.remove('hidden')
           deleteConfirmBtn.textContent = t('spools.deleteSpool')
-          document.getElementById('delete-modal-title').textContent = t('spools.deleteSpool')
+          ;(document.getElementById('delete-modal-title') as HTMLElement).textContent = t('spools.deleteSpool')
         } else {
           deleteWarning?.classList.add('hidden')
           deleteConfirmBtn.textContent = t('spools.archiveSpool')
-          document.getElementById('delete-modal-title').textContent = t('spools.archiveSpool')
+          ;(document.getElementById('delete-modal-title') as HTMLElement).textContent = t('spools.archiveSpool')
         }
       })
       
@@ -499,7 +499,7 @@ const { id } = Astro.params
         if (!response.ok) throw new Error('Failed to fetch events')
         
         const data = await response.json()
-        document.getElementById('events-section').classList.remove('hidden')
+        document.getElementById('events-section')?.classList.remove('hidden')
         renderEvents(data.items)
       } catch (error) {
         if (isAbortError(error)) return
@@ -507,8 +507,8 @@ const { id } = Astro.params
       }
     }
     
-    function renderEvents(events) {
-      const tbody = document.getElementById('events-table')
+    function renderEvents(events: any) {
+      const tbody = document.getElementById('events-table') as HTMLElement
       
       if (events.length === 0) {
         tbody.innerHTML = `
@@ -519,7 +519,7 @@ const { id } = Astro.params
         return
       }
       
-      tbody.innerHTML = events.map(e => `
+      tbody.innerHTML = events.map((e: any) => `
         <tr>
           <td style="padding: 12px;">
             <span class="fm-pill" style="${getEventTypeStyle(e.event_type)}">${e.event_type}</span>
@@ -536,7 +536,7 @@ const { id } = Astro.params
       `).join('')
     }
     
-    function getEventTypeStyle(type) {
+    function getEventTypeStyle(type: any) {
       const styles = {
         measurement: 'border-color: var(--accent-2); color: var(--accent-2);',
         adjustment: 'border-color: var(--accent); color: var(--accent);',
@@ -544,7 +544,7 @@ const { id } = Astro.params
         status_change: 'border-color: var(--accent-3); color: var(--accent-3);',
         move_location: 'border-color: var(--accent); color: var(--accent);',
       }
-      return styles[type] || ''
+      return styles[type as keyof typeof styles] || ''
     }
     
     function setupActions() {
@@ -559,7 +559,7 @@ const { id } = Astro.params
           (window as any).__fmAlert(t('rfid.noDeviceOnline'))
           return
         }
-        window.openRfidModal()
+        window.openRfidModal?.()
       })
 
       // Print Label button
@@ -809,11 +809,11 @@ const { id } = Astro.params
       }
     })
     
-    function showModal(type) {
-      const container = document.getElementById('modal-container')
-      const title = document.getElementById('modal-title')
-      const fields = document.getElementById('modal-fields')
-      const error = document.getElementById('modal-error')
+    function showModal(type: any) {
+      const container = document.getElementById('modal-container') as HTMLElement
+      const title = document.getElementById('modal-title') as HTMLElement
+      const fields = document.getElementById('modal-fields') as HTMLElement
+      const error = document.getElementById('modal-error') as HTMLElement
       
       error.classList.add('hidden')
       fields.innerHTML = ''
@@ -824,7 +824,7 @@ const { id } = Astro.params
         status: t('spools.modalChangeStatus'),
         move: t('spools.modalMove'),
       }
-      title.textContent = titles[type]
+      title.textContent = titles[type as keyof typeof titles]
       
       if (type === 'measurement') {
         fields.innerHTML = `
@@ -864,9 +864,9 @@ const { id } = Astro.params
           </div>
         `
         document.getElementById('field-adjustment-type')?.addEventListener('change', (e) => {
-          const val = e.target.value
-          document.getElementById('field-delta-container').classList.toggle('hidden', val !== 'relative')
-          document.getElementById('field-measured-container').classList.toggle('hidden', val === 'relative')
+          const val = (e.target as HTMLSelectElement).value
+          document.getElementById('field-delta-container')?.classList.toggle('hidden', val !== 'relative')
+          document.getElementById('field-measured-container')?.classList.toggle('hidden', val === 'relative')
         })
       } else if (type === 'status') {
         fields.innerHTML = `
@@ -916,45 +916,37 @@ const { id } = Astro.params
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
       
-      const container = document.getElementById('modal-container')
+      const container = document.getElementById('modal-container') as HTMLElement
       const type = container.dataset.type
-      const error = document.getElementById('modal-error')
-      const submitBtn = document.getElementById('modal-submit')
+      const error = document.getElementById('modal-error') as HTMLElement
+      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       
       let url = ''
-      let body = {}
+      const body: Record<string, unknown> = {}
       
       if (type === 'measurement') {
         url = `/api/v1/spools/${id}/measurements`
-        body = {
-          measured_weight_g: parseFloat(document.getElementById('field-weight').value),
-          note: document.getElementById('field-note').value || null,
-        }
+        body.measured_weight_g = parseFloat((document.getElementById('field-weight') as HTMLInputElement).value)
+        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
       } else if (type === 'adjustment') {
         url = `/api/v1/spools/${id}/adjustments`
-        const adjType = document.getElementById('field-adjustment-type').value
-        body = {
-          adjustment_type: adjType,
-          note: document.getElementById('field-note').value || null,
-        }
+        const adjType = (document.getElementById('field-adjustment-type') as HTMLInputElement).value
+        body.adjustment_type = adjType
+        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
         if (adjType === 'relative') {
-          body.delta_weight_g = parseFloat(document.getElementById('field-delta').value) || null
+          body.delta_weight_g = parseFloat((document.getElementById('field-delta') as HTMLInputElement).value) || null
         } else {
-          body.measured_weight_g = parseFloat(document.getElementById('field-measured').value) || null
+          body.measured_weight_g = parseFloat((document.getElementById('field-measured') as HTMLInputElement).value) || null
         }
       } else if (type === 'status') {
         url = `/api/v1/spools/${id}/status`
-        body = {
-          status: document.getElementById('field-status').value,
-          note: document.getElementById('field-note').value || null,
-        }
+        body.status = (document.getElementById('field-status') as HTMLInputElement).value
+        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
       } else if (type === 'move') {
         url = `/api/v1/spools/${id}/move`
-        const locId = document.getElementById('field-location').value
-        body = {
-          location_id: locId ? parseInt(locId) : null,
-          note: document.getElementById('field-note').value || null,
-        }
+        const locId = (document.getElementById('field-location') as HTMLInputElement).value
+        body.location_id = locId ? parseInt(locId) : null
+        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
       }
       
       error.classList.add('hidden')
@@ -982,7 +974,7 @@ const { id } = Astro.params
         loadData()
       } catch (err) {
         if (isAbortError(err)) return
-        error.textContent = err.message
+        error.textContent = (err instanceof Error ? err.message : null) || t('spools.failedSubmit')
         error.classList.remove('hidden')
       } finally {
         submitBtn.disabled = false
@@ -998,10 +990,10 @@ const { id } = Astro.params
         printersList = data.items || data || []
         if (printersList.length === 0) return
 
-        document.getElementById('printer-params-section').classList.remove('hidden')
-        const select = document.getElementById('printer-select')
+        document.getElementById('printer-params-section')!.classList.remove('hidden')
+        const select = document.getElementById('printer-select') as HTMLSelectElement
         select.innerHTML = '<option value="">\u2014</option>' +
-          printersList.map(p => `<option value="${p.id}" data-driver="${p.driver_key || ''}">${p.name}</option>`).join('')
+          printersList.map((p: any) => `<option value="${p.id}" data-driver="${p.driver_key || ''}">${p.name}</option>`).join('')
 
         select.addEventListener('change', async () => {
           const printerId = select.value
@@ -1023,7 +1015,7 @@ const { id } = Astro.params
       }
     }
 
-    async function loadFieldDefinitions(driverKey) {
+    async function loadFieldDefinitions(driverKey: string) {
       if (!driverKey) {
         fieldDefinitions = []
         return
@@ -1039,7 +1031,7 @@ const { id } = Astro.params
       }
     }
 
-    async function loadSpoolPrinterParams(printerId) {
+    async function loadSpoolPrinterParams(printerId: number) {
       try {
         // Fetch spool params and filament params in parallel
         const [spoolRes, filamentRes] = await Promise.all([
@@ -1056,9 +1048,9 @@ const { id } = Astro.params
     }
 
     function renderPrinterParams() {
-      const container = document.getElementById('printer-params-list')
-      const actions = document.getElementById('printer-params-actions')
-      const printerId = document.getElementById('printer-select').value
+      const container = document.getElementById('printer-params-list') as HTMLElement
+      const actions = document.getElementById('printer-params-actions') as HTMLElement
+      const printerId = (document.getElementById('printer-select') as HTMLSelectElement | null)?.value
 
       if (!printerId) {
         container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">' + t('printers.selectPrinterHint') + '</p>'
@@ -1069,10 +1061,10 @@ const { id } = Astro.params
       actions.classList.remove('hidden')
 
       // Build value maps: spool-level (own) and filament-level (inherited)
-      const spoolValuesMap = {}
-      currentPrinterParams.forEach(p => { spoolValuesMap[p.param_key] = p.param_value || '' })
-      const filamentValuesMap = {}
-      filamentPrinterParams.forEach(p => { filamentValuesMap[p.param_key] = p.param_value || '' })
+      const spoolValuesMap: Record<string, string> = {}
+      currentPrinterParams.forEach((p: any) => { spoolValuesMap[p.param_key] = p.param_value || '' })
+      const filamentValuesMap: Record<string, string> = {}
+      filamentPrinterParams.forEach((p: any) => { filamentValuesMap[p.param_key] = p.param_value || '' })
 
       if (fieldDefinitions.length === 0) {
         container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">' + t('printers.noFieldDefinitions') + '</p>'
@@ -1089,7 +1081,7 @@ const { id } = Astro.params
         const inheritedStyle = isInherited ? ' opacity: 0.6; font-style: italic;' : ''
 
         if (fd.field_type === 'dropdown' && fd.options) {
-          const opts = fd.options.map(o => {
+          const opts = fd.options.map((o: any) => {
             const selected = value === o ? ' selected' : ''
             return `<option value="${o}"${selected}>${o}</option>`
           }).join('')
@@ -1130,11 +1122,11 @@ const { id } = Astro.params
     }
 
     document.getElementById('btn-save-params')?.addEventListener('click', async () => {
-      const printerId = document.getElementById('printer-select').value
+      const printerId = (document.getElementById('printer-select') as HTMLSelectElement | null)?.value
       if (!printerId) return
 
-      const params = []
-      document.querySelectorAll('#printer-params-list .param-value').forEach(el => {
+      const params: any[] = []
+      document.querySelectorAll<HTMLInputElement>('#printer-params-list .param-value').forEach(el => {
         const key = el.dataset.key
         let value = null
         if (el.type === 'checkbox') {
@@ -1199,7 +1191,7 @@ const { id } = Astro.params
         if (printers.length === 0) return
 
         const healthResults = await Promise.allSettled(
-          printers.map(p =>
+          printers.map((p: any) =>
             fetch(`/api/v1/printers/${p.id}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
               .then(r => r.ok ? r.json() : null)
               .then(h => h ? { printer: p, health: h } : null)
@@ -1207,11 +1199,11 @@ const { id } = Astro.params
         )
 
         const onlinePrinters = healthResults
-          .filter(r => r.status === 'fulfilled' && r.value && r.value.health.connected)
+          .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled' && r.value != null && r.value.health?.connected)
           .map(r => r.value)
 
         // Fetch DB slot assignments for all online printers
-        const dbSlotsByPrinter = {}
+        const dbSlotsByPrinter: Record<string, any> = {}
         await Promise.allSettled(
           onlinePrinters.map(async ({ printer }) => {
             try {
@@ -1236,7 +1228,7 @@ const { id } = Astro.params
 
           // Merge DB slot assignments into health slots
           const dbSlots = dbSlotsByPrinter[printer.id] || []
-          const dbSlotAssignments = {}
+          const dbSlotAssignments: Record<string, any> = {}
           for (const s of dbSlots) {
             if (s.assignment) {
               const si = `${Math.floor(s.slot_no / 4)}-${s.slot_no % 4}`
@@ -1248,7 +1240,7 @@ const { id } = Astro.params
           }
 
           // Group slots by AMS ID
-          const amsGroups = {}
+          const amsGroups: Record<string, any[]> = {}
           const externalSlots = []
           for (const slot of slots) {
             const idx = slot.slot_index || ''
@@ -1296,11 +1288,11 @@ const { id } = Astro.params
         container.innerHTML = html
 
         // Attach click handlers to slot dots
-        container.querySelectorAll('.slot-dot[data-slot]').forEach(dot => {
+        container.querySelectorAll<HTMLElement>('.slot-dot[data-slot]').forEach(dot => {
           dot.addEventListener('click', (e) => {
             e.stopPropagation()
-            const slotData = JSON.parse(dot.dataset.slot)
-            const pId = parseInt(dot.dataset.printerId)
+            const slotData = JSON.parse(dot.dataset.slot!)
+            const pId = parseInt(dot.dataset.printerId!)
             showSlotContextMenu(dot, slotData, pId)
           })
         })
@@ -1312,7 +1304,7 @@ const { id } = Astro.params
 
     // -- Slot rendering helpers -----------------------------------------------
 
-    function renderSlotTooltip(slot) {
+    function renderSlotTooltip(slot: any) {
       if (slot._assignment) {
         const a = slot._assignment
         const parts = []
@@ -1324,7 +1316,7 @@ const { id } = Astro.params
       return slot.tray_type || 'Empty'
     }
 
-    function renderSlotDot(slot, printerId) {
+    function renderSlotDot(slot: any, printerId: any) {
       let colorHex = slot.tray_color || ''
       if (colorHex && !colorHex.startsWith('#')) colorHex = '#' + colorHex
       if (colorHex.length === 9) colorHex = colorHex.slice(0, 7)
@@ -1341,7 +1333,7 @@ const { id } = Astro.params
 
     // -- Slot context menu ---------------------------------------------------
 
-    let activeSlotMenu = null
+    let activeSlotMenu: Element | null = null
 
     function closeSlotMenu() {
       if (activeSlotMenu) {
@@ -1353,7 +1345,7 @@ const { id } = Astro.params
     document.addEventListener('click', closeSlotMenu)
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSlotMenu() })
 
-    function showSlotContextMenu(dotEl, slot, printerId) {
+    function showSlotContextMenu(dotEl: any, slot: any, printerId: any) {
       closeSlotMenu()
 
       const menu = document.createElement('div')
@@ -1367,7 +1359,7 @@ const { id } = Astro.params
 
       // Make slot_name user-friendly: AMS 0 → AMS 1
       let slotLabel = slot.slot_name || slot.slot_index
-      slotLabel = slotLabel.replace(/AMS (\d+)/, (_, n) => `AMS ${parseInt(n) + 1}`)
+      slotLabel = slotLabel.replace(/AMS (\d+)/, (_: string, n: string) => `AMS ${parseInt(n) + 1}`)
       const iconFilter = document.documentElement.dataset.theme === 'light' ? 'none' : 'invert(1)'
       menu.innerHTML = `
         <div style="padding:6px 12px;font-weight:600;font-size:0.75rem;color:var(--text-muted);border-bottom:1px solid var(--border);">${slotLabel}</div>
@@ -1377,23 +1369,23 @@ const { id } = Astro.params
       `
 
       // Hover effect
-      menu.querySelectorAll('.ctx-item').forEach(btn => {
+      menu.querySelectorAll<HTMLElement>('.ctx-item').forEach(btn => {
         btn.addEventListener('mouseenter', () => btn.style.background = 'var(--bg-hover, rgba(128,128,128,0.1))')
         btn.addEventListener('mouseleave', () => btn.style.background = 'none')
       })
 
       // Action handlers
-      menu.querySelector('[data-action="assign"]').addEventListener('click', (e) => {
+      menu.querySelector('[data-action="assign"]')?.addEventListener('click', (e) => {
         e.stopPropagation()
         closeSlotMenu()
         handleAssignSpoolToTray(slot, printerId)
       })
-      menu.querySelector('[data-action="import-spool"]').addEventListener('click', (e) => {
+      menu.querySelector('[data-action="import-spool"]')?.addEventListener('click', (e) => {
         e.stopPropagation()
         closeSlotMenu()
         handleImportTrayToSpool(slot, printerId)
       })
-      menu.querySelector('[data-action="import-both"]').addEventListener('click', (e) => {
+      menu.querySelector('[data-action="import-both"]')?.addEventListener('click', (e) => {
         e.stopPropagation()
         closeSlotMenu()
         handleImportTrayToSpoolAndFilament(slot, printerId)
@@ -1486,7 +1478,7 @@ const { id } = Astro.params
       pendingSlotPollTimer = setTimeout(poll, 3000)
     }
 
-    async function handleAssignSpoolToTray(slot, printerId) {
+    async function handleAssignSpoolToTray(slot: any, printerId: any) {
       if (!spool) return
       const idx = slot.slot_index || ''
       const parts = idx.split('-')
@@ -1505,7 +1497,7 @@ const { id } = Astro.params
       }
 
       // Gather filament data from spool's printer params or spool/filament defaults
-      let filamentData = {}
+      let filamentData: Record<string, unknown> = {}
       try {
         const [spoolParamsRes, filamentParamsRes] = await Promise.all([
           fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() }),
@@ -1515,9 +1507,9 @@ const { id } = Astro.params
         const filamentParams = filamentParamsRes.ok ? await filamentParamsRes.json() : []
 
         // Build merged value map (spool overrides filament)
-        const valMap = {}
-        filamentParams.forEach(p => { if (p.param_value) valMap[p.param_key] = p.param_value })
-        spoolParams.forEach(p => { if (p.param_value) valMap[p.param_key] = p.param_value })
+        const valMap: Record<string, string> = {}
+        filamentParams.forEach((p: any) => { if (p.param_value) valMap[p.param_key] = p.param_value })
+        spoolParams.forEach((p: any) => { if (p.param_value) valMap[p.param_key] = p.param_value })
 
         filamentData = {
           tray_info_idx: valMap['bambu_tray_idx'] || 'GFL99',
@@ -1551,7 +1543,7 @@ const { id } = Astro.params
         })
         if (res.ok) {
           // Track expected color for polling comparison
-          const expectedColor = (filamentData.color || 'FFFFFF').slice(0, 6)
+          const expectedColor = ((filamentData.color as string) || 'FFFFFF').slice(0, 6)
           pendingSlotAssign = { slotIndex, printerId, expectedColor }
           // Absolute timeout fallback (15s)
           pendingSlotTimeout = setTimeout(() => {
@@ -1574,7 +1566,7 @@ const { id } = Astro.params
       }
     }
 
-    async function saveTrayParamsToEntity(slot, printerId, entityType) {
+    async function saveTrayParamsToEntity(slot: any, printerId: any, entityType: any) {
       // Map tray data to bambu param keys
       const params = []
       if (slot.tray_info_idx) params.push({ param_key: 'bambu_tray_idx', param_value: String(slot.tray_info_idx) })
@@ -1609,26 +1601,26 @@ const { id } = Astro.params
       }
     }
 
-    async function handleImportTrayToSpool(slot, printerId) {
+    async function handleImportTrayToSpool(slot: any, printerId: any) {
       const ok = await saveTrayParamsToEntity(slot, printerId, 'spool')
       if (ok) {
         window.__fmSuccess?.(t('spools.slotImportSpoolSuccess'))
         // Refresh printer params display if same printer is selected
-        const sel = document.getElementById('printer-select')
+        const sel = document.getElementById('printer-select') as HTMLSelectElement | null
         if (sel && parseInt(sel.value) === printerId) loadSpoolPrinterParams(printerId)
       } else {
         window.__fmAlert?.(t('spools.slotImportError'))
       }
     }
 
-    async function handleImportTrayToSpoolAndFilament(slot, printerId) {
+    async function handleImportTrayToSpoolAndFilament(slot: any, printerId: any) {
       const [spoolOk, filamentOk] = await Promise.all([
         saveTrayParamsToEntity(slot, printerId, 'spool'),
         saveTrayParamsToEntity(slot, printerId, 'filament'),
       ])
       if (spoolOk && filamentOk) {
         window.__fmSuccess?.(t('spools.slotImportBothSuccess'))
-        const sel = document.getElementById('printer-select')
+        const sel = document.getElementById('printer-select') as HTMLSelectElement | null
         if (sel && parseInt(sel.value) === printerId) loadSpoolPrinterParams(printerId)
       } else {
         window.__fmAlert?.(t('spools.slotImportError'))
@@ -1649,6 +1641,14 @@ const { id } = Astro.params
         // If pending but wrong printer_id → ignore, let polling handle it
       }
     })
+
+    declare global {
+      interface Window {
+        __fmAlert?: (msg: string) => void
+        __fmSuccess?: (msg: string) => void
+        openRfidModal?: () => void
+      }
+    }
 
     loadData()
   </script>
