@@ -11,7 +11,6 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
 from app.api.v1.schemas import PaginatedResponse
-from app.core.config import settings
 from app.models import (
     Location,
     Printer,
@@ -73,9 +72,8 @@ async def _proxy_to_primary(
     path: str,
     json_body: dict[str, Any] | None = None,
 ) -> Any:
-    with contextlib.suppress(Exception):
-        hop = int(request.headers.get(_PRIMARY_PROXY_HEADER, "0"))
-    hop = int(request.headers.get(_PRIMARY_PROXY_HEADER, "0")) if request.headers.get(_PRIMARY_PROXY_HEADER, "0").isdigit() else 0
+    hop_header = request.headers.get(_PRIMARY_PROXY_HEADER, "0")
+    hop = int(hop_header) if hop_header.isdigit() else 0
     if hop >= _PRIMARY_PROXY_MAX_HOPS:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -85,7 +83,13 @@ async def _proxy_to_primary(
             },
         )
 
-    url = f"http://127.0.0.1:{settings.port}{path}"
+    target = request.url.replace(
+        path=path,
+        query=request.url.query,
+    )
+    # Route through same service endpoint and rely on retry loop to
+    # eventually hit the primary worker.
+    url = str(target)
     headers = _forward_headers(request, hop)
 
     async with httpx.AsyncClient(timeout=10.0) as client:
