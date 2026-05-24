@@ -161,6 +161,7 @@ class SlotAssignmentResponse(BaseModel):
     nozzle_temp_max: int | None = None
     setting_id: str | None = None
     cali_idx: int | None = None
+    meta: dict | None = None
 
     class Config:
         from_attributes = True
@@ -334,6 +335,7 @@ async def get_printer(
                 nozzle_temp_max=nozzle_temp_max,
                 setting_id=setting_id,
                 cali_idx=cali_idx,
+                meta=meta,
             )
         slot_responses.append(
             SlotResponse(
@@ -458,10 +460,86 @@ async def list_slots(
     result = await db.execute(
         select(PrinterSlot)
         .where(PrinterSlot.printer_id == printer_id)
-        .options(selectinload(PrinterSlot.assignment))
+        .options(
+            selectinload(PrinterSlot.assignment)
+            .selectinload(PrinterSlotAssignment.spool)
+            .selectinload(Spool.filament)
+            .selectinload(Filament.manufacturer),
+            selectinload(PrinterSlot.assignment)
+            .selectinload(PrinterSlotAssignment.spool)
+            .selectinload(Spool.filament)
+            .selectinload(Filament.filament_colors)
+            .selectinload(FilamentColor.color),
+        )
         .order_by(PrinterSlot.slot_no)
     )
-    return result.scalars().all()
+
+    slots = result.scalars().all()
+    slot_responses: list[SlotResponse] = []
+
+    for slot in slots:
+        assignment_data = None
+        if slot.assignment:
+            a = slot.assignment
+            spool = a.spool
+            spool_name = None
+            filament_name = None
+            manufacturer_name = None
+            material_type = None
+            color_hex = None
+            color_name = None
+            if spool:
+                filament = spool.filament
+                spool_name = f"#{spool.id}"
+                if filament:
+                    filament_name = filament.designation
+                    material_type = filament.material_type
+                    if filament.manufacturer:
+                        manufacturer_name = filament.manufacturer.name
+                        spool_name = (
+                            f"{filament.manufacturer.name} {filament.designation}"
+                        )
+                    else:
+                        spool_name = filament.designation
+                    if filament.filament_colors:
+                        first_color = filament.filament_colors[0].color
+                        if first_color:
+                            color_hex = first_color.hex_code
+                            color_name = first_color.name
+
+            meta = a.meta or {}
+            assignment_data = SlotAssignmentResponse(
+                present=a.present,
+                spool_id=a.spool_id,
+                spool_name=spool_name,
+                filament_name=filament_name,
+                manufacturer_name=manufacturer_name,
+                material_type=material_type,
+                color_hex=color_hex,
+                color_name=color_name,
+                tray_color=meta.get("tray_color"),
+                tray_type=meta.get("tray_type"),
+                tray_info_idx=meta.get("tray_info_idx"),
+                nozzle_temp_min=meta.get("nozzle_temp_min"),
+                nozzle_temp_max=meta.get("nozzle_temp_max"),
+                setting_id=meta.get("setting_id"),
+                cali_idx=meta.get("cali_idx"),
+                meta=meta,
+            )
+
+        slot_responses.append(
+            SlotResponse(
+                id=slot.id,
+                printer_id=slot.printer_id,
+                slot_no=slot.slot_no,
+                name=slot.name,
+                is_active=slot.is_active,
+                custom_fields=slot.custom_fields,
+                assignment=assignment_data,
+            )
+        )
+
+    return slot_responses
 
 
 class DriverActionRequest(BaseModel):
