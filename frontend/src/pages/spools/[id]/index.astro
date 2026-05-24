@@ -1267,10 +1267,17 @@ const { id } = Astro.params
             }
           }
 
-          // Group slots by AMS ID
+          // Group slots by kind
+          const toolSlots: any[] = []
           const amsGroups: Record<string, any[]> = {}
-          const externalSlots = []
+          const externalSlots: any[] = []
           for (const slot of slots) {
+            const kind = String(slot.slot_kind || '').toLowerCase()
+            if (kind === 'toolhead' || kind === 'tool') {
+              toolSlots.push(slot)
+              continue
+            }
+
             const idx = slot.slot_index || ''
             const parts = idx.split('-')
             const amsId = parseInt(parts[0])
@@ -1291,10 +1298,18 @@ const { id } = Astro.params
             `<div style="font-size:0.65rem;color:var(--text-muted);">${slots.length} Slots</div>` +
             `</div>`
 
+          // Toolheads
+          if (toolSlots.length > 0) {
+            html += `<div style="display:flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--border);border-radius:6px;">` +
+              `<span style="font-size:0.6rem;color:var(--text-muted);">${t('spools.slotGroupTools')}</span>`
+            for (const slot of toolSlots) html += renderSlotDot(slot, printer.id)
+            html += `</div>`
+          }
+
           // External tray
           if (externalSlots.length > 0) {
             html += `<div style="display:flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--border);border-radius:6px;">` +
-              `<span style="font-size:0.6rem;color:var(--text-muted);">Ext</span>`
+              `<span style="font-size:0.6rem;color:var(--text-muted);">${t('spools.slotGroupExternal')}</span>`
             for (const slot of externalSlots) html += renderSlotDot(slot, printer.id)
             html += `</div>`
           }
@@ -1302,7 +1317,8 @@ const { id } = Astro.params
           // AMS groups
           const sortedAmsIds = Object.keys(amsGroups).map(Number).sort((a, b) => a - b)
           for (const amsId of sortedAmsIds) {
-            const amsLabel = sortedAmsIds.length > 1 ? `AMS ${amsId + 1}` : 'AMS'
+            const baseLabel = t('spools.slotGroupTrays')
+            const amsLabel = sortedAmsIds.length > 1 ? `${baseLabel} ${amsId + 1}` : baseLabel
             html += `<div style="display:flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--border);border-radius:6px;">` +
               `<span style="font-size:0.6rem;color:var(--text-muted);">${amsLabel}</span>`
             for (const slot of amsGroups[amsId]) html += renderSlotDot(slot, printer.id)
