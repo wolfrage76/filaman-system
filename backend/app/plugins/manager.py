@@ -5,6 +5,7 @@ import logging
 import shutil
 import sys
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from sqlalchemy import select, update
@@ -16,7 +17,7 @@ from app.core.database import async_session_maker
 from app.core.shared_health import shared_health_store
 from app.models import Printer
 from app.models.plugin import InstalledPlugin
-from app.models.filament import Filament
+from app.models.filament import Filament, FilamentColor
 from app.models.spool import Spool
 from app.models.printer import PrinterSlot, PrinterSlotAssignment
 from app.models.system_extra_field import SystemExtraField
@@ -115,9 +116,24 @@ class PluginManager:
     ) -> None:
         """Upsert PrinterSlot and PrinterSlotAssignment from driver slot events."""
         try:
+            active_spool_id_raw = None
+            if isinstance(ams_info, dict):
+                active_spool_id_raw = ams_info.get("active_spool_id")
+
+            active_spool_id: int | None = None
+            if active_spool_id_raw is not None:
+                try:
+                    parsed_active = int(active_spool_id_raw)
+                    if parsed_active > 0:
+                        active_spool_id = parsed_active
+                except Exception:
+                    active_spool_id = None
+
             async with async_session_maker() as db:
                 # Upsert slots if any
                 if slots_data:
+                    active_slot: PrinterSlot | None = None
+
                     for slot_data in slots_data:
                         slot_index = slot_data.get("slot_index", "")
                         slot_no = self._slot_index_to_no(slot_index)
@@ -188,6 +204,50 @@ class PluginManager:
                                 meta=meta,
                             )
                             db.add(assignment)
+
+                        if slot_index == "0-0":
+                            active_slot = printer_slot
+
+                    if active_slot and active_slot.assignment:
+                        active_slot.assignment.spool_id = active_spool_id
+                        active_slot.assignment.updated_at = datetime.now(timezone.utc)
+                        active_meta = dict(active_slot.assignment.meta or {})
+                        active_meta["active_spool_id"] = active_spool_id
+                        active_slot.assignment.meta = active_meta
+
+                        if active_spool_id is not None:
+                            spool_res = await db.execute(
+                                select(Spool)
+                                .options(
+                                    selectinload(Spool.filament).selectinload(
+                                        Filament.manufacturer
+                                    ),
+                                    selectinload(Spool.filament)
+                                    .selectinload(Filament.filament_colors)
+                                    .selectinload(FilamentColor.color),
+                                )
+                                .where(Spool.id == active_spool_id)
+                            )
+                            active_spool = spool_res.scalar_one_or_none()
+
+                            if active_spool is not None:
+                                active_slot.assignment.spool = active_spool
+                                active_slot.assignment.present = True
+
+                                filament = active_spool.filament
+                                if filament is not None:
+                                    if filament.material_type:
+                                        active_meta["tray_type"] = filament.material_type
+
+                                    if filament.filament_colors:
+                                        first_color = filament.filament_colors[0].color
+                                        if first_color and first_color.hex_code:
+                                            active_meta["tray_color"] = (
+                                                first_color.hex_code.replace("#", "")[:6]
+                                            )
+
+                                active_slot.assignment.meta = active_meta
+
                     await db.commit()
                     logger.info(
                         f"Updated {len(slots_data)} slots for printer {printer_id}"
@@ -201,6 +261,11 @@ class PluginManager:
                 if ams_info:
                     printer = await db.get(Printer, printer_id)
                     if printer:
+                        if active_spool_id_raw is not None and isinstance(ams_info, dict):
+                            ams_info = {
+                                **ams_info,
+                                "active_spool_id": active_spool_id,
+                            }
                         printer.custom_fields = {
                             **(printer.custom_fields or {}),
                             "slot_summary": ams_info,
@@ -774,7 +839,7 @@ class PluginManager:
         # From spoolman_extra (lower priority)
         for k, v in spoolman_extra.items():
             if k.startswith("bambu_") and k not in keep_keys and v:
-                mapped_key = rename_keys.get(k, k)
+                mapped_key = str(rename_keys.get(k, k))
                 params[mapped_key] = str(v)
         # From top-level (higher priority, overwrites spoolman_extra)
         for k, v in cf.items():
@@ -784,7 +849,7 @@ class PluginManager:
                 and k != "spoolman_extra"
                 and v
             ):
-                mapped_key = rename_keys.get(k, k)
+                mapped_key = str(rename_keys.get(k, k))
                 params[mapped_key] = str(v)
 
         # Migrate settings_bed_temp -> bambu_bed_temp (low priority, bambu_* wins)
