@@ -172,6 +172,7 @@ class SlotResponse(BaseModel):
     slot_no: int
     name: str | None
     is_active: bool
+    custom_fields: dict | None = None
     assignment: SlotAssignmentResponse | None = None
 
     class Config:
@@ -341,6 +342,7 @@ async def get_printer(
                 slot_no=slot.slot_no,
                 name=slot.name,
                 is_active=slot.is_active,
+                custom_fields=slot.custom_fields,
                 assignment=assignment_data,
             )
         )

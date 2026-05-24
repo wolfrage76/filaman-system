@@ -1244,9 +1244,11 @@ const { id } = Astro.params
           const dbSlots = dbSlotsByPrinter[printer.id] || []
           const dbSlotAssignments: Record<string, any> = {}
           for (const s of dbSlots) {
+            const slotIndexFromDb = s?.custom_fields?.slot_index
+            const legacySlotIndex = `${Math.floor(s.slot_no / 4)}-${s.slot_no % 4}`
+            const resolvedSlotIndex = slotIndexFromDb || legacySlotIndex
             if (s.assignment) {
-              const si = `${Math.floor(s.slot_no / 4)}-${s.slot_no % 4}`
-              dbSlotAssignments[si] = s.assignment
+              dbSlotAssignments[resolvedSlotIndex] = s.assignment
             }
           }
           for (const slot of slots) {
