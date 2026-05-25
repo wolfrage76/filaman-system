@@ -421,21 +421,27 @@ const { id } = Astro.params
       
       const printUrl = `/spools/${spool.id}/print?designation=${encodeURIComponent(spool.filament?.designation || '')}&mfr=${encodeURIComponent(spool.filament?.manufacturer?.name || '')}&type=${encodeURIComponent(spool.filament?.material_type || '')}&subtype=${encodeURIComponent(spool.filament?.material_subgroup || '')}&color=${encodeURIComponent(spool.filament?.manufacturer_color_name || spool.filament?.colors?.[0]?.color?.name || '')}&mfr_id=${encodeURIComponent(spool.filament?.manufacturer?.id || '')}&hex_code=${encodeURIComponent(spool.filament?.colors?.[0]?.color?.hex_code || '')}&extruder_temp=${encodeURIComponent(spool.filament?.settings_extruder_temp ?? '')}&bed_temp=${encodeURIComponent(spool.filament?.settings_bed_temp ?? '')}&weight=${encodeURIComponent(spool.filament?.weight ?? '')}&diameter=${encodeURIComponent(spool.filament?.diameter_mm ?? '')}&finish=${encodeURIComponent(spool.filament?.finish_type || '')}&density=${encodeURIComponent(spool.filament?.density_g_cm3 ?? '')}&price=${encodeURIComponent(spool.filament?.price ?? '')}`
 
-      // Store extra fields for label printing (spool + filament)
+      // Store extra fields for label printing (spool + filament).
+      // Iterate ALL system-defined fields so they appear in the designer even when
+      // the spool hasn't had a value set for a field yet.
       const efForPrint: {key: string, label: string, value: string, source: string}[] = []
-      if (spool.custom_fields) {
-        const flat = flattenObject(spool.custom_fields)
-        for (const [key, value] of Object.entries(flat)) {
-          const sysDef = spoolSystemFieldMap[key]
-          efForPrint.push({ key: `spool.${key}`, label: sysDef ? sysDef.label : key, value: String(value), source: 'spool' })
-        }
+      const spoolFlat = spool.custom_fields ? flattenObject(spool.custom_fields) : {}
+      for (const [key, def] of Object.entries(spoolSystemFieldMap)) {
+        const raw = spoolFlat[key]
+        efForPrint.push({ key: `spool.${key}`, label: def.label, value: raw !== undefined && raw !== null ? String(raw) : '', source: 'spool' })
       }
-      if (spool.filament?.custom_fields) {
-        const flat = flattenObject(spool.filament.custom_fields)
-        for (const [key, value] of Object.entries(flat)) {
-          const sysDef = filamentSystemFieldMap[key]
-          efForPrint.push({ key: `filament.${key}`, label: sysDef ? sysDef.label : key, value: String(value), source: 'filament' })
-        }
+      // Also include any spool custom fields not covered by system definitions
+      for (const [key, value] of Object.entries(spoolFlat)) {
+        if (!spoolSystemFieldMap[key]) efForPrint.push({ key: `spool.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
+      }
+      const filamentFlat = spool.filament?.custom_fields ? flattenObject(spool.filament.custom_fields) : {}
+      for (const [key, def] of Object.entries(filamentSystemFieldMap)) {
+        const raw = filamentFlat[key]
+        efForPrint.push({ key: `filament.${key}`, label: def.label, value: raw !== undefined && raw !== null ? String(raw) : '', source: 'filament' })
+      }
+      // Also include any filament custom fields not covered by system definitions
+      for (const [key, value] of Object.entries(filamentFlat)) {
+        if (!filamentSystemFieldMap[key]) efForPrint.push({ key: `filament.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'filament' })
       }
       sessionStorage.setItem('filaman-label-extra-fields', JSON.stringify(efForPrint))
 
@@ -617,7 +623,7 @@ const { id } = Astro.params
 
       const url = window.location.origin + '/spools/' + spool.id
       
-      // @ts-ignore
+      // @ts-expect-error -- qrcodejs has no TypeScript types
       new QRCode(qrContainer, {
         text: url,
         width: 84, // approx 22mm at 96dpi

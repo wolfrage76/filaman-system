@@ -2448,6 +2448,10 @@ const { id } = Astro.params
   function buildTokenArea(areaId: string, targetId: string) {
     const area = document.getElementById(areaId)
     if (!area) return
+    // Clear before rebuilding so the function is idempotent.
+    // Toggle open/closed state is persisted in localStorage and restored below,
+    // so state is preserved across rebuilds.
+    area.innerHTML = ''
 
     function insertTok(tok: string) {
       const el = document.getElementById(targetId) as HTMLInputElement | HTMLTextAreaElement
@@ -3815,4 +3819,93 @@ const { id } = Astro.params
     if (activeTab === 'designer') activateTab('designer')
     else activateTab('print')
   })
+
+  // Fallback: if no extra fields came from sessionStorage (e.g. direct navigation),
+  // fetch definitions from the API and rebuild the extra-fields UI.
+  if (extraFields.length === 0) {
+    ;(async () => {
+      try {
+        const [spoolDefs, filamentDefs] = await Promise.all([
+          fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+          fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+        ])
+        const allDefs: {key: string, label: string, target_type: string}[] = [
+          ...(Array.isArray(spoolDefs) ? spoolDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'spool'})),
+          ...(Array.isArray(filamentDefs) ? filamentDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'filament'})),
+        ]
+        if (allDefs.length === 0) return
+
+        // Attempt to get actual spool values
+        const spoolCustom: Record<string, string> = {}
+        const filamentCustom: Record<string, string> = {}
+        const spoolRes = await fetch(`/api/v1/spools/${id}`, { credentials: 'include' })
+        if (spoolRes.ok) {
+          const sd = await spoolRes.json()
+          if (sd.custom_fields) {
+            for (const [k, v] of Object.entries(sd.custom_fields as Record<string, unknown>)) {
+              if (v !== null && v !== undefined) spoolCustom[k] = String(v)
+            }
+          }
+          if (sd.filament?.custom_fields) {
+            for (const [k, v] of Object.entries(sd.filament.custom_fields as Record<string, unknown>)) {
+              if (v !== null && v !== undefined) filamentCustom[k] = String(v)
+            }
+          }
+        }
+
+        // Populate extraFields and rebuild UI
+        const hasBothSources = allDefs.some(d => d.target_type === 'spool') && allDefs.some(d => d.target_type === 'filament')
+        const scopeAttr = (() => {
+          const existing = document.querySelector('.fm-checkbox-group')
+          if (!existing) return null
+          return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
+        })()
+
+        for (const def of allDefs) {
+          const valueMap = def.target_type === 'spool' ? spoolCustom : filamentCustom
+          const ef = {
+            key: `${def.target_type}.${def.key}`,
+            label: def.label,
+            value: valueMap[def.key] ?? '',
+            source: def.target_type,
+          }
+          extraFields.push(ef)
+
+          const lbl = document.createElement('label')
+          lbl.className = 'fm-checkbox-group'
+          const cb = document.createElement('input')
+          cb.type = 'checkbox'
+          cb.id = `check-ef-${ef.key}`
+          cb.checked = savedExtraFieldSettings[ef.key] || false
+          const span = document.createElement('span')
+          span.textContent = hasBothSources
+            ? `${ef.label} (${def.target_type === 'spool' ? ((window as any).__t('dashboard.spool') || 'Spool') : ((window as any).__t('spools.filament') || 'Filament')})`
+            : ef.label
+          if (scopeAttr) {
+            lbl.setAttribute(scopeAttr.name, '')
+            cb.setAttribute(scopeAttr.name, '')
+            span.setAttribute(scopeAttr.name, '')
+          }
+          lbl.appendChild(cb)
+          lbl.appendChild(span)
+          extraFieldsCheckboxes.appendChild(lbl)
+          extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
+          cb.addEventListener('change', updatePreview)
+        }
+
+        // Show the print-settings extra-fields section
+        extraFieldsTitle.style.display = ''
+        extraFieldsCheckboxes.style.display = ''
+        document.getElementById('title-extra-fields')!.textContent = (window as any).__t('spools.extraFieldsLabel') || 'Extra Fields'
+
+        // Rebuild token areas in the designer so extra-field chips appear
+        buildTokenArea('ds-title-token-area',  'ds-title-tpl')
+        buildTokenArea('ds-title2-token-area', 'ds-title2-tpl')
+        buildTokenArea('ds-info-token-area',   'ds-info-tpl')
+        buildTokenArea('ds-info2-token-area',  'ds-info2-tpl')
+
+        updatePreview()
+      } catch { /* ignore */ }
+    })()
+  }
 </script>
