@@ -1743,7 +1743,7 @@ const { id } = Astro.params
   ;(window as any).filamanPrint = function() {
     try {
       // Try execCommand first (better Safari support)
-      document.execCommand('print', false, null)
+      document.execCommand('print', false, undefined)
     } catch (e) {
       // Fallback to window.print
       window.print()
@@ -2839,14 +2839,19 @@ const { id } = Astro.params
       const defaultPreset: LabelPreset = {
         name: 'Default',
         settings: {
-          label: { width: 50, height: 30, border: true },
+          logo:  { show: true, spaceMm: 6, scaleToFit: true, manualSizeMm: 6, align: 'left' },
+          label: { width: 50, height: 30, marginMm: 1, border: true },
           title: {
             show: true,
             sizeMm: 6,
+            marginMm: 0,
             fitToWidth: true,
             align: 'left',
             template: '**{filament.material} {filament.color}**  {filament.color_hex}',
+            dividerAbove: false,
+            dividerBelow: false,
           },
+          title2: { show: false, sizeMm: 3.5, marginMm: 0, fitToWidth: true, align: 'left', template: '', dividerAbove: false, dividerBelow: false },
           qr: {
             show: true,
             mode: 'colorLogo',
@@ -2863,6 +2868,7 @@ const { id } = Astro.params
             vAlign: 'top',
             template: 'Spool ID: #{id}\nSpool Weight: {filament.weight} g\nET: {filament.extruder_temp} °C\nBT: {filament.bed_temp} °C',
           },
+          info2: { show: false, vsep: false, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom', template: '' },
         },
       }
       savePresets([defaultPreset, ...presets])
@@ -2989,8 +2995,8 @@ const { id } = Astro.params
   }
 
   // Build extra field checkboxes dynamically
-  const extraFieldsTitle = document.getElementById('title-extra-fields')
-  const extraFieldsCheckboxes = document.getElementById('extra-fields-checkboxes')
+  const extraFieldsTitle = document.getElementById('title-extra-fields')!
+  const extraFieldsCheckboxes = document.getElementById('extra-fields-checkboxes')!
   const extraFieldChecks: {key: string, label: string, value: string, checkbox: HTMLInputElement}[] = []
 
   let savedExtraFieldSettings: Record<string, boolean> = {}
@@ -3029,7 +3035,7 @@ const { id } = Astro.params
       lbl.appendChild(span)
       extraFieldsCheckboxes.appendChild(lbl)
       extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
-      cb.addEventListener('change', updatePreview)
+      cb.addEventListener('change', () => updatePreview())
     }
   }
 
@@ -3076,97 +3082,97 @@ const { id } = Astro.params
 
   loadSettings()
 
-  document.getElementById('tab-btn-print').textContent = (window as any).__t('spools.printSettings') || 'Print Settings'
-  document.getElementById('tab-btn-designer').textContent = (window as any).__t('spools.labelDesigner') || 'Label Designer'
-  document.getElementById('title-settings').textContent = (window as any).__t('spools.printSettings')
+  document.getElementById('tab-btn-print')!.textContent = (window as any).__t('spools.printSettings') || 'Print Settings'
+  document.getElementById('tab-btn-designer')!.textContent = (window as any).__t('spools.labelDesigner') || 'Label Designer'
+  document.getElementById('title-settings')!.textContent = (window as any).__t('spools.printSettings')
 
   // Designer section headers + labels
   const t = (key: string, fallback: string) => (window as any).__t(key) || fallback
-  document.getElementById('dsh-presets-text').textContent = t('spools.dsPresets', 'Presets')
-  document.getElementById('dsl-preset-saved').textContent = t('spools.dsPresetsSaved', 'Saved presets')
-  document.getElementById('ds-preset-load-btn').textContent = t('spools.dsPresetsLoad', 'Load')
-  document.getElementById('ds-preset-delete-btn').title = t('spools.dsPresetsDelete', 'Delete selected preset')
-  document.getElementById('dsl-preset-name').textContent = t('spools.dsPresetsName', 'Preset name')
-  document.getElementById('dsl-logo-label').textContent = t('spools.dsLogo', 'Logo')
-  document.getElementById('dsl-logo-space').textContent = t('spools.dsLogoSpace', 'Space height (mm)')
-  document.getElementById('dsl-logo-manual').textContent = t('spools.dsLogoManual', 'Max logo height (mm)')
-  document.getElementById('dsl-logo-fit').textContent = t('spools.dsLogoFit', 'Scale to fit bounds')
-  document.getElementById('dsl-logo-align').textContent = t('spools.dsJustification', 'Justification')
-  document.getElementById('dsl-label-label').textContent = t('spools.dsLabel', 'Label')
-  document.getElementById('dsl-width').textContent = t('spools.labelWidth', 'Width (mm)')
-  document.getElementById('dsl-height').textContent = t('spools.labelHeight', 'Height (mm)')
-  document.getElementById('dsl-margin').textContent = t('spools.dsMargin', 'Margin (mm)')
-  document.getElementById('dsl-border').textContent = t('spools.dsBorder', 'Print Border')
-  document.getElementById('dsl-title-label').textContent = t('spools.dsTitle', 'Title')
+  document.getElementById('dsh-presets-text')!.textContent = t('spools.dsPresets', 'Presets')
+  document.getElementById('dsl-preset-saved')!.textContent = t('spools.dsPresetsSaved', 'Saved presets')
+  document.getElementById('ds-preset-load-btn')!.textContent = t('spools.dsPresetsLoad', 'Load')
+  document.getElementById('ds-preset-delete-btn')!.title = t('spools.dsPresetsDelete', 'Delete selected preset')
+  document.getElementById('dsl-preset-name')!.textContent = t('spools.dsPresetsName', 'Preset name')
+  document.getElementById('dsl-logo-label')!.textContent = t('spools.dsLogo', 'Logo')
+  document.getElementById('dsl-logo-space')!.textContent = t('spools.dsLogoSpace', 'Space height (mm)')
+  document.getElementById('dsl-logo-manual')!.textContent = t('spools.dsLogoManual', 'Max logo height (mm)')
+  document.getElementById('dsl-logo-fit')!.textContent = t('spools.dsLogoFit', 'Scale to fit bounds')
+  document.getElementById('dsl-logo-align')!.textContent = t('spools.dsJustification', 'Justification')
+  document.getElementById('dsl-label-label')!.textContent = t('spools.dsLabel', 'Label')
+  document.getElementById('dsl-width')!.textContent = t('spools.labelWidth', 'Width (mm)')
+  document.getElementById('dsl-height')!.textContent = t('spools.labelHeight', 'Height (mm)')
+  document.getElementById('dsl-margin')!.textContent = t('spools.dsMargin', 'Margin (mm)')
+  document.getElementById('dsl-border')!.textContent = t('spools.dsBorder', 'Print Border')
+  document.getElementById('dsl-title-label')!.textContent = t('spools.dsTitle', 'Title')
   // dsl-title-show is now the header span dsl-title-label (already set above)
-  document.getElementById('dsl-title-size').textContent = t('spools.dsTitleSize', 'Max font size (mm)')
-  document.getElementById('dsl-title-fit').textContent = t('spools.dsTitleFit', 'Fit to width')
-  document.getElementById('dsl-divider-above').textContent = t('spools.dsDividerAbove', 'Line above')
-  document.getElementById('dsl-divider-below').textContent = t('spools.dsDividerBelow', 'Line below')
-  document.getElementById('dsl-title-align').textContent = t('spools.dsJustification', 'Justification')
-  document.getElementById('dsl-title-gap').textContent = t('spools.dsTitleMargin', 'Margin (mm)')
-  document.getElementById('dsl-title-tpl').textContent = t('spools.dsTitleFormat', 'Title Format')
-  document.getElementById('dsl-title2-show').textContent = t('spools.dsTitle2Show', 'Subtitle')
-  document.getElementById('dsl-title2-size').textContent = t('spools.dsTitleSize', 'Max font size (mm)')
-  document.getElementById('dsl-title2-fit').textContent = t('spools.dsTitleFit', 'Fit to width')
-  document.getElementById('dsl-title2-divider-above').textContent = t('spools.dsDividerAbove', 'Line above')
-  document.getElementById('dsl-title2-divider-below').textContent = t('spools.dsDividerBelow', 'Line below')
-  document.getElementById('dsl-title2-align').textContent = t('spools.dsJustification', 'Justification')
-  document.getElementById('dsl-title2-gap').textContent = t('spools.dsTitleMargin', 'Margin (mm)')
-  document.getElementById('dsl-title2-tpl').textContent = t('spools.dsSubtitleFormat', 'Subtitle Format')
+  document.getElementById('dsl-title-size')!.textContent = t('spools.dsTitleSize', 'Max font size (mm)')
+  document.getElementById('dsl-title-fit')!.textContent = t('spools.dsTitleFit', 'Fit to width')
+  document.getElementById('dsl-divider-above')!.textContent = t('spools.dsDividerAbove', 'Line above')
+  document.getElementById('dsl-divider-below')!.textContent = t('spools.dsDividerBelow', 'Line below')
+  document.getElementById('dsl-title-align')!.textContent = t('spools.dsJustification', 'Justification')
+  document.getElementById('dsl-title-gap')!.textContent = t('spools.dsTitleMargin', 'Margin (mm)')
+  document.getElementById('dsl-title-tpl')!.textContent = t('spools.dsTitleFormat', 'Title Format')
+  document.getElementById('dsl-title2-show')!.textContent = t('spools.dsTitle2Show', 'Subtitle')
+  document.getElementById('dsl-title2-size')!.textContent = t('spools.dsTitleSize', 'Max font size (mm)')
+  document.getElementById('dsl-title2-fit')!.textContent = t('spools.dsTitleFit', 'Fit to width')
+  document.getElementById('dsl-title2-divider-above')!.textContent = t('spools.dsDividerAbove', 'Line above')
+  document.getElementById('dsl-title2-divider-below')!.textContent = t('spools.dsDividerBelow', 'Line below')
+  document.getElementById('dsl-title2-align')!.textContent = t('spools.dsJustification', 'Justification')
+  document.getElementById('dsl-title2-gap')!.textContent = t('spools.dsTitleMargin', 'Margin (mm)')
+  document.getElementById('dsl-title2-tpl')!.textContent = t('spools.dsSubtitleFormat', 'Subtitle Format')
   const qrLabelEl = document.getElementById('dsl-qr-label'); if (qrLabelEl) qrLabelEl.textContent = t('spools.showQRCode', 'QR Code')
-  document.getElementById('dsl-qr-mode').textContent = t('spools.dsQrMode', 'Mode')
-  document.getElementById('dso-qr-simple').textContent = t('spools.dsQrSimple', 'Simple')
-  document.getElementById('dso-qr-logo').textContent = t('spools.dsQrIcon', 'Logo')
-  document.getElementById('dso-qr-color-logo').textContent = t('spools.dsQrColorLogo', 'Color Logo')
-  document.getElementById('dsl-qr-size').textContent = t('spools.qrSize', 'Size (mm)')
-  document.getElementById('dsl-qr-pos').textContent = t('spools.dsQrPosition', 'Position')
-  document.getElementById('dsp-qr-left').textContent = t('spools.dsLeft', 'Left')
-  document.getElementById('dsp-qr-right').textContent = t('spools.dsRight', 'Right')
-  document.getElementById('dsl-qr-valign').textContent = t('spools.dsVAlign', 'Vertical align')
-  document.getElementById('dsp-qr-top').textContent = t('spools.dsTop', 'Top')
-  document.getElementById('dsp-qr-mid').textContent = t('spools.dsMid', 'Mid')
-  document.getElementById('dsp-qr-bot').textContent = t('spools.dsBot', 'Bot')
-  document.getElementById('dsl-qr-link').textContent = t('spools.dsQrLink', 'Link mode')
-  document.getElementById('dsp-qr-spool').textContent = t('spools.dsQrSpoolUrl', 'Spool URL')
-  document.getElementById('dsp-qr-url').textContent = t('spools.dsQrCustomUrl', 'Custom URL')
-  document.getElementById('dsl-qr-url-tpl').textContent = t('spools.dsQrCustomBase', 'Custom URL base')
-  document.getElementById('dsl-info-label').textContent = t('spools.dsInfo', 'Information')
-  document.getElementById('dsl-info-size').textContent = t('spools.dsInfoSize', 'Text size (mm)')
-  document.getElementById('dsl-info-halign').textContent = t('spools.dsJustification', 'Justification')
-  document.getElementById('dsl-info-valign').textContent = t('spools.dsVAlign', 'Vertical align')
-  document.getElementById('dsip-top').textContent = t('spools.dsTop', 'Top')
-  document.getElementById('dsip-mid').textContent = t('spools.dsMid', 'Mid')
-  document.getElementById('dsip-bot').textContent = t('spools.dsBot', 'Bot')
-  document.getElementById('dsl-info-tpl').textContent = t('spools.dsInfoFormat', 'Information Format')
-  document.getElementById('dsl-info2-show').textContent = t('spools.dsInfo2Show', 'Side Column')
-  document.getElementById('dsl-info2-vsep').textContent = t('spools.dsInfo2Vsep', 'Vertical separator')
-  document.getElementById('dsl-info2-size').textContent = t('spools.dsInfoSize', 'Text size (mm)')
-  document.getElementById('dsl-info2-halign').textContent = t('spools.dsJustification', 'Justification')
-  document.getElementById('dsl-info2-valign').textContent = t('spools.dsVAlign', 'Vertical align')
-  document.getElementById('dsip2-top').textContent = t('spools.dsTop', 'Top')
-  document.getElementById('dsip2-mid').textContent = t('spools.dsMid', 'Mid')
-  document.getElementById('dsip2-bot').textContent = t('spools.dsBot', 'Bot')
-  document.getElementById('dsl-info2-tpl').textContent = t('spools.dsSideColumnFormat', 'Side Column Format')
-  document.getElementById('label-width-text').textContent = (window as any).__t('spools.labelWidth')
-  document.getElementById('label-height-text').textContent = (window as any).__t('spools.labelHeight')
-  document.getElementById('label-font-size-text').textContent = (window as any).__t('spools.fontSize')
-  document.getElementById('label-qr-size-text').textContent = (window as any).__t('spools.qrSize')
-  document.getElementById('label-show-logo').textContent = (window as any).__t('spools.showLogo') || 'Logo'
-  document.getElementById('label-show-qr').textContent = (window as any).__t('spools.showQRCode')
-  document.getElementById('label-show-id').textContent = (window as any).__t('spools.showSpoolId')
-  document.getElementById('label-show-mfr').textContent = (window as any).__t('spools.showManufacturer')
-  document.getElementById('label-show-mat').textContent = (window as any).__t('spools.showMaterial')
-  document.getElementById('label-show-color').textContent = (window as any).__t('spools.showColor')
-  document.getElementById('label-show-color-swatch').textContent = (window as any).__t('spools.showColorSwatch') || 'Farbbalken'
+  document.getElementById('dsl-qr-mode')!.textContent = t('spools.dsQrMode', 'Mode')
+  document.getElementById('dso-qr-simple')!.textContent = t('spools.dsQrSimple', 'Simple')
+  document.getElementById('dso-qr-logo')!.textContent = t('spools.dsQrIcon', 'Logo')
+  document.getElementById('dso-qr-color-logo')!.textContent = t('spools.dsQrColorLogo', 'Color Logo')
+  document.getElementById('dsl-qr-size')!.textContent = t('spools.qrSize', 'Size (mm)')
+  document.getElementById('dsl-qr-pos')!.textContent = t('spools.dsQrPosition', 'Position')
+  document.getElementById('dsp-qr-left')!.textContent = t('spools.dsLeft', 'Left')
+  document.getElementById('dsp-qr-right')!.textContent = t('spools.dsRight', 'Right')
+  document.getElementById('dsl-qr-valign')!.textContent = t('spools.dsVAlign', 'Vertical align')
+  document.getElementById('dsp-qr-top')!.textContent = t('spools.dsTop', 'Top')
+  document.getElementById('dsp-qr-mid')!.textContent = t('spools.dsMid', 'Mid')
+  document.getElementById('dsp-qr-bot')!.textContent = t('spools.dsBot', 'Bot')
+  document.getElementById('dsl-qr-link')!.textContent = t('spools.dsQrLink', 'Link mode')
+  document.getElementById('dsp-qr-spool')!.textContent = t('spools.dsQrSpoolUrl', 'Spool URL')
+  document.getElementById('dsp-qr-url')!.textContent = t('spools.dsQrCustomUrl', 'Custom URL')
+  document.getElementById('dsl-qr-url-tpl')!.textContent = t('spools.dsQrCustomBase', 'Custom URL base')
+  document.getElementById('dsl-info-label')!.textContent = t('spools.dsInfo', 'Information')
+  document.getElementById('dsl-info-size')!.textContent = t('spools.dsInfoSize', 'Text size (mm)')
+  document.getElementById('dsl-info-halign')!.textContent = t('spools.dsJustification', 'Justification')
+  document.getElementById('dsl-info-valign')!.textContent = t('spools.dsVAlign', 'Vertical align')
+  document.getElementById('dsip-top')!.textContent = t('spools.dsTop', 'Top')
+  document.getElementById('dsip-mid')!.textContent = t('spools.dsMid', 'Mid')
+  document.getElementById('dsip-bot')!.textContent = t('spools.dsBot', 'Bot')
+  document.getElementById('dsl-info-tpl')!.textContent = t('spools.dsInfoFormat', 'Information Format')
+  document.getElementById('dsl-info2-show')!.textContent = t('spools.dsInfo2Show', 'Side Column')
+  document.getElementById('dsl-info2-vsep')!.textContent = t('spools.dsInfo2Vsep', 'Vertical separator')
+  document.getElementById('dsl-info2-size')!.textContent = t('spools.dsInfoSize', 'Text size (mm)')
+  document.getElementById('dsl-info2-halign')!.textContent = t('spools.dsJustification', 'Justification')
+  document.getElementById('dsl-info2-valign')!.textContent = t('spools.dsVAlign', 'Vertical align')
+  document.getElementById('dsip2-top')!.textContent = t('spools.dsTop', 'Top')
+  document.getElementById('dsip2-mid')!.textContent = t('spools.dsMid', 'Mid')
+  document.getElementById('dsip2-bot')!.textContent = t('spools.dsBot', 'Bot')
+  document.getElementById('dsl-info2-tpl')!.textContent = t('spools.dsSideColumnFormat', 'Side Column Format')
+  document.getElementById('label-width-text')!.textContent = (window as any).__t('spools.labelWidth')
+  document.getElementById('label-height-text')!.textContent = (window as any).__t('spools.labelHeight')
+  document.getElementById('label-font-size-text')!.textContent = (window as any).__t('spools.fontSize')
+  document.getElementById('label-qr-size-text')!.textContent = (window as any).__t('spools.qrSize')
+  document.getElementById('label-show-logo')!.textContent = (window as any).__t('spools.showLogo') || 'Logo'
+  document.getElementById('label-show-qr')!.textContent = (window as any).__t('spools.showQRCode')
+  document.getElementById('label-show-id')!.textContent = (window as any).__t('spools.showSpoolId')
+  document.getElementById('label-show-mfr')!.textContent = (window as any).__t('spools.showManufacturer')
+  document.getElementById('label-show-mat')!.textContent = (window as any).__t('spools.showMaterial')
+  document.getElementById('label-show-color')!.textContent = (window as any).__t('spools.showColor')
+  document.getElementById('label-show-color-swatch')!.textContent = (window as any).__t('spools.showColorSwatch') || 'Farbbalken'
   if (extraFields.length > 0) {
-    document.getElementById('title-extra-fields').textContent = (window as any).__t('spools.extraFieldsLabel')
+    document.getElementById('title-extra-fields')!.textContent = (window as any).__t('spools.extraFieldsLabel')
   }
   const backBtn = document.getElementById('btn-back') as HTMLAnchorElement
   backBtn.href = `/spools/${id}`
-  document.getElementById('label-back').textContent = (window as any).__t('spools.backToSpool')
-  document.getElementById('btn-print').textContent = (window as any).__t('common.print')
-  document.getElementById('btn-reset').textContent = (window as any).__t('spools.resetDefaults')
+  document.getElementById('label-back')!.textContent = (window as any).__t('spools.backToSpool')
+  document.getElementById('btn-print')!.textContent = (window as any).__t('common.print')
+  document.getElementById('btn-reset')!.textContent = (window as any).__t('spools.resetDefaults')
 
   let _qrLogoImg: HTMLImageElement | null = null
   let _qrLogoPromise: Promise<HTMLImageElement | null> | null = null
@@ -3174,7 +3180,7 @@ const { id } = Astro.params
   async function loadQrBrandLogo(): Promise<HTMLImageElement | null> {
     if (_qrLogoImg) return _qrLogoImg
     if (_qrLogoPromise) return _qrLogoPromise
-    _qrLogoPromise = new Promise((resolve) => {
+    _qrLogoPromise = new Promise<HTMLImageElement | null>((resolve) => {
       const img = new Image()
       img.onload = () => {
         _qrLogoImg = img
@@ -3310,10 +3316,10 @@ const { id } = Astro.params
     labelPreview.style.setProperty('--inner-border-inset', '2mm')
 
     // === TOP: Logo / Manufacturer ===
-    const topArea = document.getElementById('label-top')
-    const topDivider = document.getElementById('label-top-divider')
+    const topArea = document.getElementById('label-top')!
+    const topDivider = document.getElementById('label-top-divider')!
     const logoImg = document.getElementById('prev-logo') as HTMLImageElement
-    const mfrTextEl = document.getElementById('prev-mfr-text')
+    const mfrTextEl = document.getElementById('prev-mfr-text')!
 
     const showLogo = checkLogo.checked
     const showMfr = checkMfr.checked
@@ -3346,7 +3352,7 @@ const { id } = Astro.params
     }
 
     // === MIDDLE: Designation + Color ===
-    const filamentEl = document.getElementById('prev-filament')
+    const filamentEl = document.getElementById('prev-filament')!
     const matText = checkMat.checked ? labelData.type : ''
     const desigText = labelData.designation || ''
     const fullDesig = [desigText, matText].filter(Boolean).join(' ')
@@ -3355,10 +3361,10 @@ const { id } = Astro.params
     filamentEl.style.display = fullDesig ? 'block' : 'none'
 
     // Color row: swatch + name
-    const colorRow = document.getElementById('prev-color-row')
-    const colorSwatch = document.getElementById('prev-color-swatch')
-    const colorName = document.getElementById('prev-color-name')
-    const hexCodeEl = document.getElementById('prev-hex-code')
+    const colorRow = document.getElementById('prev-color-row')!
+    const colorSwatch = document.getElementById('prev-color-swatch')!
+    const colorName = document.getElementById('prev-color-name')!
+    const hexCodeEl = document.getElementById('prev-hex-code')!
 
     const showColor = checkColor.checked
     const showSwatch = checkColorSwatch.checked
@@ -3391,7 +3397,7 @@ const { id } = Astro.params
     }
 
     // === BOTTOM: ID + Extra fields + QR ===
-    const idEl = document.getElementById('prev-id')
+    const idEl = document.getElementById('prev-id')!
     if (checkID.checked) {
       idEl.textContent = `#${labelData.id}`
       idEl.style.display = 'block'
@@ -3401,7 +3407,7 @@ const { id } = Astro.params
     }
 
     // Extra fields
-    const extraContainer = document.getElementById('prev-extra-fields')
+    const extraContainer = document.getElementById('prev-extra-fields')!
     extraContainer.innerHTML = ''
     for (const ef of extraFieldChecks) {
       if (ef.checkbox.checked) {
@@ -3483,9 +3489,9 @@ const { id } = Astro.params
   }
 
   ;[widthInput, heightInput, fontSizeInput, qrSizeInput, checkLogo, checkQR, checkID, checkMfr, checkMat, checkColor, checkColorSwatch].forEach(el => {
-    el.addEventListener('change', updatePreview)
+    el.addEventListener('change', () => updatePreview())
     if ((el as HTMLInputElement).type === 'range' || (el as HTMLInputElement).type === 'number') {
-      el.addEventListener('input', updatePreview)
+      el.addEventListener('input', () => updatePreview())
     }
   })
 
@@ -3890,7 +3896,7 @@ const { id } = Astro.params
           lbl.appendChild(span)
           extraFieldsCheckboxes.appendChild(lbl)
           extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
-          cb.addEventListener('change', updatePreview)
+          cb.addEventListener('change', () => updatePreview())
         }
 
         // Show the print-settings extra-fields section
