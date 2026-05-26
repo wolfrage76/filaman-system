@@ -2310,34 +2310,6 @@ const { id } = Astro.params
     autosizeTemplateField('ds-title2-tpl')
   }
 
-  function buildTokenChips(containerId: string, targetId: string, tokens: { token: string; label: string }[]) {
-    const container = document.getElementById(containerId)
-    if (!container) return
-    for (const { token: tok, label } of tokens) {
-      const chip = document.createElement('button')
-      chip.className = 'ds-token-chip'
-      chip.textContent = label
-      chip.title = tok
-      chip.addEventListener('click', () => {
-        const el = document.getElementById(targetId) as HTMLInputElement | HTMLTextAreaElement
-        if (!el) return
-        const start = el.selectionStart ?? el.value.length
-        const end = el.selectionEnd ?? el.value.length
-        const before = el.value.slice(0, start)
-        const after = el.value.slice(end)
-        const needSpaceBefore = before.length > 0 && !/\s$/.test(before)
-        const needSpaceAfter = after.length > 0 && !/^\s/.test(after)
-        const insert = (needSpaceBefore ? ' ' : '') + tok + (needSpaceAfter ? ' ' : '')
-        el.value = before + insert + after
-        el.selectionStart = el.selectionEnd = start + insert.length
-        el.focus()
-        saveDesignerSettings()
-        updateDesignerPreview()
-      })
-      container.appendChild(chip)
-    }
-  }
-
   // Wire up all designer controls
   wireAlignGroup('ds-logo-align-group')
   wireAlignGroup('ds-title-align-group')
@@ -3624,7 +3596,6 @@ const { id } = Astro.params
     }
 
     // --- Title rows ---
-    let renderedTitleRows = 0
     const renderTitleRow = (cfg: { sizeMm: number; marginMm: number; fitToWidth: boolean; align: 'left'|'center'|'right'; template: string; dividerAbove: boolean; dividerBelow: boolean }) => {
       const rowGapMm = Math.max(-1, Math.min(4, Number(cfg.marginMm ?? 0)))
       if (cfg.dividerAbove) {
@@ -3704,7 +3675,6 @@ const { id } = Astro.params
         const r = makeRule(); r.style.marginTop = '0'; labelPreview.appendChild(r)
       }
 
-      renderedTitleRows += 1
     }
 
     if (hasTitle1) renderTitleRow(s.title)
