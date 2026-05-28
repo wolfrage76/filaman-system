@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "RFID-Tags können jetzt mit erweiterten Filamentdaten (Material, Farbe, Temperaturen, Hersteller) beschrieben werden – kompatibel mit OpenSpool- und FilaMan-Protokoll. Die Einstellung ist unter Admin → App-Einstellungen konfigurierbar." }
+        ],
+        "en": [
+          { "type": "feature", "text": "RFID tags can now be written with extended filament data (material, color, temperatures, brand) – compatible with OpenSpool and FilaMan protocols. The setting can be configured under Admin → App Settings." }
+        ]
+      }
+    },
+    {
       "version": "1.2.17",
       "date": "",
       "changes": {

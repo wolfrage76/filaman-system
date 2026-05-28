@@ -78,7 +78,9 @@
     "columnsExtended": "Extended",
     "columnsExtraFields": "Extra Fields",
     "columnsReset": "Reset columns",
-    "perPage": "per page"
+    "perPage": "per page",
+    "retry": "Retry",
+    "errorLoadingData": "Error loading data"
   },
   "rfid": {
     "writeTag": "Write RFID Tag",
@@ -505,6 +507,15 @@
     "dsTop": "Top",
     "dsMid": "Mid",
     "dsBot": "Bot"
+    "importFromTag": "Import from Tag",
+    "importFromTagTitle": "Import Data from NFC Tag",
+    "importFromTagSelectDevice": "Select a device",
+    "importFromTagPlaceOnScale": "Place spool on scale and hold tag ready...",
+    "importFromTagTimeout": "Timeout – no tag detected. Please try again.",
+    "importFromTagNoDevices": "No active devices available. Please switch on and connect a device.",
+    "importFromTagNoMatch": "No matching filament found for",
+    "importFromTagMatched": "Filament detected",
+    "importFromTagSelectManually": "Please select filament manually"
   },
   "colors": {
     "title": "Manage Colors",
@@ -888,7 +899,14 @@
     "appSettingsLoadFailed": "Failed to load settings.",
     "appSettingsCurrency": "Currency",
     "appSettingsCurrencyLabel": "Display Currency",
-    "appSettingsCurrencyDescription": "The currency used to display prices throughout the application"
+    "appSettingsCurrencyDescription": "The currency used to display prices throughout the application",
+    "rfidSettingsTitle": "RFID Tag Extended Data",
+    "rfidExtendedDataEnabled": "Write extended data",
+    "rfidExtendedDataEnabledHint": "When enabled, additional filament data (material, color, temperatures etc.) will be written to the RFID tag.",
+    "rfidProtocol": "Protocol",
+    "rfidProtocolHint": "Select the protocol for the extended tag data.",
+    "rfidProtocolOpenspool": "OpenSpool",
+    "rfidProtocolFilaman": "FilaMan"
   },
   "changelog": {
     "title": "Changelog",

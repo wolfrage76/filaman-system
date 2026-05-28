@@ -105,6 +105,33 @@ import Layout from '../../layouts/Layout.astro'
       </div>
     </div>
 
+    <!-- RFID Extended Data Card (full width) -->
+    <div class="fm-card" style="padding: 20px;">
+      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 16px;" data-i18n="admin.rfidSettingsTitle">RFID Tag Extended Data</h2>
+
+      <!-- Toggle: Extended Data aktivieren -->
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+        <div style="flex: 1;">
+          <label data-i18n="admin.rfidExtendedDataEnabled" style="font-weight: 500; display: block; margin-bottom: 4px;">Write extended data</label>
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;" data-i18n="admin.rfidExtendedDataEnabledHint">When enabled, additional filament data will be written to the RFID tag.</p>
+        </div>
+        <label class="fm-toggle">
+          <input type="checkbox" id="rfid-extended-data-enabled" />
+          <span class="fm-toggle-slider"></span>
+        </label>
+      </div>
+
+      <!-- Protokoll-Auswahl -->
+      <div id="rfid-protocol-section">
+        <label data-i18n="admin.rfidProtocol" style="font-weight: 500; display: block; margin-bottom: 4px;">Protocol</label>
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 8px;" data-i18n="admin.rfidProtocolHint">Select the protocol for the extended tag data.</p>
+        <select id="rfid-protocol" class="fm-select" style="max-width: 240px;">
+          <option value="openspool" data-i18n="admin.rfidProtocolOpenspool">OpenSpool</option>
+          <option value="filaman" data-i18n="admin.rfidProtocolFilaman">FilaMan</option>
+        </select>
+      </div>
+    </div>
+
     <!-- Form message AND Save button OUTSIDE the cards, below the grid -->
     <div id="form-message" class="hidden" style="padding: 10px 14px; border-radius: 8px; font-size: 0.85rem;"></div>
     <button type="submit" id="save-btn" class="fm-btn fm-btn-primary" style="justify-self: start; padding: 10px 28px;" data-i18n="admin.appSettingsSave">Save</button>
@@ -130,6 +157,9 @@ import Layout from '../../layouts/Layout.astro'
       const warningDiv = document.getElementById('login-warning')!
       const formMessage = document.getElementById('form-message')!
       const saveBtn = document.getElementById('save-btn') as HTMLButtonElement
+      const rfidExtendedDataInput = document.getElementById('rfid-extended-data-enabled') as HTMLInputElement
+      const rfidProtocolSelect = document.getElementById('rfid-protocol') as HTMLSelectElement
+      const rfidProtocolSection = document.getElementById('rfid-protocol-section')!
 
       function showMessage(text: string, isError: boolean) {
         formMessage.textContent = text
@@ -143,6 +173,13 @@ import Layout from '../../layouts/Layout.astro'
         warningDiv.classList.toggle('hidden', !loginDisabledInput.checked)
       })
 
+      // Protokoll-Section nur sichtbar wenn Extended Data aktiv
+      function updateRfidProtocolVisibility() {
+        rfidProtocolSection.style.opacity = rfidExtendedDataInput.checked ? '1' : '0.4'
+        rfidProtocolSelect.disabled = !rfidExtendedDataInput.checked
+      }
+      rfidExtendedDataInput.addEventListener('change', updateRfidProtocolVisibility)
+
       // Load settings
       try {
         const resp = await fetch('/api/v1/admin/app-settings/', { credentials: 'include', signal: getAbortSignal() })
@@ -151,6 +188,9 @@ import Layout from '../../layouts/Layout.astro'
           loginDisabledInput.checked = data.login_disabled
           currencySelect.value = data.currency || 'EUR'
           warningDiv.classList.toggle('hidden', !data.login_disabled)
+          rfidExtendedDataInput.checked = data.rfid_extended_data_enabled ?? false
+          rfidProtocolSelect.value = data.rfid_protocol || 'openspool'
+          updateRfidProtocolVisibility()
         } else {
           showMessage(t('admin.appSettingsLoadFailed'), true)
         }
@@ -168,6 +208,8 @@ import Layout from '../../layouts/Layout.astro'
         const payload = {
           login_disabled: loginDisabledInput.checked,
           currency: currencySelect.value,
+          rfid_extended_data_enabled: rfidExtendedDataInput.checked,
+          rfid_protocol: rfidProtocolSelect.value,
         }
 
         try {

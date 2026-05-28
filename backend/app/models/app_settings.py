@@ -18,3 +18,5 @@ class AppSettings(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(autoincrement=True, primary_key=True)
     login_disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
+    rfid_extended_data_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    rfid_protocol: Mapped[str] = mapped_column(String(20), default="openspool", nullable=False)

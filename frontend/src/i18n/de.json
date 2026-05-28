@@ -78,7 +78,9 @@
     "columnsExtended": "Erweitert",
     "columnsExtraFields": "Extrafelder",
     "columnsReset": "Spalten zurücksetzen",
-    "perPage": "pro Seite"
+    "perPage": "pro Seite",
+    "retry": "Erneut versuchen",
+    "errorLoadingData": "Fehler beim Laden der Daten"
   },
   "rfid": {
     "writeTag": "RFID-Tag schreiben",
@@ -507,6 +509,15 @@
     "dsTop": "Oben",
     "dsMid": "Mitte",
     "dsBot": "Unten"
+    "importFromTag": "Von Tag übernehmen",
+    "importFromTagTitle": "Daten vom NFC-Tag übernehmen",
+    "importFromTagSelectDevice": "Gerät auswählen",
+    "importFromTagPlaceOnScale": "Spule auf die Waage legen und Tag bereitstellen...",
+    "importFromTagTimeout": "Zeitüberschreitung – kein Tag erkannt. Bitte erneut versuchen.",
+    "importFromTagNoDevices": "Keine aktiven Geräte verfügbar. Bitte Gerät einschalten und verbinden.",
+    "importFromTagNoMatch": "Kein passendes Filament gefunden für",
+    "importFromTagMatched": "Filament erkannt",
+    "importFromTagSelectManually": "Bitte Filament manuell auswählen"
   },
   "colors": {
     "title": "Farben verwalten",
@@ -890,7 +901,14 @@
      "appSettingsLoadFailed": "Einstellungen konnten nicht geladen werden.",
      "appSettingsCurrency": "Währung",
      "appSettingsCurrencyLabel": "Anzeigewährung",
-     "appSettingsCurrencyDescription": "Die Währung, die für die Preisanzeige in der gesamten Anwendung verwendet wird"
+     "appSettingsCurrencyDescription": "Die Währung, die für die Preisanzeige in der gesamten Anwendung verwendet wird",
+     "rfidSettingsTitle": "RFID-Tag Erweiterte Daten",
+     "rfidExtendedDataEnabled": "Erweiterte Daten schreiben",
+     "rfidExtendedDataEnabledHint": "Wenn aktiviert, werden zusätzliche Filamentdaten (Material, Farbe, Temperaturen etc.) auf den RFID-Tag geschrieben.",
+     "rfidProtocol": "Protokoll",
+     "rfidProtocolHint": "Wählen Sie das Protokoll für die erweiterten Tag-Daten.",
+     "rfidProtocolOpenspool": "OpenSpool",
+     "rfidProtocolFilaman": "FilaMan"
    },
   "changelog": {
     "title": "Changelog",

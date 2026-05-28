@@ -74,6 +74,7 @@ local_cache
 skills-lock.json
 Agents.md
 Claude.md
+.omo
 
 # Installed plugins (only spoolman_import ships as default)
 backend/app/plugins/*/
