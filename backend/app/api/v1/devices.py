@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.api.deps import DBSession
 
 logger = logging.getLogger(__name__)
-from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse
+from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse, TagDataRequest, TagScanStatusResponse
 from app.core.security import Principal, generate_token_secret, hash_token
 from app.models import AppSettings, Device, Location, Spool, SpoolStatus
 from app.models.filament import Color, FilamentColor, Manufacturer
@@ -623,3 +623,92 @@ async def locate_spool(
         location_id=location.id,
         location_name=location.name
     )
+
+
+@router.post("/{device_id}/request-tag-scan", response_model=dict)
+async def request_tag_scan(
+    device_id: int,
+    db: DBSession,
+):
+    """Fordert das Gerät auf, den nächsten NFC-Tag zu lesen und die Daten zurückzusenden."""
+    result = await db.execute(select(Device).where(Device.id == device_id))
+    device = result.scalar_one_or_none()
+
+    if not device or not device.is_active or device.deleted_at or not device.ip_address:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Device not found, inactive or has no IP address"},
+        )
+
+    # Status auf pending setzen
+    if device.custom_fields is None:
+        device.custom_fields = {}
+    new_cf = dict(device.custom_fields)
+    new_cf["last_tag_scan"] = {
+        "status": "pending",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    device.custom_fields = new_cf
+    await db.commit()
+
+    # Scan-Request ans Gerät senden (Fire & Forget)
+    device_url = f"http://{device.ip_address}/api/v1/rfid/scan-request"
+    try:
+        async with httpx.AsyncClient(timeout=5.0, http2=False, follow_redirects=True) as client:
+            await client.post(device_url, json={})
+    except Exception as e:
+        logger.warning(f"Could not reach device {device_id} for scan-request: {e}")
+
+    return {"success": True, "message": "Scan-Request gesendet"}
+
+
+@router.post("/tag-data", response_model=dict)
+async def receive_tag_data(
+    data: TagDataRequest,
+    db: DBSession,
+    device: Device = Depends(get_current_device),
+):
+    """Empfängt Tag-Daten vom Gerät und speichert sie für den Frontend-Polling-Mechanismus."""
+    import json as _json
+
+    logger.info(f"Received tag data from device {device.id}: {data.tag_json[:100]}...")
+
+    try:
+        tag_data = _json.loads(data.tag_json)
+    except Exception:
+        tag_data = {"raw": data.tag_json}
+
+    if device.custom_fields is None:
+        device.custom_fields = {}
+    new_cf = dict(device.custom_fields)
+    new_cf["last_tag_scan"] = {
+        "status": "success",
+        "tag_data": tag_data,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    device.custom_fields = new_cf
+    await db.commit()
+
+    return {"status": "ok"}
+
+
+@router.get("/{device_id}/tag-scan-result", response_model=TagScanStatusResponse)
+async def get_tag_scan_result(
+    device_id: int,
+    db: DBSession,
+):
+    """Gibt den Status und das Ergebnis des letzten Tag-Scans zurück."""
+    result = await db.execute(select(Device).where(Device.id == device_id))
+    device = result.scalar_one_or_none()
+
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Device not found"},
+        )
+
+    last_scan = (device.custom_fields or {}).get("last_tag_scan")
+    if not last_scan:
+        return TagScanStatusResponse(status="none")
+
+    return TagScanStatusResponse(**last_scan)

@@ -62,3 +62,14 @@ class WriteStatusResponse(BaseModel):
     removed_from: str | None = None
     error_message: str | None = None
     timestamp: str | None = None
+
+
+class TagDataRequest(BaseModel):
+    tag_json: str  # Raw JSON string from the NFC tag
+
+
+class TagScanStatusResponse(BaseModel):
+    status: str  # "none", "pending", "success", "error"
+    tag_data: dict | None = None
+    error_message: str | None = None
+    timestamp: str | None = None

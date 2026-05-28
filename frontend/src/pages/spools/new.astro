@@ -213,7 +213,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       
       <div id="error-message" class="fm-alert-error hidden"></div>
       
-      <div style="display: flex; gap: 12px; padding-top: 8px; align-items: center;">
+      <div style="display: flex; gap: 12px; padding-top: 8px; align-items: center; flex-wrap: wrap;">
         <div style="display: flex; align-items: center; gap: 6px;">
           <label for="spool_quantity" class="fm-label" style="margin: 0; white-space: nowrap; font-size: 0.85rem;" data-i18n="spools.quantity">Quantity</label>
           <input
@@ -242,10 +242,30 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         >
           Cancel
         </a>
+        <button
+          type="button"
+          id="btn-import-from-tag"
+          class="fm-btn fm-btn-outline"
+          style="margin-left: auto;"
+          data-i18n="spools.importFromTag"
+        >
+          Von Tag übernehmen
+        </button>
       </div>
     </form>
   </div>
   
+  <!-- Modal: Von Tag übernehmen -->
+  <div id="import-tag-modal" class="fm-modal-overlay" style="display: none;">
+    <div class="fm-modal" style="max-width: 440px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="margin: 0; font-weight: 600; font-size: 1.1rem;" data-i18n="spools.importFromTagTitle">Von Tag übernehmen</h2>
+        <button id="import-tag-close" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; padding: 4px 8px; color: var(--text-muted);">✕</button>
+      </div>
+      <div id="import-tag-content" style="min-height: 80px;"></div>
+    </div>
+  </div>
+
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../lib/cache'
@@ -883,6 +903,207 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       }
     })
     
+    // ── Import from Tag ──
+    const importTagModal = document.getElementById('import-tag-modal') as HTMLDivElement
+    const importTagContent = document.getElementById('import-tag-content') as HTMLDivElement
+    const btnImportFromTag = document.getElementById('btn-import-from-tag') as HTMLButtonElement
+    const btnImportTagClose = document.getElementById('import-tag-close') as HTMLButtonElement
+
+    let importPollInterval: ReturnType<typeof setInterval> | null = null
+    let importSelectedDeviceId: number | null = null
+
+    function openImportTagModal() {
+      importTagModal.style.display = ''
+      loadDevicesForImport()
+    }
+
+    function closeImportTagModal() {
+      importTagModal.style.display = 'none'
+      if (importPollInterval) { clearInterval(importPollInterval); importPollInterval = null }
+      importTagContent.innerHTML = ''
+    }
+
+    async function loadDevicesForImport() {
+      importTagContent.innerHTML = ''
+      const loadingP = document.createElement('p')
+      loadingP.style.color = 'var(--text-muted)'
+      loadingP.textContent = t('common.loading')
+      importTagContent.appendChild(loadingP)
+      try {
+        const res = await fetch('/api/v1/devices/active', { credentials: 'include' })
+        const devices: any[] = await res.json()
+        importTagContent.innerHTML = ''
+        if (!devices || devices.length === 0) {
+          const errP = document.createElement('p')
+          errP.className = 'fm-alert-error'
+          errP.style.margin = '0'
+          errP.textContent = t('spools.importFromTagNoDevices')
+          importTagContent.appendChild(errP)
+          return
+        }
+        if (devices.length === 1) {
+          importSelectedDeviceId = devices[0].id
+          startTagScan(devices[0].id)
+        } else {
+          showDeviceSelectionForImport(devices)
+        }
+      } catch {
+        importTagContent.innerHTML = ''
+        const errP = document.createElement('p')
+        errP.className = 'fm-alert-error'
+        errP.style.margin = '0'
+        errP.textContent = t('common.errorLoadingData')
+        importTagContent.appendChild(errP)
+      }
+    }
+
+    function showDeviceSelectionForImport(devices: any[]) {
+      importTagContent.innerHTML = ''
+      const intro = document.createElement('p')
+      intro.style.cssText = 'margin-bottom: 12px; color: var(--text-muted); font-size: 0.9rem;'
+      intro.textContent = t('spools.importFromTagSelectDevice')
+      importTagContent.appendChild(intro)
+      const grid = document.createElement('div')
+      grid.style.cssText = 'display: grid; gap: 8px;'
+      devices.forEach((d: any) => {
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.className = 'fm-btn fm-btn-outline'
+        btn.style.cssText = 'text-align: left; padding: 10px 14px;'
+        const strong = document.createElement('strong')
+        strong.textContent = d.name || ''
+        btn.appendChild(strong)
+        if (d.ip_address) {
+          btn.appendChild(document.createElement('br'))
+          const small = document.createElement('small')
+          small.style.color = 'var(--text-muted)'
+          small.textContent = d.ip_address
+          btn.appendChild(small)
+        }
+        btn.addEventListener('click', () => { importSelectedDeviceId = d.id; startTagScan(d.id) })
+        grid.appendChild(btn)
+      })
+      importTagContent.appendChild(grid)
+    }
+
+    async function startTagScan(deviceId: number) {
+      importTagContent.innerHTML = ''
+      const wrapper = document.createElement('div')
+      wrapper.style.cssText = 'text-align: center; padding: 24px 0;'
+      const spinner = document.createElement('div')
+      spinner.className = 'fm-spinner'
+      spinner.style.cssText = 'margin: 0 auto 16px; width: 36px; height: 36px; border-width: 3px;'
+      const statusP = document.createElement('p')
+      statusP.style.cssText = 'color: var(--text-muted); margin: 0 0 8px;'
+      statusP.textContent = t('spools.importFromTagPlaceOnScale')
+      const countdownP = document.createElement('p')
+      countdownP.id = 'import-tag-countdown'
+      countdownP.style.cssText = 'font-size: 0.8rem; color: var(--text-muted); margin: 0;'
+      wrapper.append(spinner, statusP, countdownP)
+      importTagContent.appendChild(wrapper)
+
+      try {
+        await fetch(`/api/v1/devices/${deviceId}/request-tag-scan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: '{}',
+        })
+      } catch {
+        showImportError(t('spools.importFromTagTimeout'))
+        return
+      }
+
+      let attempts = 0
+      const maxAttempts = 30
+      importPollInterval = setInterval(async () => {
+        attempts++
+        const el = document.getElementById('import-tag-countdown')
+        if (el) el.textContent = `${maxAttempts - attempts}s`
+        if (attempts > maxAttempts) {
+          clearInterval(importPollInterval!); importPollInterval = null
+          showImportError(t('spools.importFromTagTimeout'))
+          return
+        }
+        try {
+          const res = await fetch(`/api/v1/devices/${deviceId}/tag-scan-result`, { credentials: 'include' })
+          const data = await res.json()
+          if (data.status === 'success' && data.tag_data) {
+            clearInterval(importPollInterval!); importPollInterval = null
+            applyTagDataToForm(data.tag_data)
+          }
+        } catch { /* ignore poll errors */ }
+      }, 1000)
+    }
+
+    function showImportError(msg: string) {
+      importTagContent.innerHTML = ''
+      const errDiv = document.createElement('div')
+      errDiv.className = 'fm-alert-error'
+      errDiv.style.marginBottom = '16px'
+      errDiv.textContent = msg
+      importTagContent.appendChild(errDiv)
+      const devId = importSelectedDeviceId
+      if (devId) {
+        const retryBtn = document.createElement('button')
+        retryBtn.type = 'button'
+        retryBtn.className = 'fm-btn fm-btn-outline'
+        retryBtn.textContent = t('common.retry')
+        retryBtn.addEventListener('click', () => startTagScan(devId))
+        importTagContent.appendChild(retryBtn)
+      }
+    }
+
+    function applyTagDataToForm(tagData: any) {
+      const brand = (tagData.brand || '').toLowerCase().trim()
+      const type  = (tagData.type  || '').toLowerCase().trim()
+      let matchedFilament: any = null
+      if (type) {
+        matchedFilament = filaments.find((f: any) =>
+          brand && (f.manufacturer?.name || '').toLowerCase().includes(brand) &&
+          (f.material_type || '').toLowerCase() === type
+        )
+        if (!matchedFilament) {
+          matchedFilament = filaments.find((f: any) => (f.material_type || '').toLowerCase() === type)
+        }
+      }
+      importTagContent.innerHTML = ''
+      if (matchedFilament) {
+        selectFilament(matchedFilament.id)
+        const successDiv = document.createElement('div')
+        successDiv.className = 'fm-alert-success'
+        successDiv.style.marginBottom = '16px'
+        successDiv.textContent = `✓ ${t('spools.importFromTagMatched')}: `
+        const strong = document.createElement('strong')
+        strong.textContent = matchedFilament.designation
+        successDiv.appendChild(strong)
+        importTagContent.appendChild(successDiv)
+      } else {
+        const warnDiv = document.createElement('div')
+        warnDiv.className = 'fm-alert-warning'
+        warnDiv.style.marginBottom = '16px'
+        const displayTag = `${tagData.brand || ''} ${tagData.type || ''}`.trim()
+        warnDiv.textContent = `${t('spools.importFromTagNoMatch')}: `
+        const strong = document.createElement('strong')
+        strong.textContent = displayTag
+        warnDiv.appendChild(strong)
+        const span = document.createElement('span')
+        span.textContent = `. ${t('spools.importFromTagSelectManually')}.`
+        warnDiv.appendChild(span)
+        importTagContent.appendChild(warnDiv)
+      }
+      const doneBtn = document.createElement('button')
+      doneBtn.type = 'button'
+      doneBtn.className = matchedFilament ? 'fm-btn fm-btn-primary' : 'fm-btn fm-btn-outline'
+      doneBtn.textContent = t('common.close')
+      doneBtn.addEventListener('click', closeImportTagModal)
+      importTagContent.appendChild(doneBtn)
+    }
+
+    btnImportFromTag?.addEventListener('click', openImportTagModal)
+    btnImportTagClose?.addEventListener('click', closeImportTagModal)
+    importTagModal?.addEventListener('click', (e) => { if (e.target === importTagModal) closeImportTagModal() })
+
     loadOptions()
   </script>
 </Layout>

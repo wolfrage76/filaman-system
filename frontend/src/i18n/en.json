@@ -78,7 +78,9 @@
     "columnsExtended": "Extended",
     "columnsExtraFields": "Extra Fields",
     "columnsReset": "Reset columns",
-    "perPage": "per page"
+    "perPage": "per page",
+    "retry": "Retry",
+    "errorLoadingData": "Error loading data"
   },
   "rfid": {
     "writeTag": "Write RFID Tag",
@@ -452,7 +454,16 @@
     "colPurchaseDate": "Purchase Date",
     "colLastUsed": "Last Used",
     "colTotalWeight": "Total Weight",
-    "colEmptyWeight": "Empty Weight"
+    "colEmptyWeight": "Empty Weight",
+    "importFromTag": "Import from Tag",
+    "importFromTagTitle": "Import Data from NFC Tag",
+    "importFromTagSelectDevice": "Select a device",
+    "importFromTagPlaceOnScale": "Place spool on scale and hold tag ready...",
+    "importFromTagTimeout": "Timeout – no tag detected. Please try again.",
+    "importFromTagNoDevices": "No active devices available. Please switch on and connect a device.",
+    "importFromTagNoMatch": "No matching filament found for",
+    "importFromTagMatched": "Filament detected",
+    "importFromTagSelectManually": "Please select filament manually"
   },
   "colors": {
     "title": "Manage Colors",

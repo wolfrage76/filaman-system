@@ -78,7 +78,9 @@
     "columnsExtended": "Erweitert",
     "columnsExtraFields": "Extrafelder",
     "columnsReset": "Spalten zurücksetzen",
-    "perPage": "pro Seite"
+    "perPage": "pro Seite",
+    "retry": "Erneut versuchen",
+    "errorLoadingData": "Fehler beim Laden der Daten"
   },
   "rfid": {
     "writeTag": "RFID-Tag schreiben",
@@ -454,7 +456,16 @@
     "colPurchaseDate": "Kaufdatum",
     "colLastUsed": "Zuletzt verwendet",
     "colTotalWeight": "Gesamtgewicht",
-    "colEmptyWeight": "Leergewicht"
+    "colEmptyWeight": "Leergewicht",
+    "importFromTag": "Von Tag übernehmen",
+    "importFromTagTitle": "Daten vom NFC-Tag übernehmen",
+    "importFromTagSelectDevice": "Gerät auswählen",
+    "importFromTagPlaceOnScale": "Spule auf die Waage legen und Tag bereitstellen...",
+    "importFromTagTimeout": "Zeitüberschreitung – kein Tag erkannt. Bitte erneut versuchen.",
+    "importFromTagNoDevices": "Keine aktiven Geräte verfügbar. Bitte Gerät einschalten und verbinden.",
+    "importFromTagNoMatch": "Kein passendes Filament gefunden für",
+    "importFromTagMatched": "Filament erkannt",
+    "importFromTagSelectManually": "Bitte Filament manuell auswählen"
   },
   "colors": {
     "title": "Farben verwalten",
