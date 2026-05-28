@@ -35,7 +35,7 @@ const { id } = Astro.params
       <button id="btn-move" class="fm-btn fm-btn-outline" data-i18n="spools.move">
         Move
       </button>
-      <a href={`/spools/print?ids=${id}&back=${id}`} id="btn-print-label" class="fm-btn fm-btn-outline" style="border-color: #10b981; color: #10b981; text-decoration: none; display: flex; align-items: center; justify-content: center;">
+      <a href={`/spools/${id}/print`} id="btn-print-label" class="fm-btn fm-btn-outline" style="border-color: #10b981; color: #10b981; text-decoration: none; display: flex; align-items: center; justify-content: center;">
         <span data-i18n="spools.printLabel">Print Label</span>
       </a>
     </div>
@@ -419,8 +419,34 @@ const { id } = Astro.params
         ` : ''}
       `
       
+      const printUrl = `/spools/${spool.id}/print?designation=${encodeURIComponent(spool.filament?.designation || '')}&mfr=${encodeURIComponent(spool.filament?.manufacturer?.name || '')}&type=${encodeURIComponent(spool.filament?.material_type || '')}&subtype=${encodeURIComponent(spool.filament?.material_subgroup || '')}&color=${encodeURIComponent(spool.filament?.manufacturer_color_name || spool.filament?.colors?.[0]?.color?.name || '')}&mfr_id=${encodeURIComponent(spool.filament?.manufacturer?.id || '')}&hex_code=${encodeURIComponent(spool.filament?.colors?.[0]?.color?.hex_code || '')}&extruder_temp=${encodeURIComponent(spool.filament?.settings_extruder_temp ?? '')}&bed_temp=${encodeURIComponent(spool.filament?.settings_bed_temp ?? '')}&weight=${encodeURIComponent(spool.filament?.weight ?? '')}&diameter=${encodeURIComponent(spool.filament?.diameter_mm ?? '')}&finish=${encodeURIComponent(spool.filament?.finish_type || '')}&density=${encodeURIComponent(spool.filament?.density_g_cm3 ?? '')}&price=${encodeURIComponent(spool.filament?.price ?? '')}`
+
+      // Store extra fields for label printing (spool + filament).
+      // Iterate ALL system-defined fields so they appear in the designer even when
+      // the spool hasn't had a value set for a field yet.
+      const efForPrint: {key: string, label: string, value: string, source: string}[] = []
+      const spoolFlat = spool.custom_fields ? flattenObject(spool.custom_fields) : {}
+      for (const [key, def] of Object.entries(spoolSystemFieldMap)) {
+        const raw = spoolFlat[key]
+        efForPrint.push({ key: `spool.${key}`, label: def.label, value: raw !== undefined && raw !== null ? String(raw) : '', source: 'spool' })
+      }
+      // Also include any spool custom fields not covered by system definitions
+      for (const [key, value] of Object.entries(spoolFlat)) {
+        if (!spoolSystemFieldMap[key]) efForPrint.push({ key: `spool.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
+      }
+      const filamentFlat = spool.filament?.custom_fields ? flattenObject(spool.filament.custom_fields) : {}
+      for (const [key, def] of Object.entries(filamentSystemFieldMap)) {
+        const raw = filamentFlat[key]
+        efForPrint.push({ key: `filament.${key}`, label: def.label, value: raw !== undefined && raw !== null ? String(raw) : '', source: 'filament' })
+      }
+      // Also include any filament custom fields not covered by system definitions
+      for (const [key, value] of Object.entries(filamentFlat)) {
+        if (!filamentSystemFieldMap[key]) efForPrint.push({ key: `filament.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'filament' })
+      }
+      sessionStorage.setItem('filaman-label-extra-fields', JSON.stringify(efForPrint))
+
       const printBtn = document.getElementById('btn-print-label') as HTMLAnchorElement
-      if (printBtn) printBtn.href = `/spools/print?ids=${spool.id}&back=${spool.id}`
+      if (printBtn) printBtn.href = printUrl
       
       document.getElementById('actions-section')!.classList.remove('hidden')
       
@@ -597,7 +623,7 @@ const { id } = Astro.params
 
       const url = window.location.origin + '/spools/' + spool.id
       
-      // @ts-ignore
+      // @ts-expect-error -- qrcodejs has no TypeScript types
       new QRCode(qrContainer, {
         text: url,
         width: 84, // approx 22mm at 96dpi

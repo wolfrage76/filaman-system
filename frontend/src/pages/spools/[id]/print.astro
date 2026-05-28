@@ -1,0 +1,3925 @@
+---
+import Layout from '../../../layouts/Layout.astro'
+
+export function getStaticPaths() {
+  return [
+    {params: {id: 'detail'}},
+  ];
+}
+
+const { id } = Astro.params
+---
+
+<Layout title="FilaMan - Print Label">
+  <div class="print-page">
+    <aside class="print-sidebar">
+      <div class="print-sidebar-scroll">
+      <a id="btn-back" class="sidebar-header back-link">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+        <span id="label-back">Zurück zur Spule</span>
+      </a>
+
+      <!-- Tab navigation -->
+      <div class="tab-nav">
+        <button class="tab-btn active" id="tab-btn-print" data-tab="print">Print Settings</button>
+        <button class="tab-btn" id="tab-btn-designer" data-tab="designer">Label Designer</button>
+      </div>
+
+      <!-- Print Settings panel -->
+      <div id="tab-panel-print" class="settings-section">
+        <h3 id="title-settings">Print Settings</h3>
+
+        <div>
+          <label class="fm-label" id="label-width-text">Breite (mm)</label>
+          <input type="number" id="input-width" value="60" class="fm-input">
+        </div>
+
+        <div>
+          <label class="fm-label" id="label-height-text">Höhe (mm)</label>
+          <input type="number" id="input-height" value="40" class="fm-input">
+        </div>
+
+        <div>
+          <label class="fm-label" id="label-font-size-text">Schriftgröße (%)</label>
+          <input type="range" id="input-font-size" min="50" max="200" value="100" class="fm-input" style="padding: 8px;">
+        </div>
+
+        <div>
+          <label class="fm-label" id="label-qr-size-text">QR-Größe (mm)</label>
+          <input type="number" id="input-qr-size" value="18" class="fm-input">
+        </div>
+
+        <h3>Anzeige</h3>
+        <div class="checkbox-grid">
+          <label class="fm-checkbox-group">
+            <input type="checkbox" id="check-logo" checked>
+            <span id="label-show-logo">Logo</span>
+          </label>
+          <label class="fm-checkbox-group">
+            <input type="checkbox" id="check-qr" checked>
+            <span id="label-show-qr">QR-Code</span>
+          </label>
+          <label class="fm-checkbox-group">
+            <input type="checkbox" id="check-id" checked>
+            <span id="label-show-id">Spool-ID</span>
+          </label>
+          <label class="fm-checkbox-group">
+            <input type="checkbox" id="check-mfr" checked>
+            <span id="label-show-mfr">Hersteller</span>
+          </label>
+          <label class="fm-checkbox-group">
+            <input type="checkbox" id="check-mat" checked>
+            <span id="label-show-mat">Material</span>
+          </label>
+          <label class="fm-checkbox-group">
+            <input type="checkbox" id="check-color" checked>
+            <span id="label-show-color">Farbe</span>
+          </label>
+          <label class="fm-checkbox-group">
+            <input type="checkbox" id="check-color-swatch" checked>
+            <span id="label-show-color-swatch">Farbbalken</span>
+          </label>
+        </div>
+
+        <h3 id="title-extra-fields" style="display: none;">Extra-Felder</h3>
+        <div id="extra-fields-checkboxes" class="checkbox-grid checkbox-grid-single" style="display: none;"></div>
+      </div>
+
+      <!-- Label Designer panel -->
+      <div id="tab-panel-designer" class="settings-section" style="display: none;">
+
+        <!-- Section: Presets -->
+        <details class="ds-section" open>
+          <summary class="ds-section-header" id="dsh-presets"><span id="dsh-presets-text">Presets</span></summary>
+          <div class="ds-section-body">
+            <div>
+              <label class="fm-label" id="dsl-preset-saved">Saved presets</label>
+              <div class="ds-preset-row">
+                <select id="ds-preset-list" class="fm-input fm-select ds-preset-select"></select>
+                <button id="ds-preset-load-btn" class="ds-action-btn">Load</button>
+                <button id="ds-preset-delete-btn" class="ds-action-btn ds-action-btn-danger" title="Delete selected preset">✕</button>
+              </div>
+            </div>
+            <div>
+              <label class="fm-label" id="dsl-preset-name">Preset name</label>
+              <div class="ds-preset-row">
+                <input type="text" id="ds-preset-name-input" class="fm-input ds-preset-name-input" placeholder="My label">
+                <button id="ds-preset-save-btn" class="ds-action-btn ds-action-btn-primary">Save as New</button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Section: Label -->
+        <details class="ds-section" open>
+          <summary class="ds-section-header" id="dsh-label">
+            <span id="dsl-label-label">Label</span>
+            <button class="ds-reset-btn" id="dsr-label" title="Reset section">↺</button>
+          </summary>
+          <div class="ds-section-body">
+            <div class="ds-dim-grid">
+              <div>
+                <label class="fm-label" id="dsl-width">W (mm)</label>
+                <input type="number" id="ds-width" value="60" min="10" max="300" class="fm-input">
+              </div>
+              <div>
+                <label class="fm-label" id="dsl-height">H (mm)</label>
+                <input type="number" id="ds-height" value="40" min="5" max="200" class="fm-input">
+              </div>
+            </div>
+            <div class="ds-label-bottom-row">
+              <label class="fm-checkbox-group ds-label-border-toggle">
+                <input type="checkbox" id="ds-border">
+                <span id="dsl-border">Print Border</span>
+              </label>
+              <div class="ds-size-row ds-size-row-compact ds-label-margin-inline">
+                <label class="fm-label ds-size-label" id="dsl-margin">Margin (mm)</label>
+                <input type="range" id="ds-margin-range" min="0" max="6" step="0.5" value="1" class="ds-slider">
+                <input type="number" id="ds-margin" value="1" step="0.5" min="0" max="6" class="fm-input ds-size-num">
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Section: Logo -->
+        <details class="ds-section" open>
+          <summary class="ds-section-header" id="dsh-logo">
+            <label class="ds-header-show" onclick="event.stopPropagation()">
+              <input type="checkbox" id="ds-logo-show" checked>
+              <span id="dsl-logo-label">Logo</span>
+            </label>
+            <button class="ds-reset-btn" id="dsr-logo" title="Reset section">↺</button>
+          </summary>
+          <div class="ds-section-body">
+            <div class="ds-size-row">
+              <label class="fm-label ds-size-label" id="dsl-logo-space">Space (mm)</label>
+              <input type="range" id="ds-logo-space-range" min="2" max="20" step="0.5" value="6" class="ds-slider">
+              <input type="number" id="ds-logo-space" value="6" step="0.5" min="2" max="20" class="fm-input ds-size-num">
+            </div>
+            <div class="ds-logo-fit-row">
+              <div class="ds-logo-primary-inline">
+                <label class="fm-checkbox-group ds-logo-fit-toggle">
+                  <input type="checkbox" id="ds-logo-fit" checked>
+                  <span id="dsl-logo-fit">Scale to fit bounds</span>
+                </label>
+                <div class="ds-logo-justify-inline">
+                  <label class="fm-label ds-logo-justify-label" id="dsl-logo-align">Justification</label>
+                  <div class="ds-align-group" id="ds-logo-align-group" data-value="left">
+                    <button class="ds-align-btn active" data-align="left" title="Left">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+                    </button>
+                    <button class="ds-align-btn" data-align="center" title="Center">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                    </button>
+                    <button class="ds-align-btn" data-align="right" title="Right">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="ds-logo-manual-inline" id="ds-logo-manual-wrap" hidden>
+                <label class="fm-label ds-logo-manual-label" id="dsl-logo-manual">Max logo height (mm)</label>
+                <input type="range" id="ds-logo-manual-range" min="2" max="20" step="0.5" value="6" class="ds-slider">
+                <input type="number" id="ds-logo-manual" value="6" step="0.5" min="2" max="20" class="fm-input ds-size-num">
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Section: Title -->
+        <details class="ds-section" open>
+          <summary class="ds-section-header" id="dsh-title">
+            <label class="ds-header-show" onclick="event.stopPropagation()">
+              <input type="checkbox" id="ds-title-show" checked>
+              <span id="dsl-title-label">Title</span>
+            </label>
+            <button class="ds-reset-btn" id="dsr-title" title="Reset section">↺</button>
+          </summary>
+          <div class="ds-section-body">
+            <div class="ds-size-row">
+              <label class="fm-label ds-size-label" id="dsl-title-size">Max size (mm)</label>
+              <input type="range" id="ds-title-size-range" min="1" max="20" step="0.5" value="4" class="ds-slider">
+              <input type="number" id="ds-title-size" value="4" step="0.5" min="1" max="20" class="fm-input ds-size-num">
+            </div>
+            <div class="ds-options-row">
+              <label class="fm-checkbox-group">
+                <input type="checkbox" id="ds-title-fit" checked>
+                <span id="dsl-title-fit">Fit to width</span>
+              </label>
+              <label class="fm-checkbox-group">
+                <input type="checkbox" id="ds-divider-above">
+                <span id="dsl-divider-above">Line above</span>
+              </label>
+              <label class="fm-checkbox-group">
+                <input type="checkbox" id="ds-divider-below" checked>
+                <span id="dsl-divider-below">Line below</span>
+              </label>
+            </div>
+            <div>
+              <div class="ds-align-combo">
+                <div class="ds-align-main-inline">
+                  <label class="fm-label ds-logo-justify-label" id="dsl-title-align">Justification</label>
+                  <div class="ds-align-group" id="ds-title-align-group" data-value="left">
+                    <button class="ds-align-btn active" data-align="left" title="Left">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+                    </button>
+                    <button class="ds-align-btn" data-align="center" title="Center">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                    </button>
+                    <button class="ds-align-btn" data-align="right" title="Right">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="ds-title-gap-inline">
+                  <label class="fm-label ds-mini-label" id="dsl-title-gap">Margin (mm)</label>
+                  <div class="ds-size-row ds-size-row-compact">
+                    <input type="range" id="ds-title-gap-range" min="-1" max="4" step="0.1" value="0" class="ds-slider">
+                    <input type="number" id="ds-title-gap" value="0" min="-1" max="4" step="0.1" class="fm-input ds-size-num">
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="ds-tpl-label-row">
+                <label class="fm-label" id="dsl-title-tpl">Title Format</label>
+                <button class="ds-syntax-btn" id="ds-title-syntax-btn" type="button" title="Template syntax help">?</button>
+              </div>
+              <textarea id="ds-title-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.name}"></textarea>
+              <div class="ds-token-area" id="ds-title-token-area"></div>
+            </div>
+
+            <div class="ds-secondary-toggle">
+              <label class="fm-checkbox-group ds-secondary-check">
+                <input type="checkbox" id="ds-title2-show">
+                <span id="dsl-title2-show">Subtitle</span>
+              </label>
+            </div>
+
+            <div id="ds-title2-block" class="ds-secondary-panel" style="display:none">
+              <div class="ds-size-row">
+                <label class="fm-label ds-size-label" id="dsl-title2-size">Max size (mm)</label>
+                <input type="range" id="ds-title2-size-range" min="1" max="20" step="0.5" value="4" class="ds-slider">
+                <input type="number" id="ds-title2-size" value="4" step="0.5" min="1" max="20" class="fm-input ds-size-num">
+              </div>
+              <div class="ds-options-row">
+                <label class="fm-checkbox-group">
+                  <input type="checkbox" id="ds-title2-fit" checked>
+                  <span id="dsl-title2-fit">Fit to width</span>
+                </label>
+                <label class="fm-checkbox-group">
+                  <input type="checkbox" id="ds-title2-divider-above">
+                  <span id="dsl-title2-divider-above">Line above</span>
+                </label>
+                <label class="fm-checkbox-group">
+                  <input type="checkbox" id="ds-title2-divider-below">
+                  <span id="dsl-title2-divider-below">Line below</span>
+                </label>
+              </div>
+              <div>
+                <div class="ds-align-combo">
+                  <div class="ds-align-main-inline">
+                    <label class="fm-label ds-logo-justify-label" id="dsl-title2-align">Justification</label>
+                    <div class="ds-align-group" id="ds-title2-align-group" data-value="left">
+                      <button class="ds-align-btn active" data-align="left" title="Left">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+                      </button>
+                      <button class="ds-align-btn" data-align="center" title="Center">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                      </button>
+                      <button class="ds-align-btn" data-align="right" title="Right">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="ds-title-gap-inline">
+                    <label class="fm-label ds-mini-label" id="dsl-title2-gap">Margin (mm)</label>
+                    <div class="ds-size-row ds-size-row-compact">
+                      <input type="range" id="ds-title2-gap-range" min="-1" max="4" step="0.1" value="0" class="ds-slider">
+                      <input type="number" id="ds-title2-gap" value="0" min="-1" max="4" step="0.1" class="fm-input ds-size-num">
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div class="ds-tpl-label-row">
+                  <label class="fm-label" id="dsl-title2-tpl">Subtitle Format</label>
+                  <button class="ds-syntax-btn" id="ds-title2-syntax-btn" type="button" title="Template syntax help">?</button>
+                </div>
+                <textarea id="ds-title2-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.material}"></textarea>
+                <div class="ds-token-area" id="ds-title2-token-area"></div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Section: QR Code -->
+        <details class="ds-section" open>
+          <summary class="ds-section-header" id="dsh-qr">
+            <label class="ds-header-show" onclick="event.stopPropagation()">
+              <input type="checkbox" id="ds-qr-show" checked>
+              <span id="dsl-qr-label">QR Code</span>
+            </label>
+            <button class="ds-reset-btn" id="dsr-qr" title="Reset section">↺</button>
+          </summary>
+          <div class="ds-section-body">
+            <div class="ds-qr-top-row">
+              <div class="ds-qr-mode-inline">
+                <label class="fm-label" id="dsl-qr-mode">Mode</label>
+                <select id="ds-qr-mode" class="fm-input fm-select">
+                  <option value="simple" selected id="dso-qr-simple">Simple</option>
+                  <option value="logo" id="dso-qr-logo">Logo</option>
+                  <option value="colorLogo" id="dso-qr-color-logo">Color Logo</option>
+                </select>
+              </div>
+              <div class="ds-qr-size-inline">
+                <label class="fm-label ds-size-label" id="dsl-qr-size">Size (mm)</label>
+                <div class="ds-size-row ds-size-row-compact">
+                  <input type="range" id="ds-qr-size-range" min="5" max="60" step="1" value="18" class="ds-slider">
+                  <input type="number" id="ds-qr-size" value="18" step="1" min="5" max="60" class="fm-input ds-size-num">
+                </div>
+              </div>
+            </div>
+            <div>
+              <label class="fm-label" id="dsl-qr-link">Link mode</label>
+              <div class="ds-pill-group" id="ds-qr-link-group" data-value="spool">
+                <button class="ds-pill-btn" data-val="url" id="dsp-qr-url">Custom URL</button>
+                <button class="ds-pill-btn active" data-val="spool" id="dsp-qr-spool">Spool URL</button>
+              </div>
+            </div>
+            <div id="ds-qr-url-wrap" style="display:none;">
+              <label class="fm-label" id="dsl-qr-url-tpl">Custom URL base</label>
+              <input type="text" id="ds-qr-url-tpl" class="fm-input ds-tpl-input" placeholder="https://example.com">
+            </div>
+            <div class="ds-two-col-row">
+              <div class="ds-field-col">
+                <label class="fm-label" id="dsl-qr-pos">Position</label>
+                <div class="ds-pill-group" id="ds-qr-pos-group" data-value="right">
+                  <button class="ds-pill-btn" data-val="left" id="dsp-qr-left">Left</button>
+                  <button class="ds-pill-btn active" data-val="right" id="dsp-qr-right">Right</button>
+                </div>
+              </div>
+              <div class="ds-field-col">
+                <label class="fm-label" id="dsl-qr-valign">Vertical align</label>
+                <div class="ds-pill-group" id="ds-qr-valign-group" data-value="bottom">
+                  <button class="ds-pill-btn" data-val="top" id="dsp-qr-top">Top</button>
+                  <button class="ds-pill-btn" data-val="center" id="dsp-qr-mid">Mid</button>
+                  <button class="ds-pill-btn active" data-val="bottom" id="dsp-qr-bot">Bot</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Section: Information -->
+        <details class="ds-section" open>
+          <summary class="ds-section-header" id="dsh-info">
+            <label class="ds-header-show" onclick="event.stopPropagation()">
+              <input type="checkbox" id="ds-info-show" checked>
+              <span id="dsl-info-label">Information</span>
+            </label>
+            <button class="ds-reset-btn" id="dsr-info" title="Reset section">↺</button>
+          </summary>
+          <div class="ds-section-body">
+            <div class="ds-size-row">
+              <label class="fm-label ds-size-label" id="dsl-info-size">Text size (mm)</label>
+              <input type="range" id="ds-info-size-range" min="1" max="10" step="0.5" value="2.5" class="ds-slider">
+              <input type="number" id="ds-info-size" value="2.5" step="0.5" min="1" max="10" class="fm-input ds-size-num">
+            </div>
+            <div class="ds-two-col-row">
+              <div class="ds-field-col">
+                <label class="fm-label" id="dsl-info-halign">Justification</label>
+                <div class="ds-align-group" id="ds-info-align-group" data-value="left">
+                  <button class="ds-align-btn active" data-align="left" title="Left">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+                  </button>
+                  <button class="ds-align-btn" data-align="center" title="Center">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                  </button>
+                  <button class="ds-align-btn" data-align="right" title="Right">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="ds-field-col">
+                <label class="fm-label" id="dsl-info-valign">Vertical align</label>
+                <div class="ds-pill-group" id="ds-info-valign-group" data-value="bottom">
+                  <button class="ds-pill-btn" data-val="top" id="dsip-top">Top</button>
+                  <button class="ds-pill-btn" data-val="center" id="dsip-mid">Mid</button>
+                  <button class="ds-pill-btn active" data-val="bottom" id="dsip-bot">Bot</button>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="ds-tpl-label-row">
+                <label class="fm-label" id="dsl-info-tpl">Information Format</label>
+                <button class="ds-syntax-btn" id="ds-info-syntax-btn" type="button" title="Template syntax help">?</button>
+              </div>
+              <textarea id="ds-info-tpl" class="fm-input ds-tpl-input" rows="7" placeholder="{filament.material}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}°C&#10;Bed: {filament.bed_temp}°C"></textarea>
+              <div class="ds-token-area" id="ds-info-token-area"></div>
+            </div>
+
+            <!-- Second info column toggle -->
+            <div class="ds-secondary-toggle">
+              <label class="fm-checkbox-group ds-secondary-check">
+                <input type="checkbox" id="ds-info2-show">
+                <span id="dsl-info2-show">Side Column</span>
+              </label>
+            </div>
+
+            <!-- Second info column controls (collapsed by default) -->
+            <div id="ds-info2-block" class="ds-secondary-panel" style="display:none">
+              <label class="fm-checkbox-group">
+                <input type="checkbox" id="ds-info2-vsep">
+                <span id="dsl-info2-vsep">Vertical separator</span>
+              </label>
+              <div class="ds-size-row">
+                <label class="fm-label ds-size-label" id="dsl-info2-size">Text size (mm)</label>
+                <input type="range" id="ds-info2-size-range" min="1" max="10" step="0.5" value="2.5" class="ds-slider">
+                <input type="number" id="ds-info2-size" value="2.5" step="0.5" min="1" max="10" class="fm-input ds-size-num">
+              </div>
+              <div class="ds-two-col-row">
+                <div class="ds-field-col">
+                  <label class="fm-label" id="dsl-info2-halign">Justification</label>
+                  <div class="ds-align-group" id="ds-info2-align-group" data-value="left">
+                    <button class="ds-align-btn active" data-align="left" title="Left">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+                    </button>
+                    <button class="ds-align-btn" data-align="center" title="Center">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                    </button>
+                    <button class="ds-align-btn" data-align="right" title="Right">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="ds-field-col">
+                  <label class="fm-label" id="dsl-info2-valign">Vertical align</label>
+                  <div class="ds-pill-group" id="ds-info2-valign-group" data-value="bottom">
+                    <button class="ds-pill-btn" data-val="top" id="dsip2-top">Top</button>
+                    <button class="ds-pill-btn" data-val="center" id="dsip2-mid">Mid</button>
+                    <button class="ds-pill-btn active" data-val="bottom" id="dsip2-bot">Bot</button>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div class="ds-tpl-label-row">
+                  <label class="fm-label" id="dsl-info2-tpl">Side Column Format</label>
+                  <button class="ds-syntax-btn" id="ds-info2-syntax-btn" type="button" title="Template syntax help">?</button>
+                </div>
+                <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input" rows="5" placeholder="{filament.weight}g&#10;{filament.color_hex}"></textarea>
+                <div class="ds-token-area" id="ds-info2-token-area"></div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+      </div>
+
+      </div><!-- /.print-sidebar-scroll -->
+
+      <div class="action-buttons">
+        <button id="btn-print" class="fm-btn fm-btn-primary" onclick="filamanPrint()">Drucken</button>
+        <button id="btn-reset" class="fm-btn fm-btn-outline">Zurücksetzen</button>
+      </div>
+    </aside>
+
+    <main class="preview-container">
+      <div class="preview-zoom-bar">
+        <button class="preview-zoom-btn" id="preview-zoom-out" title="Zoom out">−</button>
+        <input type="range" id="preview-zoom-slider" min="50" max="300" step="5" value="100" class="preview-zoom-slider">
+        <button class="preview-zoom-btn" id="preview-zoom-in" title="Zoom in">+</button>
+        <span id="preview-zoom-label" class="preview-zoom-label">100%</span>
+        <button class="preview-zoom-btn preview-zoom-reset" id="preview-zoom-reset" title="Reset zoom">⟳</button>
+      </div>
+      <div class="preview-scroll-area">
+      <div id="label-preview" class="label-preview">
+        <!-- Top: Logo area -->
+        <div id="label-top" class="label-top">
+          <img id="prev-logo" class="label-logo" alt="" />
+          <div id="prev-mfr-text" class="label-mfr-text"></div>
+        </div>
+        <div id="label-top-divider" class="label-divider"></div>
+
+        <!-- Middle: Designation + Color swatch -->
+        <div id="label-middle" class="label-middle">
+          <div class="label-middle-left">
+            <div id="prev-filament" class="label-designation"></div>
+            <div id="prev-color-row" class="label-color-row">
+              <div id="prev-color-swatch" class="label-color-swatch"></div>
+              <span id="prev-color-name" class="label-color-name"></span>
+            </div>
+          </div>
+          <div id="prev-hex-code" class="label-hex-code"></div>
+        </div>
+
+        <!-- Bottom: ID + Extra fields left, QR right -->
+        <div id="label-bottom" class="label-bottom">
+          <div class="label-bottom-left">
+            <div id="prev-id" class="label-spool-id"></div>
+            <div id="prev-extra-fields" class="label-extra-fields"></div>
+          </div>
+          <div id="label-qr-container" class="label-qr"></div>
+        </div>
+      </div>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<style>
+  .print-page {
+    display: flex;
+    height: calc(100vh - 64px);
+    margin: -32px;
+    overflow-x: auto;   /* allow h-scroll on narrow screens */
+    overflow-y: hidden;
+  }
+
+  .print-sidebar {
+    width: 320px;
+    flex-shrink: 0;  /* don't compress on narrow viewport */
+    transition: width 0.2s ease;
+    background: var(--bg-elevated);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Scrollable inner wrapper — action buttons sit outside so they're always visible */
+  .print-sidebar-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: visible;  /* allow native select dropdown to render fully */
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 24px 24px 16px;
+  }
+
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .back-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity var(--transition);
+  }
+
+  .back-link:hover {
+    opacity: 0.8;
+  }
+
+  .settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .settings-section h3 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  .preview-container {
+    flex: 1;
+    min-width: 320px;  /* minimum usable preview width (width of zoom bar) */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-soft);
+  }
+
+  .preview-zoom-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 20px 6px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .preview-zoom-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--text);
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background var(--transition), border-color var(--transition);
+  }
+  .preview-zoom-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--btn-primary-text);
+  }
+  .preview-zoom-reset {
+    font-size: 0.85rem;
+  }
+
+  .preview-zoom-slider {
+    flex: 1;
+    max-width: 160px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .preview-zoom-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    min-width: 38px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .preview-scroll-area {
+    flex: 1;
+    display: flex;
+    /* 'safe center' falls back to flex-start when content overflows, so the
+       label is always reachable by scrolling rather than hidden above/left */
+    align-items: safe center;
+    justify-content: safe center;
+    padding: 40px;
+    overflow: auto;
+  }
+
+  .label-preview {
+    background: white;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    padding: 2mm;
+    box-sizing: border-box;
+    overflow: hidden;
+    position: relative;
+    border: 1px dashed #ccc;
+    border-radius: 4px;
+    color: black;
+    font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  }
+
+  .label-preview::before {
+    content: '';
+    position: absolute;
+    inset: var(--inner-border-inset, 0mm);
+    border: var(--inner-border-style, none);
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+
+  /* Top: Logo area */
+  .label-top {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2mm;
+    padding-bottom: 1mm;
+    min-height: 0;
+  }
+
+  .print-sidebar.sidebar-wide {
+    width: 530px;
+  }
+
+  .label-logo {
+    max-height: 8mm;
+    max-width: 60%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .label-mfr-text {
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: black;
+  }
+
+  .label-divider {
+    border-top: 0.3mm solid black;
+    margin: 0 0 1mm 0;
+  }
+
+  /* Middle: Designation + Color */
+  .label-middle {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 2mm;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .label-middle-left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5mm;
+  }
+
+  .label-designation {
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: black;
+  }
+
+  .label-color-row {
+    display: flex;
+    align-items: center;
+    gap: 1.5mm;
+  }
+
+  .label-color-swatch {
+    width: 100%;
+    height: 3mm;
+    border-radius: 0.5mm;
+    flex-shrink: 0;
+  }
+
+  .label-color-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: black;
+  }
+
+  .label-hex-code {
+    font-family: 'Space Mono', 'Courier New', monospace;
+    white-space: nowrap;
+    color: black;
+    flex-shrink: 0;
+    align-self: flex-end;
+  }
+
+  /* Bottom: ID + Extra fields left, QR right */
+  .label-bottom {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 2mm;
+    margin-top: auto;
+  }
+
+  .label-bottom-left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3mm;
+  }
+
+  .label-spool-id {
+    font-weight: 600;
+    color: black;
+  }
+
+  .label-extra-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .label-qr {
+    flex-shrink: 0;
+  }
+
+  .fm-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: block;
+    color: var(--text);
+  }
+
+  .fm-input {
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 0.9rem;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    width: 100%;
+    height: 42px;
+    box-sizing: border-box;
+  }
+
+  .fm-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
+  .fm-checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    transition: background var(--transition);
+  }
+
+  .fm-checkbox-group:hover {
+    background: var(--bg-soft);
+  }
+
+  .fm-checkbox-group input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .fm-checkbox-group span {
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+
+  .fm-btn {
+    padding: 12px 20px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-weight: 600;
+    font-size: 0.875rem;
+    letter-spacing: 0.2px;
+    cursor: pointer;
+    transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+    font-family: var(--font-sans);
+  }
+
+  .fm-btn-primary {
+    background: var(--accent);
+    color: var(--btn-primary-text);
+    box-shadow: var(--glow);
+  }
+
+  .fm-btn-primary:hover {
+    transform: translateY(-2px);
+  }
+
+  .fm-btn-outline {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .fm-btn-outline:hover {
+    background: var(--bg-soft);
+  }
+
+  .action-buttons {
+    /* Outside the scroll wrapper so Print/Defaults are always visible */
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 24px 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  .checkbox-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+
+  .checkbox-grid-single {
+    grid-template-columns: 1fr;
+  }
+
+  /* Tab navigation */
+  .tab-nav {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-soft);
+    border-radius: var(--radius-sm);
+    padding: 4px;
+  }
+
+  .tab-btn {
+    flex: 1;
+    padding: 7px 10px;
+    border: none;
+    border-radius: calc(var(--radius-sm) - 2px);
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+    white-space: nowrap;
+  }
+
+  .tab-btn:hover {
+    color: var(--text);
+  }
+
+  .tab-btn.active {
+    background: var(--bg-elevated);
+    color: var(--accent);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  }
+
+  /* Designer sections */
+  .ds-section {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .ds-section-header {
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    background: var(--bg-soft);
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    user-select: none;
+  }
+
+  .ds-section-header::-webkit-details-marker { display: none; }
+
+  .ds-section-header::after {
+    content: '▾';
+    font-size: 0.7rem;
+    transition: transform var(--transition);
+  }
+
+  details.ds-section[open] > .ds-section-header::after {
+    transform: rotate(-180deg);
+  }
+
+  .ds-reset-btn {
+    margin-left: auto;
+    margin-right: 20px; /* leave room for chevron */
+    padding: 2px 6px;
+    font-size: 0.7rem;
+    line-height: 1;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity var(--transition), color var(--transition);
+  }
+  .ds-reset-btn:hover { opacity: 1; color: var(--accent); }
+
+  /* Template save/load row */
+  .ds-preset-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .ds-preset-select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ds-preset-name-input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ds-action-btn {
+    flex-shrink: 0;
+    padding: 5px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-soft);
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background var(--transition), color var(--transition), border-color var(--transition);
+  }
+
+  .ds-action-btn:hover {
+    background: var(--bg-elevated);
+  }
+
+  .ds-action-btn-primary {
+    background: var(--accent);
+    color: var(--btn-primary-text);
+    border-color: var(--accent);
+  }
+
+  .ds-action-btn-primary:hover {
+    opacity: 0.88;
+  }
+
+  .ds-action-btn-overwrite {
+    background: var(--warning, #f59e0b);
+    color: #fff;
+    border-color: var(--warning, #f59e0b);
+  }
+
+  .ds-action-btn-overwrite:hover {
+    opacity: 0.88;
+  }
+
+  .ds-action-btn-danger {
+    color: var(--danger, #ef4444);
+    border-color: var(--danger, #ef4444);
+  }
+
+  .ds-action-btn-danger:hover {
+    background: var(--danger, #ef4444);
+    color: #fff;
+  }
+
+  .ds-preset-dirty {
+    color: var(--accent);
+  }
+
+  .ds-section-body {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--bg-elevated);
+  }
+
+  /* Align button group (L/C/R icons) */
+  .ds-align-group {
+    display: flex;
+    gap: 4px;
+  }
+
+  .ds-align-combo {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .ds-align-combo > .ds-align-main-inline {
+    flex: 0 0 auto;
+  }
+
+  .ds-align-main-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ds-title-gap-inline {
+    flex: 1;
+    min-width: 190px;
+  }
+
+  .ds-mini-label {
+    margin-bottom: 4px;
+    font-size: 0.72rem;
+    color: var(--text-soft);
+    text-align: left;
+  }
+
+  .ds-size-row-compact {
+    gap: 4px;
+  }
+
+  .ds-label-bottom-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .ds-label-border-toggle {
+    margin: 0;
+    padding: 6px 10px;
+    flex-shrink: 0;
+  }
+
+  .ds-label-margin-inline {
+    flex: 1;
+    min-width: 240px;
+  }
+
+  .ds-align-btn {
+    flex: 1;
+    padding: 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--input-bg);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition), color var(--transition), border-color var(--transition);
+  }
+
+  .ds-align-btn:hover { color: var(--text); }
+
+  .ds-align-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--btn-primary-text);
+  }
+
+  /* Pill button group (Left/Right, Top/Mid/Bot etc.) */
+  .ds-pill-group {
+    display: flex;
+    gap: 4px;
+  }
+
+  .ds-two-col-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    align-items: start;
+  }
+
+  .ds-field-col {
+    min-width: 0;
+  }
+
+  @media (max-width: 900px) {
+    .ds-two-col-row {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+  }
+
+  .ds-pill-btn {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--input-bg);
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: background var(--transition), color var(--transition), border-color var(--transition);
+  }
+
+  .ds-pill-btn:hover { color: var(--text); }
+
+  .ds-pill-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--btn-primary-text);
+  }
+
+  .fm-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+
+  .ds-tpl-input {
+    font-family: 'Space Mono', 'Courier New', monospace;
+    font-size: 0.8rem;
+    height: auto;
+    resize: vertical;
+  }
+
+  .ds-tpl-textarea {
+    min-height: 42px;
+    overflow-y: hidden;
+    overflow-x: hidden;
+    resize: vertical;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.45;
+  }
+
+  /* Inline row of checkboxes (fit/divider options) */
+  .ds-options-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  /* Secondary toggle + nested settings panel */
+  .ds-secondary-toggle {
+    margin-top: 2px;
+  }
+
+  .ds-secondary-check {
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-soft);
+  }
+  .ds-secondary-check span {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.9px;
+    color: var(--text-muted);
+  }
+
+  .ds-secondary-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 2px;
+    padding: 12px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--bg-soft) 45%, var(--bg-elevated));
+  }
+
+  /* Show checkbox embedded in section header */
+  .ds-header-show {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    flex: 1;
+    min-width: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+  }
+  .ds-header-show input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  /* Two-column grid for width + height */
+  .ds-dim-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  /* Inline size row: label + slider + number input */
+  .ds-size-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ds-size-label {
+    min-width: 80px;
+    flex-shrink: 0;
+    margin-bottom: 0;
+  }
+  .ds-slider {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .ds-size-num {
+    width: 60px !important;
+    flex-shrink: 0;
+    padding: 4px 6px !important;
+    text-align: center;
+  }
+
+  .ds-logo-fit-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .ds-logo-primary-inline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .ds-logo-fit-toggle {
+    margin: 0;
+    padding: 6px 8px;
+    flex-shrink: 0;
+  }
+
+  .ds-logo-fit-toggle span {
+    white-space: nowrap;
+  }
+
+  .ds-logo-justify-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    justify-content: flex-end;
+  }
+
+  .ds-logo-justify-label {
+    margin-bottom: 0;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    color: var(--text-soft);
+  }
+
+  .ds-logo-manual-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 0 100%;
+    min-width: 180px;
+  }
+
+  .ds-logo-manual-inline[hidden] {
+    display: none !important;
+  }
+
+  .ds-logo-manual-label {
+    margin-bottom: 0;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    color: var(--text-soft);
+  }
+
+  .ds-qr-top-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .ds-qr-mode-inline {
+    width: 180px;
+    flex: 0 0 180px;
+  }
+
+  .ds-qr-size-inline {
+    flex: 1;
+    min-width: 230px;
+  }
+
+  /* Template label row with syntax help button */
+  .ds-tpl-label-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .ds-tpl-label-row .fm-label {
+    margin-bottom: 0;
+    flex: 1;
+  }
+
+  /* Syntax help button */
+  .ds-syntax-btn {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-size: 0.65rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background var(--transition), color var(--transition);
+  }
+  .ds-syntax-btn:hover {
+    background: var(--accent);
+    color: var(--btn-primary-text);
+  }
+
+  /* Inline token area — collapsible section below each template input */
+  .ds-token-area {
+    margin-top: 5px;
+  }
+  .ds-tokens-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.6rem;
+    font-weight: 500;
+    padding: 0;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    transition: color var(--transition);
+    opacity: 0.85;
+  }
+  .ds-tokens-toggle:hover {
+    color: var(--text);
+    opacity: 1;
+  }
+  .ds-tokens-caret {
+    font-size: 0.5rem;
+    line-height: 1;
+  }
+  .ds-tokens-body {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 6px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  .ds-tokens-group-label {
+    font-size: 0.55rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin: 0 -6px 4px -6px;
+    padding: 4px 6px 3px 6px;
+    opacity: 0.7;
+    border-bottom: 1px solid var(--border);
+  }
+  .ds-tokens-empty {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    font-family: 'Courier New', monospace;
+    opacity: 0.55;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+  }
+
+</style>
+
+<style is:global>
+  /* Syntax popover — global because it is appended to document.body */
+  .ds-syntax-popover {
+    position: fixed;
+    z-index: 9999;
+    background: var(--bg-elevated);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 14px 16px 12px;
+    width: min(760px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    /* cap height so it never goes off-screen on small displays */
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    font-size: 0.78rem;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .ds-syntax-popover h4 {
+    margin: 0 0 10px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    padding-right: 20px;
+  }
+  .ds-syntax-popover table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .ds-syntax-popover tr + tr td {
+    border-top: 1px solid var(--border);
+  }
+  .ds-syntax-popover td {
+    padding: 5px 0;
+    vertical-align: middle;
+  }
+  .ds-syntax-popover td:first-child {
+    font-family: 'Space Mono', 'Courier New', monospace;
+    font-size: 0.68rem;
+    color: var(--accent);
+    white-space: nowrap;
+    padding-right: 12px;
+  }
+  .ds-syntax-popover td:last-child {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    padding-left: 8px;
+  }
+  .ds-syntax-popover .ds-popover-eg {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.68rem;
+    color: color-mix(in srgb, var(--accent) 60%, var(--text-muted));
+    font-style: italic;
+  }
+  .ds-syntax-popover .ds-popover-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .ds-syntax-popover .ds-popover-close:hover {
+    color: var(--text);
+    background: var(--border);
+  }
+
+  /* Token hint chips — must be global because chips are created dynamically via JS */
+  .ds-token-hints {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  .ds-token-chip {
+    font-family: 'Space Mono', 'Courier New', monospace;
+    font-size: 0.6rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+    white-space: nowrap;
+    user-select: none;
+    line-height: 1.4;
+  }
+
+  .ds-token-chip:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--btn-primary-text);
+  }
+
+  /* Token area sections — must be global because they're created dynamically via JS */
+  .ds-token-area {
+    margin-top: 5px;
+  }
+
+  .ds-tokens-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 0;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    transition: color var(--transition);
+    opacity: 0.85;
+  }
+
+  .ds-tokens-toggle:hover {
+    color: var(--text);
+    opacity: 1;
+  }
+
+  .ds-tokens-caret {
+    font-size: 0.5rem;
+    line-height: 1;
+  }
+
+  .ds-tokens-body {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 6px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
+  .ds-tokens-group-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin: 0 -6px 4px -6px;
+    padding: 4px 6px 3px 6px;
+    opacity: 0.7;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .ds-tokens-empty {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    font-family: 'Courier New', monospace;
+    opacity: 0.55;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+  }
+
+  @media print {
+    /* Reset page */
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: visible !important;
+      background: white !important;
+    }
+
+    /* Hide Layout elements */
+    .fm-sidebar,
+    #fm-confirm-overlay,
+    .fm-sidebar-backdrop {
+      display: none !important;
+    }
+
+    /* Reset Layout grid to block - ensure visibility */
+    .fm-page {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      background: white !important;
+      min-height: 0 !important;
+      height: auto !important;
+      position: static !important;
+    }
+
+    .fm-page > main {
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: visible !important;
+      background: white !important;
+    }
+
+    /* Hide print settings sidebar */
+    .print-sidebar {
+      display: none !important;
+    }
+
+    /* Reset print page containers */
+    .print-page {
+      margin: 0 !important;
+      height: auto !important;
+      display: block !important;
+    }
+
+    .preview-container {
+      padding: 0 !important;
+      margin: 0 !important;
+      display: block !important;
+      overflow: visible !important;
+      background: white !important;
+    }
+
+    /* The label */
+    .label-preview {
+      box-shadow: none !important;
+      border: none !important;
+      border-radius: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      background: white !important;
+      color: black !important;
+      margin: 0 !important;
+      padding: var(--print-label-padding, 2mm) !important;
+      overflow: hidden !important;
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      /* Dimensions set dynamically via JS #page-style tag */
+    }
+
+    .label-preview div,
+    .label-preview span {
+      color: inherit !important;
+    }
+
+    .label-color-swatch {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .label-qr {
+      flex-shrink: 0 !important;
+    }
+
+    .label-qr img {
+      display: block !important;
+    }
+
+    .label-logo {
+      display: block !important;
+    }
+
+    @page {
+      /* margin set dynamically via JS #page-style tag */
+    }
+  }
+</style>
+
+<script>
+  import { getReadableTextColor, normalizeHexColor, parseTemplate, renderTemplateText } from '../../../lib/label-template'
+  import type { SpoolData } from '../../../lib/label-template'
+
+  // Auto-collapse nav sidebar on the print page when the viewport is narrow —
+  // the print page needs maximum horizontal space and the overlay would cover the controls.
+  function applyPrintSidebarCollapse() {
+    const page = document.getElementById('fm-page')
+    if (!page) return
+    if (window.innerWidth < 1100) {
+      document.documentElement.classList.add('sidebar-collapsed')
+      page.classList.add('collapsed')
+      if (window.innerWidth > 768) {
+        localStorage.setItem('sidebar-collapsed', 'true')
+      }
+    }
+  }
+  applyPrintSidebarCollapse()
+  window.addEventListener('resize', applyPrintSidebarCollapse, { passive: true })
+
+  // Global print function for Safari compatibility
+  ;(window as any).filamanPrint = function() {
+    try {
+      // Try execCommand first (better Safari support)
+      document.execCommand('print', false, undefined)
+    } catch (e) {
+      // Fallback to window.print
+      window.print()
+    }
+  }
+
+  const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
+
+  const params = new URLSearchParams(window.location.search)
+  const labelData = {
+    id: id,
+    designation: params.get('designation') || '',
+    manufacturer: params.get('mfr') || '',
+    type: params.get('type') || '',
+    color: params.get('color') || '',
+    subtype: params.get('subtype') || '',
+    mfr_id: params.get('mfr_id') || '',
+    hex_code: params.get('hex_code') || '',
+    extruder_temp: params.get('extruder_temp') || '',
+    bed_temp: params.get('bed_temp') || '',
+    weight: params.get('weight') || '',
+    diameter: params.get('diameter') || '',
+    finish: params.get('finish') || '',
+    density: params.get('density') || '',
+    price: params.get('price') || '',
+  }
+
+  let extraFields: {key: string, label: string, value: string, source?: string}[] = []
+  try {
+    const stored = sessionStorage.getItem('filaman-label-extra-fields')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed)) {
+        extraFields = parsed.filter((item) => (
+          item &&
+          typeof item.key === 'string' &&
+          typeof item.label === 'string' &&
+          typeof item.value === 'string'
+        ))
+      }
+    }
+  } catch(e) { /* ignore */ }
+
+  const MM_TO_PX = 96 / 25.4
+  const PRINT_DPI = 600
+  const STORAGE_SOFT_LIMIT_BYTES = 4_500_000
+
+  function safeSetLocalStorage(key: string, value: string) {
+    if (value.length > STORAGE_SOFT_LIMIT_BYTES) {
+      console.warn(`Skipped persisting ${key}: payload too large`) 
+      return false
+    }
+    try {
+      localStorage.setItem(key, value)
+      return true
+    } catch (error) {
+      console.warn(`Failed to persist ${key}`, error)
+      return false
+    }
+  }
+
+  function parseJsonOrNull(raw: string | null): any | null {
+    if (!raw) return null
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return null
+    }
+  }
+
+  function clampNumber(value: number, min: number, max: number, fallback: number) {
+    if (!Number.isFinite(value)) return fallback
+    return Math.min(max, Math.max(min, value))
+  }
+
+  function clampInputValue(input: HTMLInputElement, min: number, max: number, fallback: number, decimals = 2) {
+    const next = clampNumber(Number(input.value), min, max, fallback)
+    const normalized = Number(next.toFixed(decimals))
+    input.value = String(normalized)
+    return normalized
+  }
+
+  function buildSafeQrUrl(linkMode: 'spool'|'url', templateBase: string, spoolId: string | number) {
+    if (linkMode === 'url' && templateBase.trim()) {
+      try {
+        const url = new URL(templateBase.trim())
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('invalid protocol')
+        const path = url.pathname.replace(/\/+$/, '')
+        return `${url.origin}${path}/spools/${encodeURIComponent(String(spoolId))}`
+      } catch {
+        // Fall through to safe default
+      }
+    }
+    return `${window.location.origin}/spools/${encodeURIComponent(String(spoolId))}`
+  }
+
+  // Flat SpoolData object consumed by the template parser (Phase 3)
+  // Keys match the {token} names used in designer templates.
+  function buildSpoolData() {
+    const extra: Record<string, string> = {}
+    for (const ef of extraFields) extra[ef.key] = ef.value
+    return {
+      id: labelData.id,
+      'filament.name': labelData.designation,
+      'filament.type': labelData.type,
+      'filament.subtype': labelData.subtype,
+      'filament.material': labelData.type,
+      'filament.color': labelData.color,
+      'filament.color_hex': labelData.hex_code,
+      'filament.manufacturer': labelData.manufacturer,
+      'filament.extruder_temp': labelData.extruder_temp,
+      'filament.bed_temp': labelData.bed_temp,
+      'filament.weight': labelData.weight,
+      'filament.diameter': labelData.diameter,
+      'filament.finish': labelData.finish,
+      'filament.density': labelData.density,
+      'filament.price': labelData.price,
+      extra,
+    }
+  }
+
+  // DOM references
+  const widthInput = document.getElementById('input-width') as HTMLInputElement
+  const heightInput = document.getElementById('input-height') as HTMLInputElement
+  const fontSizeInput = document.getElementById('input-font-size') as HTMLInputElement
+  const qrSizeInput = document.getElementById('input-qr-size') as HTMLInputElement
+  const checkLogo = document.getElementById('check-logo') as HTMLInputElement
+  const checkQR = document.getElementById('check-qr') as HTMLInputElement
+  const checkID = document.getElementById('check-id') as HTMLInputElement
+  const checkMfr = document.getElementById('check-mfr') as HTMLInputElement
+  const checkMat = document.getElementById('check-mat') as HTMLInputElement
+  const checkColor = document.getElementById('check-color') as HTMLInputElement
+  const checkColorSwatch = document.getElementById('check-color-swatch') as HTMLInputElement
+  const labelPreview = document.getElementById('label-preview') as HTMLElement
+
+  const LABEL_SETTINGS_KEY = 'filaman-label-settings'
+  const ACTIVE_TAB_KEY = 'filaman-label-active-tab'
+
+  // --- Tab switching ---
+  const tabBtns = document.querySelectorAll<HTMLButtonElement>('.tab-btn')
+  const tabPanelPrint = document.getElementById('tab-panel-print') as HTMLElement | null
+  const tabPanelDesigner = document.getElementById('tab-panel-designer') as HTMLElement | null
+  const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null
+  let activePreviewTab: 'print' | 'designer' = 'print'
+  let previewRenderVersion = 0
+
+  function beginPreviewRender(tab: 'print' | 'designer') {
+    activePreviewTab = tab
+    const token = ++previewRenderVersion
+    return () => activePreviewTab !== tab || token !== previewRenderVersion
+  }
+
+  function activateTab(tab: 'print' | 'designer') {
+    if (!tabPanelPrint || !tabPanelDesigner || !labelPreview) return
+    tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === tab))
+    tabPanelPrint.style.display = tab === 'print' ? '' : 'none'
+    tabPanelDesigner.style.display = tab === 'designer' ? '' : 'none'
+    if (resetBtn) resetBtn.style.display = tab === 'print' ? '' : 'none'
+    localStorage.setItem(ACTIVE_TAB_KEY, tab)
+    // Widen sidebar for designer, narrow for print settings
+    document.querySelector<HTMLElement>('.print-sidebar')?.classList.toggle('sidebar-wide', tab === 'designer')
+    // Trigger the appropriate preview when switching tabs — explicitly clear labelPreview first to ensure no cross-contamination
+    if (tab === 'designer') {
+      const isStale = beginPreviewRender('designer')
+      // Clear any classic preview remnants before building designer layout
+      labelPreview.innerHTML = ''
+      labelPreview.style.border = ''
+      labelPreview.style.padding = ''
+      updateDesignerPreview(isStale)
+    } else {
+      const isStale = beginPreviewRender('print')
+      // Force reset of classic layout detection before building print preview
+      labelPreview.innerHTML = ''
+      labelPreview.style.border = 'none'
+      labelPreview.style.padding = ''
+      updatePreview(isStale)
+    }
+  }
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => activateTab(btn.dataset.tab as 'print' | 'designer'))
+  })
+
+  // Restore last active tab — deferred until after designer setup completes
+  const savedTab = localStorage.getItem(ACTIVE_TAB_KEY)
+
+  // ─── Label Designer ────────────────────────────────────────────────────────
+
+  const DESIGNER_KEY = 'filaman-label-designer-v1'
+  const DESIGNER_SCHEMA_VERSION = 1
+
+  interface LabelDesignerSettings {
+    logo:   { show: boolean; spaceMm: number; scaleToFit: boolean; manualSizeMm: number; align: 'left'|'center'|'right' }
+    label:  { width: number; height: number; marginMm: number; border: boolean }
+    title:  { show: boolean; sizeMm: number; marginMm: number; fitToWidth: boolean; align: 'left'|'center'|'right'; template: string; dividerAbove: boolean; dividerBelow: boolean }
+    title2: { show: boolean; sizeMm: number; marginMm: number; fitToWidth: boolean; align: 'left'|'center'|'right'; template: string; dividerAbove: boolean; dividerBelow: boolean }
+    qr:     { show: boolean; mode: 'simple'|'logo'|'colorLogo'; sizeMm: number; position: 'left'|'right'; vAlign: 'top'|'center'|'bottom'; linkMode: 'spool'|'url'; urlTemplate: string }
+    info:   { show: boolean; sizeMm: number; hAlign: 'left'|'center'|'right'; vAlign: 'top'|'center'|'bottom'; template: string }
+    info2:  { show: boolean; vsep: boolean; sizeMm: number; hAlign: 'left'|'center'|'right'; vAlign: 'top'|'center'|'bottom'; template: string }
+  }
+
+  const DESIGNER_DEFAULTS: LabelDesignerSettings = {
+    logo:   { show: true, spaceMm: 6, scaleToFit: true, manualSizeMm: 6, align: 'left' },
+    label:  { width: 60, height: 40, marginMm: 1, border: false },
+    title:  { show: true, sizeMm: 4, marginMm: 0, fitToWidth: true, align: 'left', template: '{filament.name}', dividerAbove: false, dividerBelow: true },
+    title2: { show: false, sizeMm: 3.5, marginMm: 0, fitToWidth: true, align: 'left', template: '', dividerAbove: false, dividerBelow: false },
+    qr:     { show: true, mode: 'logo', sizeMm: 18, position: 'right', vAlign: 'bottom', linkMode: 'spool', urlTemplate: '' },
+    info:   { show: true, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom',
+              template: '{filament.material}\n{filament.color}\nExt: {filament.extruder_temp}°C\nBed: {filament.bed_temp}°C' },
+    info2:  { show: false, vsep: false, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom', template: '' },
+  }
+
+  function mergeDesignerSettings(raw: any): LabelDesignerSettings {
+    const candidate = raw && typeof raw === 'object' ? raw : {}
+    return {
+      ...DESIGNER_DEFAULTS,
+      ...candidate,
+      logo:  { ...DESIGNER_DEFAULTS.logo,  ...(candidate.logo ?? {}) },
+      label: { ...DESIGNER_DEFAULTS.label, ...(candidate.label ?? {}) },
+      title: { ...DESIGNER_DEFAULTS.title, ...(candidate.title ?? {}) },
+      title2: { ...DESIGNER_DEFAULTS.title2, ...(candidate.title2 ?? {}) },
+      qr: normalizeQrSettings(candidate.qr),
+      info:  { ...DESIGNER_DEFAULTS.info,  ...(candidate.info ?? {}) },
+      info2: { ...DESIGNER_DEFAULTS.info2, ...(candidate.info2 ?? {}) },
+    }
+  }
+
+  function loadDesignerSettingsFromStorage(): LabelDesignerSettings {
+    const parsed = parseJsonOrNull(localStorage.getItem(DESIGNER_KEY))
+    if (!parsed) return DESIGNER_DEFAULTS
+    try {
+      if (typeof parsed.version === 'number' && parsed.version >= DESIGNER_SCHEMA_VERSION && parsed.settings) {
+        return mergeDesignerSettings(parsed.settings)
+      }
+      // Backward compatibility for older flat payloads
+      return mergeDesignerSettings(parsed)
+    } catch {
+      localStorage.removeItem(DESIGNER_KEY)
+      return DESIGNER_DEFAULTS
+    }
+  }
+
+  function persistDesignerSettings(settings: LabelDesignerSettings) {
+    const payload = JSON.stringify({
+      version: DESIGNER_SCHEMA_VERSION,
+      settings,
+    })
+    safeSetLocalStorage(DESIGNER_KEY, payload)
+  }
+
+  function normalizeQrSettings(rawQr: any): LabelDesignerSettings['qr'] {
+    const merged = { ...DESIGNER_DEFAULTS.qr, ...(rawQr ?? {}) } as any
+    const rawMode = merged.mode
+    const hadNoneMode = rawMode === 'none'
+    const mode = rawMode === 'colorLogo'
+      ? 'colorLogo'
+      : rawMode === 'logo'
+        ? 'logo'
+        : rawMode === 'icon'
+          ? (merged.colorLogo ? 'colorLogo' : 'logo')
+          : 'simple'
+    const show = merged.show !== undefined ? Boolean(merged.show) : !hadNoneMode
+    return {
+      ...DESIGNER_DEFAULTS.qr,
+      ...merged,
+      show,
+      mode,
+    }
+  }
+
+  // All available tokens for the token-chip hints
+  // label = short display text; token = what gets inserted into the template
+  const DESIGNER_TOKENS: { token: string; label: string }[] = [
+    { token: '{color_swatch[1]}',      label: 'color_swatch[1]' },
+    { token: '{id}',                   label: 'id' },
+    { token: '{filament.name}',         label: 'name' },
+    { token: '{filament.type}',         label: 'type' },
+    { token: '{filament.subtype}',      label: 'subtype' },
+    { token: '{filament.color}',        label: 'color' },
+    { token: '{filament.color_hex}',    label: 'color_hex' },
+    { token: '{filament.manufacturer}', label: 'manufacturer' },
+    { token: '{filament.extruder_temp}',label: 'extruder_temp' },
+    { token: '{filament.bed_temp}',     label: 'bed_temp' },
+    { token: '{filament.weight}',       label: 'weight' },
+    { token: '{filament.diameter}',     label: 'diameter' },
+    { token: '{filament.finish}',       label: 'finish' },
+    { token: '{filament.density}',      label: 'density' },
+    { token: '{filament.price}',        label: 'price' },
+  ]
+
+  function saveDesignerSettings() {
+    const s: LabelDesignerSettings = {
+      logo: {
+        show:   (document.getElementById('ds-logo-show') as HTMLInputElement).checked,
+        spaceMm: Number((document.getElementById('ds-logo-space') as HTMLInputElement).value),
+        scaleToFit: (document.getElementById('ds-logo-fit') as HTMLInputElement).checked,
+        manualSizeMm: Number((document.getElementById('ds-logo-manual') as HTMLInputElement).value),
+        align:  (document.getElementById('ds-logo-align-group') as HTMLElement).dataset.value as 'left'|'center'|'right',
+      },
+      label: {
+        width:  clampNumber(Number((document.getElementById('ds-width') as HTMLInputElement).value), 20, 300, DESIGNER_DEFAULTS.label.width),
+        height: clampNumber(Number((document.getElementById('ds-height') as HTMLInputElement).value), 10, 200, DESIGNER_DEFAULTS.label.height),
+        marginMm: clampNumber(Number((document.getElementById('ds-margin') as HTMLInputElement).value), 0, 6, DESIGNER_DEFAULTS.label.marginMm),
+        border: (document.getElementById('ds-border') as HTMLInputElement).checked,
+      },
+      title: {
+        show:       (document.getElementById('ds-title-show') as HTMLInputElement).checked,
+        sizeMm:     Number((document.getElementById('ds-title-size') as HTMLInputElement).value),
+        marginMm:   Number((document.getElementById('ds-title-gap') as HTMLInputElement).value),
+        fitToWidth: (document.getElementById('ds-title-fit') as HTMLInputElement).checked,
+        align:      (document.getElementById('ds-title-align-group') as HTMLElement).dataset.value as 'left'|'center'|'right',
+        template:   (document.getElementById('ds-title-tpl') as HTMLTextAreaElement).value,
+        dividerAbove: (document.getElementById('ds-divider-above') as HTMLInputElement).checked,
+        dividerBelow: (document.getElementById('ds-divider-below') as HTMLInputElement).checked,
+      },
+      title2: {
+        show:       (document.getElementById('ds-title2-show') as HTMLInputElement).checked,
+        sizeMm:     Number((document.getElementById('ds-title2-size') as HTMLInputElement).value),
+        marginMm:   Number((document.getElementById('ds-title2-gap') as HTMLInputElement).value),
+        fitToWidth: (document.getElementById('ds-title2-fit') as HTMLInputElement).checked,
+        align:      (document.getElementById('ds-title2-align-group') as HTMLElement).dataset.value as 'left'|'center'|'right',
+        template:   (document.getElementById('ds-title2-tpl') as HTMLTextAreaElement).value,
+        dividerAbove: (document.getElementById('ds-title2-divider-above') as HTMLInputElement).checked,
+        dividerBelow: (document.getElementById('ds-title2-divider-below') as HTMLInputElement).checked,
+      },
+      qr: {
+        show:        (document.getElementById('ds-qr-show') as HTMLInputElement).checked,
+        mode:        (document.getElementById('ds-qr-mode') as HTMLSelectElement).value as 'simple'|'logo'|'colorLogo',
+        sizeMm:      clampNumber(Number((document.getElementById('ds-qr-size') as HTMLInputElement).value), 8, 40, DESIGNER_DEFAULTS.qr.sizeMm),
+        position:    (document.getElementById('ds-qr-pos-group') as HTMLElement).dataset.value as 'left'|'right',
+        vAlign:      (document.getElementById('ds-qr-valign-group') as HTMLElement).dataset.value as 'top'|'center'|'bottom',
+        linkMode:    (document.getElementById('ds-qr-link-group') as HTMLElement).dataset.value as 'spool'|'url',
+        urlTemplate: (document.getElementById('ds-qr-url-tpl') as HTMLInputElement).value,
+      },
+      info: {
+        show:   (document.getElementById('ds-info-show') as HTMLInputElement).checked,
+        sizeMm: Number((document.getElementById('ds-info-size') as HTMLInputElement).value),
+        hAlign: (document.getElementById('ds-info-align-group') as HTMLElement).dataset.value as 'left'|'center'|'right',
+        vAlign: (document.getElementById('ds-info-valign-group') as HTMLElement).dataset.value as 'top'|'center'|'bottom',
+        template: (document.getElementById('ds-info-tpl') as HTMLTextAreaElement).value,
+      },
+      info2: {
+        show:   (document.getElementById('ds-info2-show') as HTMLInputElement).checked,
+        vsep:   (document.getElementById('ds-info2-vsep') as HTMLInputElement).checked,
+        sizeMm: Number((document.getElementById('ds-info2-size') as HTMLInputElement).value),
+        hAlign: (document.getElementById('ds-info2-align-group') as HTMLElement).dataset.value as 'left'|'center'|'right',
+        vAlign: (document.getElementById('ds-info2-valign-group') as HTMLElement).dataset.value as 'top'|'center'|'bottom',
+        template: (document.getElementById('ds-info2-tpl') as HTMLTextAreaElement).value,
+      },
+    }
+    persistDesignerSettings(s)
+  }
+
+  function loadDesignerSettings() {
+    const s: LabelDesignerSettings = loadDesignerSettingsFromStorage()
+
+    const rawLogo = (s as any).logo ?? {}
+    const logoSpaceMm = Number(rawLogo.spaceMm ?? rawLogo.sizeMm ?? DESIGNER_DEFAULTS.logo.spaceMm)
+    const logoManualMm = Number(rawLogo.manualSizeMm ?? rawLogo.sizeMm ?? DESIGNER_DEFAULTS.logo.manualSizeMm)
+
+    // Use batch setter to apply all form values at once — consolidates ~100 lines of duplicate code
+    setFormFields([
+      // Logo section
+      { id: 'ds-logo-show', value: s.logo.show },
+      { id: 'ds-logo-space', value: logoSpaceMm, rangePartnerId: 'ds-logo-space-range' },
+      { id: 'ds-logo-fit', value: s.logo.scaleToFit },
+      { id: 'ds-logo-manual', value: logoManualMm, rangePartnerId: 'ds-logo-manual-range' },
+      // Label section
+      { id: 'ds-width', value: s.label.width },
+      { id: 'ds-height', value: s.label.height },
+      { id: 'ds-margin', value: s.label.marginMm, rangePartnerId: 'ds-margin-range' },
+      { id: 'ds-border', value: s.label.border },
+      // Title section
+      { id: 'ds-title-show', value: s.title.show },
+      { id: 'ds-title-size', value: s.title.sizeMm, rangePartnerId: 'ds-title-size-range' },
+      { id: 'ds-title-gap', value: s.title.marginMm ?? DESIGNER_DEFAULTS.title.marginMm, rangePartnerId: 'ds-title-gap-range' },
+      { id: 'ds-title-fit', value: s.title.fitToWidth },
+      { id: 'ds-title-tpl', value: s.title.template },
+      { id: 'ds-divider-above', value: s.title.dividerAbove ?? false },
+      { id: 'ds-divider-below', value: s.title.dividerBelow ?? true },
+      // Title2 section
+      { id: 'ds-title2-show', value: s.title2.show },
+      { id: 'ds-title2-size', value: s.title2.sizeMm, rangePartnerId: 'ds-title2-size-range' },
+      { id: 'ds-title2-gap', value: s.title2.marginMm ?? DESIGNER_DEFAULTS.title2.marginMm, rangePartnerId: 'ds-title2-gap-range' },
+      { id: 'ds-title2-fit', value: s.title2.fitToWidth },
+      { id: 'ds-title2-tpl', value: s.title2.template },
+      { id: 'ds-title2-divider-above', value: s.title2.dividerAbove ?? false },
+      { id: 'ds-title2-divider-below', value: s.title2.dividerBelow ?? false },
+      // QR section
+      { id: 'ds-qr-show', value: s.qr.show },
+      { id: 'ds-qr-mode', value: s.qr.mode },
+      { id: 'ds-qr-size', value: s.qr.sizeMm, rangePartnerId: 'ds-qr-size-range' },
+      { id: 'ds-qr-url-tpl', value: s.qr.urlTemplate },
+      // Info section
+      { id: 'ds-info-show', value: s.info.show },
+      { id: 'ds-info-size', value: s.info.sizeMm, rangePartnerId: 'ds-info-size-range' },
+      { id: 'ds-info-tpl', value: s.info.template },
+      // Info2 section
+      { id: 'ds-info2-show', value: s.info2.show },
+      { id: 'ds-info2-vsep', value: s.info2.vsep ?? false },
+      { id: 'ds-info2-size', value: s.info2.sizeMm, rangePartnerId: 'ds-info2-size-range' },
+      { id: 'ds-info2-tpl', value: s.info2.template },
+    ])
+
+    // Handle special cases (alignment groups, visibility toggles)
+    setAlignGroup('ds-logo-align-group', s.logo.align)
+    setAlignGroup('ds-title-align-group', s.title.align)
+    setAlignGroup('ds-title2-align-group', s.title2.align)
+    setAlignGroup('ds-info-align-group', s.info.hAlign)
+    setAlignGroup('ds-info2-align-group', s.info2.hAlign)
+    setPillGroup('ds-qr-pos-group', s.qr.position)
+    setPillGroup('ds-qr-valign-group', s.qr.vAlign)
+    setPillGroup('ds-qr-link-group', s.qr.linkMode)
+    setPillGroup('ds-info-valign-group', s.info.vAlign)
+    setPillGroup('ds-info2-valign-group', s.info2.vAlign)
+
+    // Update visibility-dependent UI state
+    ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = s.title2.show ? '' : 'none'
+    ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = s.info2.show ? '' : 'none'
+    ;(document.getElementById('ds-qr-url-wrap') as HTMLElement).style.display = s.qr.linkMode === 'url' ? '' : 'none'
+
+    syncLogoManualControls()
+    autosizeTemplateFields()
+  }
+
+  // ─── DOM value setter helpers to reduce duplication ────────────────────────────
+  // Set input/checkbox/select/textarea value by ID with proper type handling
+  function setElementValue(id: string, value: string | number | boolean) {
+    const el = document.getElementById(id)
+    if (!el) return
+    if (el instanceof HTMLInputElement) {
+      if (el.type === 'checkbox') {
+        el.checked = Boolean(value)
+      } else {
+        el.value = String(value)
+      }
+    } else if (el instanceof HTMLTextAreaElement) {
+      el.textContent = String(value)
+    } else if (el instanceof HTMLSelectElement) {
+      el.value = String(value)
+    } else {
+      (el as HTMLInputElement).value = String(value)
+    }
+  }
+
+  // Set value on both range and number inputs (synchronized pair)
+  function setRangeAndNumber(rangeId: string, numberId: string, value: string | number) {
+    setElementValue(rangeId, value)
+    setElementValue(numberId, value)
+  }
+
+  // Batch setter for multiple form fields — significantly reduces duplication in load functions
+  interface FormFieldSetter {
+    id: string
+    value: string | number | boolean
+    rangePartnerId?: string // If set, also updates this range input's value
+  }
+
+  function setFormFields(fields: FormFieldSetter[]) {
+    for (const { id, value, rangePartnerId } of fields) {
+      setElementValue(id, value)
+      if (rangePartnerId) setElementValue(rangePartnerId, value)
+    }
+  }
+
+  // Helpers for button groups
+  function setAlignGroup(groupId: string, value: string) {
+    const group = document.getElementById(groupId)
+    if (!group) return
+    group.dataset.value = value
+    group.querySelectorAll<HTMLButtonElement>('.ds-align-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.align === value)
+    })
+  }
+
+  function setPillGroup(groupId: string, value: string) {
+    const group = document.getElementById(groupId)
+    if (!group) return
+    group.dataset.value = value
+    group.querySelectorAll<HTMLButtonElement>('.ds-pill-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.val === value)
+    })
+  }
+
+  function wireAlignGroup(groupId: string) {
+    const group = document.getElementById(groupId)
+    if (!group) return
+    group.querySelectorAll<HTMLButtonElement>('.ds-align-btn').forEach(btn => {
+      btn.addEventListener('click', () => { setAlignGroup(groupId, btn.dataset.align!); saveDesignerSettings(); updateDesignerPreview() })
+    })
+  }
+
+  function wirePillGroup(groupId: string, onChange?: (val: string) => void) {
+    const group = document.getElementById(groupId)
+    if (!group) return
+    group.querySelectorAll<HTMLButtonElement>('.ds-pill-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setPillGroup(groupId, btn.dataset.val!)
+        saveDesignerSettings()
+        onChange?.(btn.dataset.val!)
+        updateDesignerPreview()
+      })
+    })
+  }
+
+  function syncLogoManualControls() {
+    const fit = (document.getElementById('ds-logo-fit') as HTMLInputElement)?.checked ?? true
+    const wrap = document.getElementById('ds-logo-manual-wrap') as HTMLElement | null
+    const manualRange = document.getElementById('ds-logo-manual-range') as HTMLInputElement | null
+    const manualNum = document.getElementById('ds-logo-manual') as HTMLInputElement | null
+    if (wrap) wrap.hidden = fit
+    if (manualRange) manualRange.disabled = fit
+    if (manualNum) manualNum.disabled = fit
+  }
+
+  function autosizeTemplateField(id: string) {
+    const el = document.getElementById(id) as HTMLTextAreaElement | null
+    if (!el) return
+    const currentHeight = el.offsetHeight || 42
+    el.style.height = 'auto'
+    el.style.height = `${Math.max(el.scrollHeight, currentHeight, 42)}px`
+  }
+
+  function autosizeTemplateFields() {
+    autosizeTemplateField('ds-title-tpl')
+    autosizeTemplateField('ds-title2-tpl')
+  }
+
+  // Wire up all designer controls
+  wireAlignGroup('ds-logo-align-group')
+  wireAlignGroup('ds-title-align-group')
+  wireAlignGroup('ds-title2-align-group')
+  wireAlignGroup('ds-info-align-group')
+  wireAlignGroup('ds-info2-align-group')
+  wirePillGroup('ds-qr-pos-group')
+  wirePillGroup('ds-qr-valign-group')
+  wirePillGroup('ds-info-valign-group')
+  wirePillGroup('ds-info2-valign-group')
+  wirePillGroup('ds-qr-link-group', (val) => {
+    ;(document.getElementById('ds-qr-url-wrap') as HTMLElement).style.display = val === 'url' ? '' : 'none'
+  })
+
+  const dsInputIds = ['ds-width','ds-height','ds-margin','ds-logo-space','ds-logo-manual','ds-title-size','ds-title-gap','ds-title2-size','ds-title2-gap','ds-qr-size','ds-info-size','ds-info2-size','ds-title-tpl','ds-title2-tpl','ds-qr-url-tpl','ds-info-tpl','ds-info2-tpl']
+  const dsCheckIds = ['ds-border','ds-logo-show','ds-logo-fit','ds-title-show','ds-title-fit','ds-divider-above','ds-divider-below','ds-title2-show','ds-title2-fit','ds-title2-divider-above','ds-title2-divider-below','ds-qr-show','ds-info-show','ds-info2-show','ds-info2-vsep']
+  const dsSelectIds = ['ds-qr-mode']
+  let designerPreviewDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  const scheduleDesignerPreview = () => {
+    if (designerPreviewDebounceTimer) clearTimeout(designerPreviewDebounceTimer)
+    designerPreviewDebounceTimer = setTimeout(() => {
+      saveDesignerSettings()
+      updateDesignerPreview()
+    }, 120)
+  }
+  ;[...dsInputIds, ...dsCheckIds, ...dsSelectIds].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => { saveDesignerSettings(); updateDesignerPreview() })
+  })
+  // Toggle info2 block visibility when its show-checkbox changes
+  document.getElementById('ds-info2-show')?.addEventListener('change', (e) => {
+    const show = (e.target as HTMLInputElement).checked
+    ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = show ? '' : 'none'
+  })
+  document.getElementById('ds-title2-show')?.addEventListener('change', (e) => {
+    const show = (e.target as HTMLInputElement).checked
+    ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = show ? '' : 'none'
+  })
+  document.getElementById('ds-logo-fit')?.addEventListener('change', () => {
+    syncLogoManualControls()
+  })
+  dsInputIds.forEach(id => {
+    const el = document.getElementById(id)
+    if (el && (el as HTMLInputElement).type !== 'checkbox') {
+      el.addEventListener('input', () => {
+        if (id === 'ds-title-tpl' || id === 'ds-title2-tpl') autosizeTemplateField(id)
+        scheduleDesignerPreview()
+      })
+    }
+  })
+
+  // Wire sliders ↔ number inputs bidirectionally
+  const sliderPairs: [string, string][] = [
+    ['ds-margin-range', 'ds-margin'],
+    ['ds-logo-space-range', 'ds-logo-space'],
+    ['ds-logo-manual-range', 'ds-logo-manual'],
+    ['ds-title-size-range', 'ds-title-size'],
+    ['ds-title-gap-range', 'ds-title-gap'],
+    ['ds-title2-size-range', 'ds-title2-size'],
+    ['ds-title2-gap-range', 'ds-title2-gap'],
+    ['ds-qr-size-range', 'ds-qr-size'],
+    ['ds-info-size-range', 'ds-info-size'],
+    ['ds-info2-size-range', 'ds-info2-size'],
+  ]
+  for (const [rangId, numId] of sliderPairs) {
+    const rang = document.getElementById(rangId) as HTMLInputElement
+    const num  = document.getElementById(numId)  as HTMLInputElement
+    if (!rang || !num) continue
+    rang.addEventListener('input', () => {
+      num.value = rang.value
+      saveDesignerSettings()
+      updateDesignerPreview()
+    })
+    num.addEventListener('input', () => {
+      rang.value = num.value
+    })
+  }
+
+  // Template syntax popover
+  const SYNTAX_HTML = `
+    <button class="ds-popover-close" title="Close">✕</button>
+    <h4>Print Format Syntax</h4>
+    <table>
+      <tr><td>{token}</td><td>Insert token value — chips show short labels, the <code>filament.</code> prefix is added automatically when clicked<br><span class="ds-popover-eg">e.g. type → inserts {filament.type} → TPU</span></td></tr>
+      <tr><td>{text{token}text}</td><td>Wrap token with literal text — the whole thing is hidden if the token is empty<br><span class="ds-popover-eg">e.g. {Ext: {filament.extruder_temp}°C} → Ext: 210°C, or nothing if temp is unset</span></td></tr>
+      <tr><td>{color_swatch[1]}</td><td>Inline color swatch from <code>filament.color_hex</code>; the number in brackets sets the swatch width in character units, so <code>[1]</code> is the narrow default and <code>[10]</code> makes it wider.<br><span class="ds-popover-eg">e.g. <span style="display:inline-block;width:1ch;height:0.82em;background:#2A5BE8;border:1px solid rgba(0,0,0,0.28);border-radius:0.14em;vertical-align:baseline;margin:0 0.2ch;"></span> Blue</span></td></tr>
+      <tr><td>[size=120%]text[/size]</td><td>Inline relative text size in % (50..300, % optional); works with literal text, field values, and swatches.<br><span class="ds-popover-eg">e.g. [size=140%]{filament.extruder_temp}[/size]°C or [size=120%]{color_swatch[6]}[/size] {filament.color}</span></td></tr>
+      <tr><td>**text**</td><td><strong>Bold</strong></td></tr>
+      <tr><td>*text*</td><td><em>Italic</em></td></tr>
+      <tr><td>==text==</td><td style="background:#000;color:#fff;padding:0 2px;border-radius:2px">Inverse (white on black)</td></tr>
+      <tr><td>@@text@@</td><td>Inverse using filament color with automatic black/white text chosen for best contrast.<br><span class="ds-popover-eg"><span style="background:#2A5BE8;color:#fff;padding:0 2px;border-radius:2px">Blue uses white text</span> <span style="background:#F5E663;color:#000;padding:0 2px;border-radius:2px">Yellow uses black text</span></span></td></tr>
+      <tr><td>\\n</td><td>New line (in info textarea, just press Enter)</td></tr>
+    </table>`
+
+  let _activeSyntaxPopover: HTMLElement | null = null
+  function openSyntaxPopover(anchorBtn: HTMLElement) {
+    if (_activeSyntaxPopover) { _activeSyntaxPopover.remove(); _activeSyntaxPopover = null }
+    const pop = document.createElement('div')
+    pop.className = 'ds-syntax-popover'
+    pop.innerHTML = SYNTAX_HTML
+    pop.querySelector('.ds-popover-close')?.addEventListener('click', () => { pop.remove(); _activeSyntaxPopover = null })
+    // Append first (hidden) so we can measure its natural size
+    pop.style.visibility = 'hidden'
+    document.body.appendChild(pop)
+
+    const rect = anchorBtn.getBoundingClientRect()
+    const pw = pop.offsetWidth
+    const ph = pop.offsetHeight
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const GAP = 8
+
+    // Horizontal: prefer aligning left edge with anchor, but clamp to viewport
+    let left = rect.left
+    if (left + pw + GAP > vw) left = vw - pw - GAP
+    if (left < GAP) left = GAP
+
+    // Vertical: prefer below anchor, flip above if not enough room
+    let top = rect.bottom + 6
+    if (top + ph + GAP > vh) top = rect.top - ph - 6
+    if (top < GAP) top = GAP
+
+    pop.style.position = 'fixed'
+    pop.style.left = left + 'px'
+    pop.style.top = top + 'px'
+    pop.style.visibility = ''
+    _activeSyntaxPopover = pop
+    // Close on outside click
+    setTimeout(() => {
+      const handler = (e: MouseEvent) => {
+        if (!pop.contains(e.target as Node) && e.target !== anchorBtn) {
+          pop.remove(); _activeSyntaxPopover = null
+          document.removeEventListener('click', handler)
+        }
+      }
+      document.addEventListener('click', handler)
+    }, 0)
+  }
+  document.getElementById('ds-title-syntax-btn')?.addEventListener('click', (e) => { e.stopPropagation(); openSyntaxPopover(e.currentTarget as HTMLElement) })
+  document.getElementById('ds-title2-syntax-btn')?.addEventListener('click', (e) => { e.stopPropagation(); openSyntaxPopover(e.currentTarget as HTMLElement) })
+  document.getElementById('ds-info-syntax-btn')?.addEventListener('click', (e) => { e.stopPropagation(); openSyntaxPopover(e.currentTarget as HTMLElement) })
+  document.getElementById('ds-info2-syntax-btn')?.addEventListener('click', (e) => { e.stopPropagation(); openSyntaxPopover(e.currentTarget as HTMLElement) })
+
+  // ── Inline token area — collapsible, with Filament and Extra fields sections ───
+  const TOKENS_OPEN_KEY = 'filaman-tokens-open'
+
+  function buildTokenArea(areaId: string, targetId: string) {
+    const area = document.getElementById(areaId)
+    if (!area) return
+    // Clear before rebuilding so the function is idempotent.
+    // Toggle open/closed state is persisted in localStorage and restored below,
+    // so state is preserved across rebuilds.
+    area.innerHTML = ''
+
+    function insertTok(tok: string) {
+      const el = document.getElementById(targetId) as HTMLInputElement | HTMLTextAreaElement
+      if (!el) return
+      const start = el.selectionStart ?? el.value.length
+      const end   = el.selectionEnd   ?? el.value.length
+      const before = el.value.slice(0, start)
+      const after  = el.value.slice(end)
+      const needSpaceBefore = before.length > 0 && !/\s$/.test(before)
+      const needSpaceAfter  = after.length  > 0 && !/^\s/.test(after)
+      const insert = (needSpaceBefore ? ' ' : '') + tok + (needSpaceAfter ? ' ' : '')
+      el.value = before + insert + after
+      el.selectionStart = el.selectionEnd = start + insert.length
+      el.focus()
+      saveDesignerSettings()
+      updateDesignerPreview()
+    }
+
+    function makeChip(tok: string, label: string): HTMLButtonElement {
+      const chip = document.createElement('button')
+      chip.className = 'ds-token-chip'
+      chip.type = 'button'
+      chip.textContent = label
+      chip.title = tok          // full token shown on hover
+      chip.addEventListener('click', () => insertTok(tok))
+      return chip
+    }
+
+    const isOpen = localStorage.getItem(TOKENS_OPEN_KEY) !== 'false'
+
+    const wrap = document.createElement('div')
+    wrap.className = 'ds-token-area-wrap'
+
+    const toggle = document.createElement('button')
+    toggle.className = 'ds-tokens-toggle'
+    toggle.type = 'button'
+    toggle.innerHTML = `Available tokens <span class="ds-tokens-caret">${isOpen ? '▾' : '▸'}</span>`
+
+    const body = document.createElement('div')
+    body.className = 'ds-tokens-body'
+    body.style.display = isOpen ? '' : 'none'
+
+    // ── Filament group ──
+    const filGroup = document.createElement('div')
+    const filLbl = document.createElement('div')
+    filLbl.className = 'ds-tokens-group-label'
+    filLbl.textContent = 'Filament'
+    const filChips = document.createElement('div')
+    filChips.className = 'ds-token-hints'
+    for (const { token, label } of DESIGNER_TOKENS) filChips.appendChild(makeChip(token, label))
+    filGroup.appendChild(filLbl)
+    filGroup.appendChild(filChips)
+    body.appendChild(filGroup)
+
+    // ── Extra / custom fields group ──
+    const extGroup = document.createElement('div')
+    const extLbl = document.createElement('div')
+    extLbl.className = 'ds-tokens-group-label'
+    extLbl.textContent = 'Extra fields'
+    const extChips = document.createElement('div')
+    extChips.className = 'ds-token-hints'
+    if (extraFields.length > 0) {
+      for (const ef of extraFields) {
+        const tok = `{extra.${ef.key}}`
+        extChips.appendChild(makeChip(tok, ef.label !== ef.key ? ef.label : ef.key))
+      }
+    } else {
+      const empty = document.createElement('span')
+      empty.className = 'ds-tokens-empty'
+      empty.textContent = 'No custom fields for this spool'
+      extChips.appendChild(empty)
+    }
+    extGroup.appendChild(extLbl)
+    extGroup.appendChild(extChips)
+    body.appendChild(extGroup)
+
+    toggle.addEventListener('click', () => {
+      const open = body.style.display === 'none'
+      body.style.display = open ? '' : 'none'
+      toggle.querySelector<HTMLElement>('.ds-tokens-caret')!.textContent = open ? '▾' : '▸'
+      localStorage.setItem(TOKENS_OPEN_KEY, String(open))
+    })
+
+    wrap.appendChild(toggle)
+    wrap.appendChild(body)
+    area.appendChild(wrap)
+  }
+
+  buildTokenArea('ds-title-token-area',  'ds-title-tpl')
+  buildTokenArea('ds-title2-token-area', 'ds-title2-tpl')
+  buildTokenArea('ds-info-token-area',   'ds-info-tpl')
+  buildTokenArea('ds-info2-token-area',  'ds-info2-tpl')
+  autosizeTemplateFields()
+  // Load persisted designer settings
+  loadDesignerSettings()
+
+  // ─── Preview zoom ─────────────────────────────────────────────────────────
+
+  const ZOOM_KEY = 'filaman-label-zoom-v1'
+  let _previewZoom = 100
+  function applyZoom(z: number) {
+    _previewZoom = Math.min(300, Math.max(50, Math.round(z / 5) * 5))
+    const lp = document.getElementById('label-preview') as HTMLElement
+    if (lp) { lp.style.transform = `scale(${_previewZoom / 100})`; lp.style.transformOrigin = 'center center' }
+    ;(document.getElementById('preview-zoom-slider') as HTMLInputElement).value = String(_previewZoom)
+    const label = document.getElementById('preview-zoom-label')
+    if (label) label.textContent = _previewZoom + '%'
+    localStorage.setItem(ZOOM_KEY, String(_previewZoom))
+  }
+  document.getElementById('preview-zoom-slider')?.addEventListener('input', (e) => {
+    applyZoom(Number((e.target as HTMLInputElement).value))
+  })
+  document.getElementById('preview-zoom-in')?.addEventListener('click', () => applyZoom(_previewZoom + 10))
+  document.getElementById('preview-zoom-out')?.addEventListener('click', () => applyZoom(_previewZoom - 10))
+  document.getElementById('preview-zoom-reset')?.addEventListener('click', () => applyZoom(100))
+  // Restore persisted zoom level
+  ;(() => { const z = Number(localStorage.getItem(ZOOM_KEY)); if (z >= 50 && z <= 300) applyZoom(z) })()
+
+  // ─── Presets ──────────────────────────────────────────────────────────────
+
+  const PRESETS_KEY = 'filaman-label-presets-v1'
+  const PRESETS_SCHEMA_VERSION = 1
+
+  interface LabelPreset {
+    name: string
+    settings: LabelDesignerSettings
+  }
+
+  function loadPresets(): LabelPreset[] {
+    const parsed = parseJsonOrNull(localStorage.getItem(PRESETS_KEY))
+    if (!parsed) return []
+    try {
+      const payload = Array.isArray(parsed)
+        ? { version: 0, presets: parsed }
+        : parsed
+      if (!Array.isArray(payload.presets)) return []
+      return payload.presets
+        .filter((p: any) => p && typeof p.name === 'string' && p.settings)
+        .map((p: any) => ({
+          name: p.name.trim().slice(0, 120),
+          settings: mergeDesignerSettings(p.settings),
+        }))
+    } catch {
+      localStorage.removeItem(PRESETS_KEY)
+      return []
+    }
+  }
+
+  function savePresets(presets: LabelPreset[]) {
+    const payload = JSON.stringify({
+      version: PRESETS_SCHEMA_VERSION,
+      presets,
+    })
+    safeSetLocalStorage(PRESETS_KEY, payload)
+  }
+
+  // Track which preset is currently loaded (for dirty detection)
+  let _activePresetName: string | null = null
+  let _activePresetSettings: LabelDesignerSettings | null = null
+
+  function markPresetDirty(dirty: boolean) {
+    const hdr = document.getElementById('dsh-presets-text')
+    if (!hdr) return
+    const label = (window as any).__t('spools.dsPresets') || 'Presets'
+    hdr.textContent = dirty ? `● ${label}` : label
+    hdr.classList.toggle('ds-preset-dirty', dirty)
+  }
+
+  function refreshPresetList(selectName?: string) {
+    const list = document.getElementById('ds-preset-list') as HTMLSelectElement
+    if (!list) return
+    const presets = loadPresets()
+    list.innerHTML = ''
+    if (presets.length === 0) {
+      const opt = document.createElement('option')
+      opt.value = ''
+      opt.textContent = '— no saved presets —'
+      opt.disabled = true
+      opt.selected = true
+      list.appendChild(opt)
+    } else {
+      // Add placeholder option at the top
+      const placeholder = document.createElement('option')
+      placeholder.value = ''
+      placeholder.textContent = 'Saved presets'
+      placeholder.disabled = true
+      placeholder.selected = !selectName
+      list.appendChild(placeholder)
+      // Add preset options
+      for (const p of presets) {
+        const opt = document.createElement('option')
+        opt.value = p.name
+        opt.textContent = p.name
+        list.appendChild(opt)
+      }
+      if (selectName) list.value = selectName
+    }
+    updateSaveBtn()
+  }
+
+  function updateSaveBtn() {
+    const btn = document.getElementById('ds-preset-save-btn') as HTMLButtonElement
+    const nameInput = document.getElementById('ds-preset-name-input') as HTMLInputElement
+    if (!btn || !nameInput) return
+    const name = nameInput.value.trim()
+    const presets = loadPresets()
+    const exists = presets.some(p => p.name === name)
+    const tSaveNew = (window as any).__t('spools.dsPresetsSaveNew') || 'Save as New'
+    const tOverwrite = (window as any).__t('spools.dsPresetsOverwrite') || 'Overwrite'
+    if (!name) {
+      btn.textContent = tSaveNew
+      btn.className = 'ds-action-btn ds-action-btn-primary'
+      btn.disabled = true
+    } else if (exists) {
+      btn.textContent = tOverwrite
+      btn.className = 'ds-action-btn ds-action-btn-overwrite'
+      btn.disabled = false
+    } else {
+      btn.textContent = tSaveNew
+      btn.className = 'ds-action-btn ds-action-btn-primary'
+      btn.disabled = false
+    }
+  }
+  syncLogoManualControls()
+
+  // Wire preset controls
+  const presetList = document.getElementById('ds-preset-list') as HTMLSelectElement
+  const presetNameInput = document.getElementById('ds-preset-name-input') as HTMLInputElement
+  const presetSaveBtn = document.getElementById('ds-preset-save-btn') as HTMLButtonElement
+  const presetLoadBtn = document.getElementById('ds-preset-load-btn') as HTMLButtonElement
+  const presetDeleteBtn = document.getElementById('ds-preset-delete-btn') as HTMLButtonElement
+
+  presetNameInput?.addEventListener('input', updateSaveBtn)
+
+  presetList?.addEventListener('change', () => {
+    // Pre-fill the name input with the selected preset name
+    presetNameInput.value = presetList.value
+    updateSaveBtn()
+  })
+
+  presetSaveBtn?.addEventListener('click', () => {
+    const name = presetNameInput.value.trim()
+    if (!name) return
+    const presets = loadPresets()
+    const idx = presets.findIndex(p => p.name === name)
+    const settings = loadDesignerSettingsFromStorage()
+    if (idx >= 0) {
+      presets[idx].settings = settings
+    } else {
+      presets.push({ name, settings })
+    }
+    savePresets(presets)
+    _activePresetName = name
+    _activePresetSettings = JSON.parse(JSON.stringify(settings)) as LabelDesignerSettings
+    markPresetDirty(false)
+    refreshPresetList(name)
+  })
+
+  presetLoadBtn?.addEventListener('click', () => {
+    const name = presetList.value
+    if (!name) return
+    const presets = loadPresets()
+    const preset = presets.find(p => p.name === name)
+    if (!preset) return
+    // Deep merge into defaults then apply
+    const s: LabelDesignerSettings = {
+      ...DESIGNER_DEFAULTS,
+      ...preset.settings,
+      logo:   { ...DESIGNER_DEFAULTS.logo,   ...preset.settings.logo },
+      label:  { ...DESIGNER_DEFAULTS.label,  ...preset.settings.label },
+      title:  { ...DESIGNER_DEFAULTS.title,  ...preset.settings.title },
+      title2: { ...DESIGNER_DEFAULTS.title2, ...(preset.settings.title2 ?? {}) },
+      qr:     normalizeQrSettings((preset.settings as any).qr),
+      info:   { ...DESIGNER_DEFAULTS.info,   ...preset.settings.info },
+      info2:  { ...DESIGNER_DEFAULTS.info2,  ...(preset.settings.info2 ?? {}) },
+    }
+    // Apply to form using batch setter
+    const presetLogoAny = (s as any).logo ?? {}
+    const presetLogoSpace = Number(presetLogoAny.spaceMm ?? presetLogoAny.sizeMm ?? DESIGNER_DEFAULTS.logo.spaceMm)
+    const presetLogoManual = Number(presetLogoAny.manualSizeMm ?? presetLogoAny.sizeMm ?? DESIGNER_DEFAULTS.logo.manualSizeMm)
+    
+    // Use batch setter to reduce duplication from ~100 repeated lines
+    setFormFields([
+      { id: 'ds-logo-show', value: s.logo.show },
+      { id: 'ds-logo-space', value: presetLogoSpace, rangePartnerId: 'ds-logo-space-range' },
+      { id: 'ds-logo-fit', value: s.logo.scaleToFit },
+      { id: 'ds-logo-manual', value: presetLogoManual, rangePartnerId: 'ds-logo-manual-range' },
+      { id: 'ds-width', value: s.label.width },
+      { id: 'ds-height', value: s.label.height },
+      { id: 'ds-margin', value: s.label.marginMm, rangePartnerId: 'ds-margin-range' },
+      { id: 'ds-border', value: s.label.border },
+      { id: 'ds-title-show', value: s.title.show },
+      { id: 'ds-title-size', value: s.title.sizeMm, rangePartnerId: 'ds-title-size-range' },
+      { id: 'ds-title-gap', value: s.title.marginMm ?? DESIGNER_DEFAULTS.title.marginMm, rangePartnerId: 'ds-title-gap-range' },
+      { id: 'ds-title-fit', value: s.title.fitToWidth },
+      { id: 'ds-title-tpl', value: s.title.template },
+      { id: 'ds-divider-above', value: s.title.dividerAbove ?? false },
+      { id: 'ds-divider-below', value: s.title.dividerBelow ?? true },
+      { id: 'ds-title2-show', value: s.title2.show },
+      { id: 'ds-title2-size', value: s.title2.sizeMm, rangePartnerId: 'ds-title2-size-range' },
+      { id: 'ds-title2-gap', value: s.title2.marginMm ?? DESIGNER_DEFAULTS.title2.marginMm, rangePartnerId: 'ds-title2-gap-range' },
+      { id: 'ds-title2-fit', value: s.title2.fitToWidth },
+      { id: 'ds-title2-tpl', value: s.title2.template },
+      { id: 'ds-title2-divider-above', value: s.title2.dividerAbove ?? false },
+      { id: 'ds-title2-divider-below', value: s.title2.dividerBelow ?? false },
+      { id: 'ds-qr-show', value: s.qr.show },
+      { id: 'ds-qr-mode', value: s.qr.mode },
+      { id: 'ds-qr-size', value: s.qr.sizeMm, rangePartnerId: 'ds-qr-size-range' },
+      { id: 'ds-qr-url-tpl', value: s.qr.urlTemplate },
+      { id: 'ds-info-show', value: s.info.show },
+      { id: 'ds-info-size', value: s.info.sizeMm, rangePartnerId: 'ds-info-size-range' },
+      { id: 'ds-info-tpl', value: s.info.template },
+      { id: 'ds-info2-show', value: s.info2.show },
+      { id: 'ds-info2-vsep', value: s.info2.vsep ?? false },
+      { id: 'ds-info2-size', value: s.info2.sizeMm, rangePartnerId: 'ds-info2-size-range' },
+      { id: 'ds-info2-tpl', value: s.info2.template },
+    ])
+
+    // Handle alignment groups and visibility toggles
+    syncLogoManualControls()
+    setAlignGroup('ds-logo-align-group', s.logo.align)
+    setAlignGroup('ds-title-align-group', s.title.align)
+    setAlignGroup('ds-title2-align-group', s.title2.align)
+    setAlignGroup('ds-info-align-group', s.info.hAlign)
+    setAlignGroup('ds-info2-align-group', s.info2.hAlign)
+    setPillGroup('ds-qr-pos-group', s.qr.position)
+    setPillGroup('ds-qr-valign-group', s.qr.vAlign)
+    setPillGroup('ds-qr-link-group', s.qr.linkMode)
+    setPillGroup('ds-info-valign-group', s.info.vAlign)
+    setPillGroup('ds-info2-valign-group', s.info2.vAlign)
+
+    ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = s.title2.show ? '' : 'none'
+    ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = s.info2.show ? '' : 'none'
+    ;(document.getElementById('ds-qr-url-wrap') as HTMLElement).style.display = s.qr.linkMode === 'url' ? '' : 'none'
+
+    autosizeTemplateFields()
+    saveDesignerSettings()
+    _activePresetName = name
+    _activePresetSettings = JSON.parse(JSON.stringify(s)) as LabelDesignerSettings
+    presetNameInput.value = name
+    markPresetDirty(false)
+    updateSaveBtn()
+    updateDesignerPreview()
+  })
+
+  presetDeleteBtn?.addEventListener('click', () => {
+    const name = presetList.value
+    if (!name) return
+    const presets = loadPresets().filter(p => p.name !== name)
+    savePresets(presets)
+    if (_activePresetName === name) {
+      _activePresetName = null
+      _activePresetSettings = null
+      markPresetDirty(false)
+    }
+    presetNameInput.value = ''
+    refreshPresetList()
+  })
+
+  // Detect changes to any designer control → mark dirty if a preset is loaded
+  function onDesignerChange() {
+    if (_activePresetName !== null) markPresetDirty(true)
+  }
+
+  // Attach dirty listener to all designer inputs (after preset wiring, so order doesn't matter)
+  document.querySelectorAll<HTMLElement>(
+    '#tab-panel-designer input, #tab-panel-designer select, #tab-panel-designer textarea'
+  ).forEach(el => {
+    if (el.id === 'ds-preset-name-input') return  // not a settings input
+    el.addEventListener('change', onDesignerChange)
+    if ((el as HTMLInputElement).type === 'range' || (el as HTMLInputElement).type === 'number' || el.tagName === 'TEXTAREA') {
+      el.addEventListener('input', onDesignerChange)
+    }
+  })
+  // Also dirty on align/pill btn group clicks (those fire click, not change)
+  document.querySelectorAll<HTMLButtonElement>('#tab-panel-designer .ds-align-btn, #tab-panel-designer .ds-pill-btn')
+    .forEach(btn => btn.addEventListener('click', onDesignerChange))
+
+  refreshPresetList()
+
+  // Seed the built-in "Default" preset if it doesn't already exist
+  ;(() => {
+    const presets = loadPresets()
+    if (!presets.some(p => p.name === 'Default')) {
+      const defaultPreset: LabelPreset = {
+        name: 'Default',
+        settings: {
+          logo:  { show: true, spaceMm: 6, scaleToFit: true, manualSizeMm: 6, align: 'left' },
+          label: { width: 50, height: 30, marginMm: 1, border: true },
+          title: {
+            show: true,
+            sizeMm: 6,
+            marginMm: 0,
+            fitToWidth: true,
+            align: 'left',
+            template: '**{filament.material} {filament.color}**  {filament.color_hex}',
+            dividerAbove: false,
+            dividerBelow: false,
+          },
+          title2: { show: false, sizeMm: 3.5, marginMm: 0, fitToWidth: true, align: 'left', template: '', dividerAbove: false, dividerBelow: false },
+          qr: {
+            show: true,
+            mode: 'colorLogo',
+            sizeMm: 14,
+            position: 'right',
+            vAlign: 'bottom',
+            linkMode: 'spool',
+            urlTemplate: '',
+          },
+          info: {
+            show: true,
+            sizeMm: 2.2,
+            hAlign: 'left',
+            vAlign: 'top',
+            template: 'Spool ID: #{id}\nSpool Weight: {filament.weight} g\nET: {filament.extruder_temp} °C\nBT: {filament.bed_temp} °C',
+          },
+          info2: { show: false, vsep: false, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom', template: '' },
+        },
+      }
+      savePresets([defaultPreset, ...presets])
+      refreshPresetList('Default')
+    }
+  })()
+
+  // Per-section reset buttons — consolidated with batch setter to eliminate duplication
+  function wireResetBtn(id: string, applyDefaults: () => void) {
+    const btn = document.getElementById(id) as HTMLButtonElement | null
+    if (!btn) return
+    btn.addEventListener('click', (e) => {
+      e.preventDefault()    // prevent <details> toggle
+      e.stopPropagation()
+      applyDefaults()
+      saveDesignerSettings()
+      updateDesignerPreview()
+    })
+  }
+
+  wireResetBtn('dsr-logo', () => {
+    const d = (_activePresetSettings ?? DESIGNER_DEFAULTS).logo
+    setFormFields([
+      { id: 'ds-logo-show', value: d.show },
+      { id: 'ds-logo-space', value: d.spaceMm, rangePartnerId: 'ds-logo-space-range' },
+      { id: 'ds-logo-fit', value: d.scaleToFit },
+      { id: 'ds-logo-manual', value: d.manualSizeMm, rangePartnerId: 'ds-logo-manual-range' },
+    ])
+    syncLogoManualControls()
+    setAlignGroup('ds-logo-align-group', d.align)
+  })
+
+  wireResetBtn('dsr-label', () => {
+    const d = (_activePresetSettings ?? DESIGNER_DEFAULTS).label
+    setFormFields([
+      { id: 'ds-width', value: d.width },
+      { id: 'ds-height', value: d.height },
+      { id: 'ds-margin', value: d.marginMm, rangePartnerId: 'ds-margin-range' },
+      { id: 'ds-border', value: d.border },
+    ])
+  })
+
+  wireResetBtn('dsr-title', () => {
+    const base = _activePresetSettings ?? DESIGNER_DEFAULTS
+    const d = base.title
+    const d2 = base.title2
+    setFormFields([
+      { id: 'ds-title-show', value: d.show },
+      { id: 'ds-title-size', value: d.sizeMm, rangePartnerId: 'ds-title-size-range' },
+      { id: 'ds-title-gap', value: d.marginMm, rangePartnerId: 'ds-title-gap-range' },
+      { id: 'ds-title-fit', value: d.fitToWidth },
+      { id: 'ds-title-tpl', value: d.template },
+      { id: 'ds-divider-above', value: d.dividerAbove },
+      { id: 'ds-divider-below', value: d.dividerBelow },
+      { id: 'ds-title2-show', value: d2.show },
+      { id: 'ds-title2-size', value: d2.sizeMm, rangePartnerId: 'ds-title2-size-range' },
+      { id: 'ds-title2-gap', value: d2.marginMm, rangePartnerId: 'ds-title2-gap-range' },
+      { id: 'ds-title2-fit', value: d2.fitToWidth },
+      { id: 'ds-title2-tpl', value: d2.template },
+      { id: 'ds-title2-divider-above', value: d2.dividerAbove },
+      { id: 'ds-title2-divider-below', value: d2.dividerBelow },
+    ])
+    setAlignGroup('ds-title-align-group', d.align)
+    setAlignGroup('ds-title2-align-group', d2.align)
+    ;(document.getElementById('ds-title2-block') as HTMLElement).style.display = d2.show ? '' : 'none'
+    autosizeTemplateFields()
+  })
+
+  wireResetBtn('dsr-qr', () => {
+    const d = (_activePresetSettings ?? DESIGNER_DEFAULTS).qr
+    setFormFields([
+      { id: 'ds-qr-show', value: d.show },
+      { id: 'ds-qr-mode', value: d.mode },
+      { id: 'ds-qr-size', value: d.sizeMm, rangePartnerId: 'ds-qr-size-range' },
+      { id: 'ds-qr-url-tpl', value: d.urlTemplate },
+    ])
+    setPillGroup('ds-qr-pos-group', d.position)
+    setPillGroup('ds-qr-valign-group', d.vAlign)
+    setPillGroup('ds-qr-link-group', d.linkMode)
+    ;(document.getElementById('ds-qr-url-wrap') as HTMLElement).style.display = d.linkMode === 'url' ? '' : 'none'
+  })
+
+  wireResetBtn('dsr-info', () => {
+    const base = _activePresetSettings ?? DESIGNER_DEFAULTS
+    const d = base.info
+    const d2 = base.info2
+    setFormFields([
+      { id: 'ds-info-show', value: d.show },
+      { id: 'ds-info-size', value: d.sizeMm, rangePartnerId: 'ds-info-size-range' },
+      { id: 'ds-info-tpl', value: d.template },
+      { id: 'ds-info2-show', value: d2.show },
+      { id: 'ds-info2-vsep', value: d2.vsep },
+      { id: 'ds-info2-size', value: d2.sizeMm, rangePartnerId: 'ds-info2-size-range' },
+      { id: 'ds-info2-tpl', value: d2.template },
+    ])
+    setAlignGroup('ds-info-align-group', d.hAlign)
+    setAlignGroup('ds-info2-align-group', d2.hAlign)
+    setPillGroup('ds-info-valign-group', d.vAlign)
+    setPillGroup('ds-info2-valign-group', d2.vAlign)
+    ;(document.getElementById('ds-info2-block') as HTMLElement).style.display = d2.show ? '' : 'none'
+  })
+
+  // ─── End Label Designer ────────────────────────────────────────────────────
+
+  // Label logo state
+  let labelLogoUrl: string | null = null
+  let labelLogoLoaded = false
+
+  // Try to load the manufacturer's label-logo
+  async function loadLabelLogo() {
+    if (!labelData.mfr_id) return
+    try {
+      const resp = await fetch(`/api/v1/manufacturers/${labelData.mfr_id}/label-logo`, {
+        credentials: 'include',
+      })
+      if (resp.ok) {
+        const blob = await resp.blob()
+        labelLogoUrl = URL.createObjectURL(blob)
+        labelLogoLoaded = true
+      }
+    } catch {
+      // Label logo not available — fall back to manufacturer name text
+    }
+  }
+
+  // Build extra field checkboxes dynamically
+  const extraFieldsTitle = document.getElementById('title-extra-fields')!
+  const extraFieldsCheckboxes = document.getElementById('extra-fields-checkboxes')!
+  const extraFieldChecks: {key: string, label: string, value: string, checkbox: HTMLInputElement}[] = []
+
+  let savedExtraFieldSettings: Record<string, boolean> = {}
+  const parsedClassicSettings = parseJsonOrNull(localStorage.getItem(LABEL_SETTINGS_KEY))
+  if (parsedClassicSettings?.extraFields && typeof parsedClassicSettings.extraFields === 'object') {
+    savedExtraFieldSettings = parsedClassicSettings.extraFields as Record<string, boolean>
+  }
+
+  if (extraFields.length > 0) {
+    extraFieldsTitle.style.display = ''
+    extraFieldsCheckboxes.style.display = ''
+    const hasBothSources = extraFields.some(ef => ef.source === 'spool') && extraFields.some(ef => ef.source === 'filament')
+
+    // Copy Astro scoped-style attribute from existing checkboxes so dynamic elements get the same styles
+    const scopeAttr = (() => {
+      const existing = document.querySelector('.fm-checkbox-group')
+      if (!existing) return null
+      return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
+    })()
+
+    for (const ef of extraFields) {
+      const lbl = document.createElement('label')
+      lbl.className = 'fm-checkbox-group'
+      const cb = document.createElement('input')
+      cb.type = 'checkbox'
+      cb.id = `check-ef-${ef.key}`
+      cb.checked = savedExtraFieldSettings[ef.key] || false
+      const span = document.createElement('span')
+      span.textContent = hasBothSources ? `${ef.label} (${ef.source === 'spool' ? ((window as any).__t('dashboard.spool') || 'Spool') : ((window as any).__t('spools.filament') || 'Filament')})` : ef.label
+      if (scopeAttr) {
+        lbl.setAttribute(scopeAttr.name, '')
+        cb.setAttribute(scopeAttr.name, '')
+        span.setAttribute(scopeAttr.name, '')
+      }
+      lbl.appendChild(cb)
+      lbl.appendChild(span)
+      extraFieldsCheckboxes.appendChild(lbl)
+      extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
+      cb.addEventListener('change', () => updatePreview())
+    }
+  }
+
+  function saveSettings() {
+    const settings: Record<string, any> = {
+      width: (widthInput as HTMLInputElement).value,
+      height: (heightInput as HTMLInputElement).value,
+      fontSize: (fontSizeInput as HTMLInputElement).value,
+      qrSize: (qrSizeInput as HTMLInputElement).value,
+      showLogo: checkLogo.checked,
+      showQR: checkQR.checked,
+      showID: checkID.checked,
+      showMfr: checkMfr.checked,
+      showMat: checkMat.checked,
+      showColor: checkColor.checked,
+      showColorSwatch: checkColorSwatch.checked,
+      extraFields: extraFieldChecks.reduce((acc, ef) => {
+        acc[ef.key] = ef.checkbox.checked
+        return acc
+      }, {} as Record<string, boolean>)
+    }
+    safeSetLocalStorage(LABEL_SETTINGS_KEY, JSON.stringify(settings))
+  }
+
+  function loadSettings() {
+    const s = parseJsonOrNull(localStorage.getItem(LABEL_SETTINGS_KEY))
+    if (!s || typeof s !== 'object') return
+    if (s.width !== undefined) widthInput.value = String(s.width)
+    if (s.height !== undefined) heightInput.value = String(s.height)
+    if (s.fontSize !== undefined) fontSizeInput.value = String(s.fontSize)
+    if (s.qrSize !== undefined) qrSizeInput.value = String(s.qrSize)
+    clampInputValue(widthInput, 20, 200, 60, 0)
+    clampInputValue(heightInput, 10, 120, 40, 0)
+    clampInputValue(fontSizeInput, 50, 200, 100, 0)
+    clampInputValue(qrSizeInput, 8, 40, 18, 1)
+    if (s.showLogo !== undefined) checkLogo.checked = !!s.showLogo
+    if (s.showQR !== undefined) checkQR.checked = !!s.showQR
+    if (s.showID !== undefined) checkID.checked = !!s.showID
+    if (s.showMfr !== undefined) checkMfr.checked = !!s.showMfr
+    if (s.showMat !== undefined) checkMat.checked = !!s.showMat
+    if (s.showColor !== undefined) checkColor.checked = !!s.showColor
+    if (s.showColorSwatch !== undefined) checkColorSwatch.checked = !!s.showColorSwatch
+  }
+
+  loadSettings()
+
+  document.getElementById('tab-btn-print')!.textContent = (window as any).__t('spools.printSettings') || 'Print Settings'
+  document.getElementById('tab-btn-designer')!.textContent = (window as any).__t('spools.labelDesigner') || 'Label Designer'
+  document.getElementById('title-settings')!.textContent = (window as any).__t('spools.printSettings')
+
+  // Designer section headers + labels
+  const t = (key: string, fallback: string) => (window as any).__t(key) || fallback
+  document.getElementById('dsh-presets-text')!.textContent = t('spools.dsPresets', 'Presets')
+  document.getElementById('dsl-preset-saved')!.textContent = t('spools.dsPresetsSaved', 'Saved presets')
+  document.getElementById('ds-preset-load-btn')!.textContent = t('spools.dsPresetsLoad', 'Load')
+  document.getElementById('ds-preset-delete-btn')!.title = t('spools.dsPresetsDelete', 'Delete selected preset')
+  document.getElementById('dsl-preset-name')!.textContent = t('spools.dsPresetsName', 'Preset name')
+  document.getElementById('dsl-logo-label')!.textContent = t('spools.dsLogo', 'Logo')
+  document.getElementById('dsl-logo-space')!.textContent = t('spools.dsLogoSpace', 'Space height (mm)')
+  document.getElementById('dsl-logo-manual')!.textContent = t('spools.dsLogoManual', 'Max logo height (mm)')
+  document.getElementById('dsl-logo-fit')!.textContent = t('spools.dsLogoFit', 'Scale to fit bounds')
+  document.getElementById('dsl-logo-align')!.textContent = t('spools.dsJustification', 'Justification')
+  document.getElementById('dsl-label-label')!.textContent = t('spools.dsLabel', 'Label')
+  document.getElementById('dsl-width')!.textContent = t('spools.labelWidth', 'Width (mm)')
+  document.getElementById('dsl-height')!.textContent = t('spools.labelHeight', 'Height (mm)')
+  document.getElementById('dsl-margin')!.textContent = t('spools.dsMargin', 'Margin (mm)')
+  document.getElementById('dsl-border')!.textContent = t('spools.dsBorder', 'Print Border')
+  document.getElementById('dsl-title-label')!.textContent = t('spools.dsTitle', 'Title')
+  // dsl-title-show is now the header span dsl-title-label (already set above)
+  document.getElementById('dsl-title-size')!.textContent = t('spools.dsTitleSize', 'Max font size (mm)')
+  document.getElementById('dsl-title-fit')!.textContent = t('spools.dsTitleFit', 'Fit to width')
+  document.getElementById('dsl-divider-above')!.textContent = t('spools.dsDividerAbove', 'Line above')
+  document.getElementById('dsl-divider-below')!.textContent = t('spools.dsDividerBelow', 'Line below')
+  document.getElementById('dsl-title-align')!.textContent = t('spools.dsJustification', 'Justification')
+  document.getElementById('dsl-title-gap')!.textContent = t('spools.dsTitleMargin', 'Margin (mm)')
+  document.getElementById('dsl-title-tpl')!.textContent = t('spools.dsTitleFormat', 'Title Format')
+  document.getElementById('dsl-title2-show')!.textContent = t('spools.dsTitle2Show', 'Subtitle')
+  document.getElementById('dsl-title2-size')!.textContent = t('spools.dsTitleSize', 'Max font size (mm)')
+  document.getElementById('dsl-title2-fit')!.textContent = t('spools.dsTitleFit', 'Fit to width')
+  document.getElementById('dsl-title2-divider-above')!.textContent = t('spools.dsDividerAbove', 'Line above')
+  document.getElementById('dsl-title2-divider-below')!.textContent = t('spools.dsDividerBelow', 'Line below')
+  document.getElementById('dsl-title2-align')!.textContent = t('spools.dsJustification', 'Justification')
+  document.getElementById('dsl-title2-gap')!.textContent = t('spools.dsTitleMargin', 'Margin (mm)')
+  document.getElementById('dsl-title2-tpl')!.textContent = t('spools.dsSubtitleFormat', 'Subtitle Format')
+  const qrLabelEl = document.getElementById('dsl-qr-label'); if (qrLabelEl) qrLabelEl.textContent = t('spools.showQRCode', 'QR Code')
+  document.getElementById('dsl-qr-mode')!.textContent = t('spools.dsQrMode', 'Mode')
+  document.getElementById('dso-qr-simple')!.textContent = t('spools.dsQrSimple', 'Simple')
+  document.getElementById('dso-qr-logo')!.textContent = t('spools.dsQrIcon', 'Logo')
+  document.getElementById('dso-qr-color-logo')!.textContent = t('spools.dsQrColorLogo', 'Color Logo')
+  document.getElementById('dsl-qr-size')!.textContent = t('spools.qrSize', 'Size (mm)')
+  document.getElementById('dsl-qr-pos')!.textContent = t('spools.dsQrPosition', 'Position')
+  document.getElementById('dsp-qr-left')!.textContent = t('spools.dsLeft', 'Left')
+  document.getElementById('dsp-qr-right')!.textContent = t('spools.dsRight', 'Right')
+  document.getElementById('dsl-qr-valign')!.textContent = t('spools.dsVAlign', 'Vertical align')
+  document.getElementById('dsp-qr-top')!.textContent = t('spools.dsTop', 'Top')
+  document.getElementById('dsp-qr-mid')!.textContent = t('spools.dsMid', 'Mid')
+  document.getElementById('dsp-qr-bot')!.textContent = t('spools.dsBot', 'Bot')
+  document.getElementById('dsl-qr-link')!.textContent = t('spools.dsQrLink', 'Link mode')
+  document.getElementById('dsp-qr-spool')!.textContent = t('spools.dsQrSpoolUrl', 'Spool URL')
+  document.getElementById('dsp-qr-url')!.textContent = t('spools.dsQrCustomUrl', 'Custom URL')
+  document.getElementById('dsl-qr-url-tpl')!.textContent = t('spools.dsQrCustomBase', 'Custom URL base')
+  document.getElementById('dsl-info-label')!.textContent = t('spools.dsInfo', 'Information')
+  document.getElementById('dsl-info-size')!.textContent = t('spools.dsInfoSize', 'Text size (mm)')
+  document.getElementById('dsl-info-halign')!.textContent = t('spools.dsJustification', 'Justification')
+  document.getElementById('dsl-info-valign')!.textContent = t('spools.dsVAlign', 'Vertical align')
+  document.getElementById('dsip-top')!.textContent = t('spools.dsTop', 'Top')
+  document.getElementById('dsip-mid')!.textContent = t('spools.dsMid', 'Mid')
+  document.getElementById('dsip-bot')!.textContent = t('spools.dsBot', 'Bot')
+  document.getElementById('dsl-info-tpl')!.textContent = t('spools.dsInfoFormat', 'Information Format')
+  document.getElementById('dsl-info2-show')!.textContent = t('spools.dsInfo2Show', 'Side Column')
+  document.getElementById('dsl-info2-vsep')!.textContent = t('spools.dsInfo2Vsep', 'Vertical separator')
+  document.getElementById('dsl-info2-size')!.textContent = t('spools.dsInfoSize', 'Text size (mm)')
+  document.getElementById('dsl-info2-halign')!.textContent = t('spools.dsJustification', 'Justification')
+  document.getElementById('dsl-info2-valign')!.textContent = t('spools.dsVAlign', 'Vertical align')
+  document.getElementById('dsip2-top')!.textContent = t('spools.dsTop', 'Top')
+  document.getElementById('dsip2-mid')!.textContent = t('spools.dsMid', 'Mid')
+  document.getElementById('dsip2-bot')!.textContent = t('spools.dsBot', 'Bot')
+  document.getElementById('dsl-info2-tpl')!.textContent = t('spools.dsSideColumnFormat', 'Side Column Format')
+  document.getElementById('label-width-text')!.textContent = (window as any).__t('spools.labelWidth')
+  document.getElementById('label-height-text')!.textContent = (window as any).__t('spools.labelHeight')
+  document.getElementById('label-font-size-text')!.textContent = (window as any).__t('spools.fontSize')
+  document.getElementById('label-qr-size-text')!.textContent = (window as any).__t('spools.qrSize')
+  document.getElementById('label-show-logo')!.textContent = (window as any).__t('spools.showLogo') || 'Logo'
+  document.getElementById('label-show-qr')!.textContent = (window as any).__t('spools.showQRCode')
+  document.getElementById('label-show-id')!.textContent = (window as any).__t('spools.showSpoolId')
+  document.getElementById('label-show-mfr')!.textContent = (window as any).__t('spools.showManufacturer')
+  document.getElementById('label-show-mat')!.textContent = (window as any).__t('spools.showMaterial')
+  document.getElementById('label-show-color')!.textContent = (window as any).__t('spools.showColor')
+  document.getElementById('label-show-color-swatch')!.textContent = (window as any).__t('spools.showColorSwatch') || 'Farbbalken'
+  if (extraFields.length > 0) {
+    document.getElementById('title-extra-fields')!.textContent = (window as any).__t('spools.extraFieldsLabel')
+  }
+  const backBtn = document.getElementById('btn-back') as HTMLAnchorElement
+  backBtn.href = `/spools/${id}`
+  document.getElementById('label-back')!.textContent = (window as any).__t('spools.backToSpool')
+  document.getElementById('btn-print')!.textContent = (window as any).__t('common.print')
+  document.getElementById('btn-reset')!.textContent = (window as any).__t('spools.resetDefaults')
+
+  let _qrLogoImg: HTMLImageElement | null = null
+  let _qrLogoPromise: Promise<HTMLImageElement | null> | null = null
+
+  async function loadQrBrandLogo(): Promise<HTMLImageElement | null> {
+    if (_qrLogoImg) return _qrLogoImg
+    if (_qrLogoPromise) return _qrLogoPromise
+    _qrLogoPromise = new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        _qrLogoImg = img
+        resolve(img)
+      }
+      img.onerror = () => resolve(null)
+      img.src = window.location.origin + '/logo.png'
+    }).finally(() => {
+      _qrLogoPromise = null
+    })
+    return _qrLogoPromise
+  }
+
+  async function decorateQrCenter(canvas: HTMLCanvasElement, qrPx: number, colorLogo: boolean) {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const cx = qrPx / 2
+    const cy = qrPx / 2
+    const clearPad = Math.max(6, Math.round(qrPx * 0.03))
+    const maxMarkW = Math.round(qrPx * 0.34)
+    const maxMarkH = Math.round(qrPx * 0.24)
+
+    const fillClearRect = (markW: number, markH: number, padX = clearPad, padY = clearPad) => {
+      const clearW = Math.round(markW + padX * 2)
+      const clearH = Math.round(markH + padY * 2)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(cx - clearW / 2, cy - clearH / 2, clearW, clearH)
+    }
+
+    if (colorLogo) {
+      const logoImg = await loadQrBrandLogo()
+      if (logoImg) {
+        const ar = logoImg.naturalWidth > 0 && logoImg.naturalHeight > 0
+          ? logoImg.naturalWidth / logoImg.naturalHeight
+          : 1
+        let drawW = maxMarkW
+        let drawH = Math.round(drawW / ar)
+        if (drawH > maxMarkH) {
+          drawH = maxMarkH
+          drawW = Math.round(drawH * ar)
+        }
+        fillClearRect(drawW, drawH)
+        ctx.imageSmoothingEnabled = true
+        ctx.drawImage(logoImg, cx - drawW / 2, cy - drawH / 2, drawW, drawH)
+        return
+      }
+    }
+
+    const fontSize = Math.max(18, Math.round(qrPx * 0.11))
+    ctx.font = `700 ${fontSize}px "Space Grotesk", sans-serif`
+    const measured = ctx.measureText('FilaMan')
+    const textW = Math.min(maxMarkW, Math.ceil(measured.width))
+    const textH = Math.min(maxMarkH, Math.ceil(fontSize * 0.9))
+    const textPad = clearPad + Math.max(3, Math.round(qrPx * 0.015))
+    fillClearRect(textW, textH, textPad, textPad)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#000000'
+    ctx.fillText('FilaMan', cx, cy)
+  }
+
+  function canvasToQrImage(canvas: HTMLCanvasElement, preferCrisp: boolean) {
+    const img = document.createElement('img')
+    img.src = canvas.toDataURL('image/png')
+    img.style.width = '100%'
+    img.style.height = '100%'
+    img.style.display = 'block'
+    img.style.imageRendering = preferCrisp ? 'pixelated' : 'auto'
+    return img
+  }
+
+  function ensureClassicPreviewLayout() {
+    if (document.getElementById('label-top') && document.getElementById('label-bottom')) return
+    labelPreview.innerHTML = `
+      <div id="label-top" class="label-top">
+        <img id="prev-logo" class="label-logo" alt="" />
+        <div id="prev-mfr-text" class="label-mfr-text"></div>
+      </div>
+      <div id="label-top-divider" class="label-divider"></div>
+
+      <div id="label-middle" class="label-middle">
+        <div class="label-middle-left">
+          <div id="prev-filament" class="label-designation"></div>
+          <div id="prev-color-row" class="label-color-row">
+            <div id="prev-color-swatch" class="label-color-swatch"></div>
+            <span id="prev-color-name" class="label-color-name"></span>
+          </div>
+        </div>
+        <div id="prev-hex-code" class="label-hex-code"></div>
+      </div>
+
+      <div id="label-bottom" class="label-bottom">
+        <div class="label-bottom-left">
+          <div id="prev-id" class="label-spool-id"></div>
+          <div id="prev-extra-fields" class="label-extra-fields"></div>
+        </div>
+        <div id="label-qr-container" class="label-qr"></div>
+      </div>
+    `
+  }
+
+  async function updatePreview(isStale = () => false) {
+    if (activePreviewTab !== 'print') return
+    if (typeof (window as any).QRCode === 'undefined') {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = '/vendor/qrcode.min.js'
+        script.onload = resolve
+        script.onerror = reject
+        document.head.appendChild(script)
+      })
+    }
+    if (isStale() || activePreviewTab !== 'print') return
+
+    ensureClassicPreviewLayout()
+    const qrContainer = document.getElementById('label-qr-container') as HTMLElement
+
+    const widthMm = clampInputValue(widthInput, 20, 200, 60, 0)
+    const heightMm = clampInputValue(heightInput, 10, 120, 40, 0)
+    const qrSizeMm = clampInputValue(qrSizeInput, 8, 40, 18, 1)
+    const fontSizeBase = clampInputValue(fontSizeInput, 50, 200, 100, 0) / 100
+    const w = String(widthMm)
+    const h = String(heightMm)
+    const qrSize = String(qrSizeMm)
+
+    labelPreview.style.border = 'none'
+    labelPreview.style.padding = ''
+    labelPreview.style.width = w + 'mm'
+    labelPreview.style.height = h + 'mm'
+    labelPreview.style.setProperty('--print-label-padding', '2mm')
+    labelPreview.style.setProperty('--inner-border-style', 'none')
+    labelPreview.style.setProperty('--inner-border-inset', '2mm')
+
+    // === TOP: Logo / Manufacturer ===
+    const topArea = document.getElementById('label-top')!
+    const topDivider = document.getElementById('label-top-divider')!
+    const logoImg = document.getElementById('prev-logo') as HTMLImageElement
+    const mfrTextEl = document.getElementById('prev-mfr-text')!
+
+    const showLogo = checkLogo.checked
+    const showMfr = checkMfr.checked
+
+    if (showLogo && labelLogoLoaded && labelLogoUrl) {
+      logoImg.src = labelLogoUrl
+      logoImg.style.display = 'block'
+      logoImg.style.maxHeight = (fontSizeBase * 8) + 'mm'
+      mfrTextEl.style.display = 'none'
+      topArea.style.display = 'flex'
+      topDivider.style.display = 'block'
+    } else if (showLogo && showMfr && labelData.manufacturer) {
+      // No logo available — show manufacturer name as text in top area
+      logoImg.style.display = 'none'
+      mfrTextEl.textContent = labelData.manufacturer
+      mfrTextEl.style.display = 'block'
+      mfrTextEl.style.fontSize = (fontSizeBase * 11) + 'pt'
+      topArea.style.display = 'flex'
+      topDivider.style.display = 'block'
+    } else if (showMfr && labelData.manufacturer) {
+      logoImg.style.display = 'none'
+      mfrTextEl.textContent = labelData.manufacturer
+      mfrTextEl.style.display = 'block'
+      mfrTextEl.style.fontSize = (fontSizeBase * 11) + 'pt'
+      topArea.style.display = 'flex'
+      topDivider.style.display = 'block'
+    } else {
+      topArea.style.display = 'none'
+      topDivider.style.display = 'none'
+    }
+
+    // === MIDDLE: Designation + Color ===
+    const filamentEl = document.getElementById('prev-filament')!
+    const matText = checkMat.checked ? labelData.type : ''
+    const desigText = labelData.designation || ''
+    const fullDesig = [desigText, matText].filter(Boolean).join(' ')
+    filamentEl.textContent = fullDesig
+    filamentEl.style.fontSize = (fontSizeBase * 12) + 'pt'
+    filamentEl.style.display = fullDesig ? 'block' : 'none'
+
+    // Color row: swatch + name
+    const colorRow = document.getElementById('prev-color-row')!
+    const colorSwatch = document.getElementById('prev-color-swatch')!
+    const colorName = document.getElementById('prev-color-name')!
+    const hexCodeEl = document.getElementById('prev-hex-code')!
+
+    const showColor = checkColor.checked
+    const showSwatch = checkColorSwatch.checked
+    const hasHex = !!labelData.hex_code
+
+    if (showSwatch && hasHex) {
+      colorSwatch.style.display = 'block'
+      colorSwatch.style.backgroundColor = labelData.hex_code.startsWith('#') ? labelData.hex_code : `#${labelData.hex_code}`
+    } else {
+      colorSwatch.style.display = 'none'
+    }
+
+    if (showColor && labelData.color) {
+      colorName.textContent = labelData.color
+      colorName.style.display = 'inline'
+      colorName.style.fontSize = (fontSizeBase * 10) + 'pt'
+    } else {
+      colorName.style.display = 'none'
+    }
+
+    colorRow.style.display = (showColor || showSwatch) ? 'flex' : 'none'
+
+    if (hasHex && (showColor || showSwatch)) {
+      const hexStr = labelData.hex_code.startsWith('#') ? labelData.hex_code.toUpperCase() : `#${labelData.hex_code.toUpperCase()}`
+      hexCodeEl.textContent = hexStr
+      hexCodeEl.style.display = 'block'
+      hexCodeEl.style.fontSize = (fontSizeBase * 9) + 'pt'
+    } else {
+      hexCodeEl.style.display = 'none'
+    }
+
+    // === BOTTOM: ID + Extra fields + QR ===
+    const idEl = document.getElementById('prev-id')!
+    if (checkID.checked) {
+      idEl.textContent = `#${labelData.id}`
+      idEl.style.display = 'block'
+      idEl.style.fontSize = (fontSizeBase * 7.5) + 'pt'
+    } else {
+      idEl.style.display = 'none'
+    }
+
+    // Extra fields
+    const extraContainer = document.getElementById('prev-extra-fields')!
+    extraContainer.innerHTML = ''
+    for (const ef of extraFieldChecks) {
+      if (ef.checkbox.checked) {
+        const div = document.createElement('div')
+        div.style.fontSize = (fontSizeBase * 7) + 'pt'
+        div.style.color = 'black'
+        div.style.whiteSpace = 'nowrap'
+        div.style.overflow = 'hidden'
+        div.style.textOverflow = 'ellipsis'
+        div.style.lineHeight = '1.3'
+        const labelSpan = document.createElement('span')
+        labelSpan.style.color = '#555'
+        labelSpan.textContent = ef.label + ':'
+        div.appendChild(labelSpan)
+        div.appendChild(document.createTextNode(' ' + ef.value))
+        extraContainer.appendChild(div)
+      }
+    }
+
+    // QR Code
+    qrContainer.style.display = checkQR.checked ? 'block' : 'none'
+    if (checkQR.checked) {
+      qrContainer.innerHTML = ''
+      const url = window.location.origin + '/spools/' + labelData.id
+      const qrPx = Math.min(1024, Math.max(256, Math.round(qrSizeMm * (PRINT_DPI / 25.4))))
+
+      // @ts-expect-error — QRCode loaded dynamically
+      new QRCode(qrContainer, {
+        text: url,
+        width: qrPx,
+        height: qrPx,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: (window as any).QRCode.CorrectLevel.H
+      })
+
+      qrContainer.style.width = qrSize + 'mm'
+      qrContainer.style.height = qrSize + 'mm'
+      qrContainer.style.imageRendering = 'pixelated'
+
+      const canvas = qrContainer.querySelector('canvas')
+      if (canvas) {
+        qrContainer.innerHTML = ''
+        qrContainer.appendChild(canvasToQrImage(canvas as HTMLCanvasElement, true))
+      }
+
+      qrContainer.style.flexShrink = '0'
+    }
+
+    // Print styles
+    const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
+    const style = document.createElement('style')
+    // Safari doesn't support @page { size } — use default page margins so label stays in printable area
+    // Chrome/Edge support @page { size } — set exact label dimensions with no margin
+    const pageRule = isSafari
+      ? ''
+      : `@page { size: ${w}mm ${h}mm; margin: 0; }`
+    style.innerHTML = `
+      ${pageRule}
+      @media print {
+        .label-preview {
+          width: ${w}mm !important;
+          height: ${h}mm !important;
+          min-width: ${w}mm !important;
+          min-height: ${h}mm !important;
+          max-width: ${w}mm !important;
+          max-height: ${h}mm !important;
+          transform: none !important;
+          transform-origin: unset !important;
+        }
+      }
+    `
+    const oldStyle = document.querySelector('style#page-style')
+    if (oldStyle) oldStyle.remove()
+    style.id = 'page-style'
+    document.head.appendChild(style)
+    if (isStale() || activePreviewTab !== 'print') return
+    saveSettings()
+  }
+
+  ;[widthInput, heightInput, fontSizeInput, qrSizeInput, checkLogo, checkQR, checkID, checkMfr, checkMat, checkColor, checkColorSwatch].forEach(el => {
+    el.addEventListener('change', () => updatePreview())
+    if ((el as HTMLInputElement).type === 'range' || (el as HTMLInputElement).type === 'number') {
+      el.addEventListener('input', () => updatePreview())
+    }
+  })
+
+  // ─── Designer preview ─────────────────────────────────────────────────────
+
+  async function updateDesignerPreview(isStale = () => false) {
+    if (activePreviewTab !== 'designer') return
+    // Load QR library if needed
+    if (typeof (window as any).QRCode === 'undefined') {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = '/vendor/qrcode.min.js'
+        script.onload = resolve
+        script.onerror = reject
+        document.head.appendChild(script)
+      })
+    }
+    if (isStale() || activePreviewTab !== 'designer') return
+
+    const s = loadDesignerSettingsFromStorage()
+
+    const data = buildSpoolData() as SpoolData
+
+    // --- Size & border ---
+    const w = clampNumber(Number(s.label.width), 20, 300, DESIGNER_DEFAULTS.label.width)
+    const h = clampNumber(Number(s.label.height), 10, 200, DESIGNER_DEFAULTS.label.height)
+    const marginMm = Math.max(0, Number(s.label.marginMm ?? DESIGNER_DEFAULTS.label.marginMm))
+    const borderWidthMm = 0.3
+    const borderTextGapMm = borderWidthMm
+    const contentInsetMm = marginMm + (s.label.border ? (borderWidthMm + borderTextGapMm) : 0)
+    labelPreview.style.width = w + 'mm'
+    labelPreview.style.height = h + 'mm'
+    labelPreview.style.padding = contentInsetMm + 'mm'
+    labelPreview.style.border = '1px dashed #ccc'
+    labelPreview.style.setProperty('--print-label-padding', contentInsetMm + 'mm')
+    labelPreview.style.setProperty('--inner-border-style', s.label.border ? '0.3mm solid black' : 'none')
+    labelPreview.style.setProperty('--inner-border-inset', marginMm + 'mm')
+
+    // Clear and rebuild preview in designer layout
+    labelPreview.innerHTML = ''
+
+    // --- Logo row (if logo enabled and available) ---
+    const makeRule = () => {
+      const r = document.createElement('div')
+      r.style.borderTop = '0.3mm solid black'
+      r.style.margin = '0'
+      return r
+    }
+    const hasLogo = s.logo?.show !== false && labelLogoLoaded && labelLogoUrl
+    const hasTitle1 = !!(s.title.show && s.title.template.trim())
+    const hasTitle2 = !!(s.title2?.show && s.title2.template.trim())
+
+    // Rule ABOVE logo/title block — no longer used here, moved below logo
+    // (kept for structure reference)
+
+    if (hasLogo) {
+      const logoRow = document.createElement('div')
+      logoRow.style.padding = '0 0 0.5mm 0'
+      logoRow.style.display = 'flex'
+      logoRow.style.alignItems = 'center'
+      const logoAlign = s.logo?.align ?? 'left'
+      const logoImg = document.createElement('img')
+      logoImg.src = labelLogoUrl!
+      const logoAny = (s.logo ?? {}) as any
+      const logoSpaceMm = Number(logoAny.spaceMm ?? logoAny.sizeMm ?? DESIGNER_DEFAULTS.logo.spaceMm)
+      const logoManualMm = Number(logoAny.manualSizeMm ?? logoAny.sizeMm ?? DESIGNER_DEFAULTS.logo.manualSizeMm)
+      const logoSpacePx = Math.max(1, Math.round(logoSpaceMm * MM_TO_PX))
+      const logoManualPx = Math.max(1, Math.round(logoManualMm * MM_TO_PX))
+      const logoBox = document.createElement('div')
+      logoBox.style.width = '100%'
+      logoBox.style.height = logoSpacePx + 'px'
+      logoBox.style.display = 'flex'
+      logoBox.style.alignItems = 'center'
+      logoBox.style.justifyContent = logoAlign === 'center' ? 'center' : logoAlign === 'right' ? 'flex-end' : 'flex-start'
+      if (s.logo.scaleToFit) {
+        // Fit within bounds while keeping intrinsic aspect size so horizontal
+        // justification (left/center/right) still has visible effect.
+        logoImg.style.height = 'auto'
+        logoImg.style.width = 'auto'
+        logoImg.style.maxHeight = '100%'
+        logoImg.style.maxWidth = '100%'
+      } else {
+        logoImg.style.height = logoManualPx + 'px'
+        logoImg.style.width = 'auto'
+        logoImg.style.maxHeight = '100%'
+        logoImg.style.maxWidth = '100%'
+      }
+      logoBox.appendChild(logoImg)
+      logoRow.appendChild(logoBox)
+      logoImg.style.objectFit = 'contain'
+      labelPreview.appendChild(logoRow)
+    }
+
+    // --- Title rows ---
+    const renderTitleRow = (cfg: { sizeMm: number; marginMm: number; fitToWidth: boolean; align: 'left'|'center'|'right'; template: string; dividerAbove: boolean; dividerBelow: boolean }) => {
+      const rowGapMm = Math.max(-1, Math.min(4, Number(cfg.marginMm ?? 0)))
+      if (cfg.dividerAbove) {
+        const r = makeRule(); r.style.marginBottom = '0'; labelPreview.appendChild(r)
+      }
+
+      const titleRow = document.createElement('div')
+      titleRow.style.margin = `${rowGapMm}mm 0`
+      titleRow.style.overflow = 'hidden'
+
+      const titleEl = document.createElement('div')
+      titleEl.style.textAlign = cfg.align
+      titleEl.style.fontWeight = '700'
+      titleEl.style.lineHeight = '1'
+      titleEl.style.overflow = 'hidden'
+      titleEl.style.whiteSpace = 'nowrap'
+      titleEl.style.textOverflow = cfg.fitToWidth ? 'clip' : 'ellipsis'
+      titleEl.style.color = 'black'
+
+      // If the whole title template is wrapped in ==...== or @@...@@,
+      // render it as a full-row inverse block instead of glyph-bounded inverse spans.
+      const trimmedTemplate = cfg.template.trim()
+      const rowInverseMatch = trimmedTemplate.match(/^==([\s\S]*?)==$/)
+      const rowColorInverseMatch = trimmedTemplate.match(/^@@([\s\S]*?)@@$/)
+      const rowInverseEnabled = !!(rowInverseMatch || rowColorInverseMatch)
+      const renderTemplate = rowInverseMatch ? rowInverseMatch[1] : rowColorInverseMatch ? rowColorInverseMatch[1] : cfg.template
+      if (rowInverseEnabled) {
+        if (rowColorInverseMatch) {
+          const bg = normalizeHexColor(data['filament.color_hex']) ?? '#000000'
+          titleEl.style.backgroundColor = bg
+          titleEl.style.color = getReadableTextColor(bg)
+        } else {
+          titleEl.style.backgroundColor = '#000'
+          titleEl.style.color = '#fff'
+        }
+        titleEl.style.display = 'block'
+        titleEl.style.width = '100%'
+        titleEl.style.boxSizing = 'border-box'
+        titleEl.style.padding = '0 0.6mm'
+      }
+
+      const resolvedTitleText = renderTemplateText(renderTemplate, data).trim()
+      if (!resolvedTitleText) {
+        return
+      }
+
+      const frag = parseTemplate(renderTemplate, data)
+      titleEl.appendChild(frag)
+      titleRow.appendChild(titleEl)
+      labelPreview.appendChild(titleRow)
+
+      if (cfg.fitToWidth) {
+        const maxPx = cfg.sizeMm * 3.78
+        titleEl.style.fontSize = maxPx + 'px'
+        let lo = 1, hi = maxPx, bestPx = lo
+        if (titleEl.scrollWidth <= titleRow.clientWidth) {
+          bestPx = maxPx
+        } else {
+          for (let i = 0; i < 12; i++) {
+            const mid = (lo + hi) / 2
+            titleEl.style.fontSize = mid + 'px'
+            if (titleEl.scrollWidth <= titleRow.clientWidth) { bestPx = mid; lo = mid }
+            else hi = mid
+          }
+          titleEl.style.fontSize = bestPx + 'px'
+          while (bestPx > 1 && titleEl.scrollWidth > titleRow.clientWidth) {
+            bestPx -= 0.25
+            titleEl.style.fontSize = bestPx + 'px'
+          }
+        }
+        titleEl.style.fontSize = bestPx + 'px'
+      } else {
+        titleEl.style.fontSize = cfg.sizeMm * 3.78 + 'px'
+      }
+
+      if (cfg.dividerBelow) {
+        const r = makeRule(); r.style.marginTop = '0'; labelPreview.appendChild(r)
+      }
+
+    }
+
+    if (hasTitle1) renderTitleRow(s.title)
+    if (hasTitle2) renderTitleRow(s.title2)
+
+    // Keep legacy behavior for logo-only labels when no title rows are shown.
+    if (!hasTitle1 && !hasTitle2 && hasLogo && s.title.dividerBelow) {
+      const r = makeRule(); r.style.marginTop = '0.5mm'; labelPreview.appendChild(r)
+    }
+
+    // --- Main row: info (left/right) + QR (left/right) ---
+    const mainRow = document.createElement('div')
+    mainRow.style.display = 'flex'
+    mainRow.style.flex = '1'
+    mainRow.style.minHeight = '0'
+    mainRow.style.padding = '0'
+    mainRow.style.gap = '1.5mm'
+    mainRow.style.flexDirection = s.qr.position === 'left' ? 'row-reverse' : 'row'
+    mainRow.style.alignItems = (() => {
+      const v = (s.info.show && s.info.template.trim()) ? s.info.vAlign
+               : (s.info2?.show && s.info2.template.trim()) ? s.info2.vAlign
+               : null
+      if (!v) return 'stretch'
+      return v === 'top' ? 'flex-start' : v === 'center' ? 'center' : 'flex-end'
+    })()
+    labelPreview.appendChild(mainRow)
+
+    // Information block (primary)
+    if (s.info.show && s.info.template.trim()) {
+      const infoEl = document.createElement('div')
+      infoEl.style.flex = '1'
+      infoEl.style.minWidth = '0'
+      infoEl.style.fontSize = s.info.sizeMm * 3.78 + 'px'
+      infoEl.style.textAlign = s.info.hAlign
+      infoEl.style.color = 'black'
+      infoEl.style.overflow = 'hidden'
+      infoEl.style.lineHeight = '1.4'
+      const frag = parseTemplate(s.info.template, data)
+      infoEl.appendChild(frag)
+      mainRow.appendChild(infoEl)
+    }
+
+    // Information block 2 (second column)
+    const hasInfo2 = s.info2?.show && s.info2.template.trim()
+    if (hasInfo2) {
+      // Vertical separator between info1 and info2
+      if (s.info2.vsep) {
+        const sep = document.createElement('div')
+        sep.style.width = '1px'
+        sep.style.alignSelf = 'stretch'
+        sep.style.minHeight = '100%'
+        sep.style.background = 'black'
+        sep.style.flexShrink = '0'
+        mainRow.appendChild(sep)
+      }
+      const info2El = document.createElement('div')
+      info2El.style.flex = '1'
+      info2El.style.minWidth = '0'
+      info2El.style.fontSize = (s.info2.sizeMm * 3.78) + 'px'
+      info2El.style.textAlign = s.info2.hAlign
+      info2El.style.color = 'black'
+      info2El.style.overflow = 'hidden'
+      info2El.style.lineHeight = '1.4'
+      info2El.style.alignSelf = s.info2.vAlign === 'top' ? 'flex-start' : s.info2.vAlign === 'center' ? 'center' : 'flex-end'
+      const frag2 = parseTemplate(s.info2.template, data)
+      info2El.appendChild(frag2)
+      mainRow.appendChild(info2El)
+    }
+
+    // QR Code block
+    if (s.qr.show) {
+      const qrWrap = document.createElement('div')
+      qrWrap.style.flexShrink = '0'
+      qrWrap.style.width = s.qr.sizeMm + 'mm'
+      qrWrap.style.height = s.qr.sizeMm + 'mm'
+      qrWrap.style.alignSelf = s.qr.vAlign === 'top' ? 'flex-start' : s.qr.vAlign === 'center' ? 'center' : 'flex-end'
+
+      const qrUrl = buildSafeQrUrl(s.qr.linkMode, s.qr.urlTemplate, labelData.id)
+      const qrPx = Math.min(1024, Math.max(256, Math.round(s.qr.sizeMm * (PRINT_DPI / 25.4))))
+
+      // @ts-expect-error — QRCode loaded dynamically
+      new QRCode(qrWrap, {
+        text: qrUrl, width: qrPx, height: qrPx,
+        colorDark: '#000000', colorLight: '#ffffff',
+        correctLevel: (window as any).QRCode.CorrectLevel.H,
+      })
+
+      // Optionally draw center brand mark.
+      if (s.qr.mode === 'logo' || s.qr.mode === 'colorLogo') {
+        const canvas = qrWrap.querySelector('canvas')
+        if (canvas) {
+          await decorateQrCenter(canvas as HTMLCanvasElement, qrPx, s.qr.mode === 'colorLogo')
+          if (isStale() || activePreviewTab !== 'designer') return
+          qrWrap.innerHTML = ''
+          qrWrap.appendChild(canvasToQrImage(canvas as HTMLCanvasElement, false))
+        }
+      } else {
+        // Convert canvas to img for reliable printing
+        const canvas = qrWrap.querySelector('canvas')
+        if (canvas) {
+          qrWrap.innerHTML = ''
+          qrWrap.appendChild(canvasToQrImage(canvas as HTMLCanvasElement, true))
+        }
+      }
+
+      mainRow.appendChild(qrWrap)
+    }
+
+    // Print page style
+    const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
+    const pageRule = isSafari ? '' : `@page { size: ${w}mm ${h}mm; margin: 0; }`
+    const style = document.createElement('style')
+    style.innerHTML = `
+      ${pageRule}
+      @media print {
+        .label-preview {
+          width: ${w}mm !important; height: ${h}mm !important;
+          min-width: ${w}mm !important; min-height: ${h}mm !important;
+          max-width: ${w}mm !important; max-height: ${h}mm !important;
+          transform: none !important;
+          transform-origin: unset !important;
+        }
+      }
+    `
+    const oldStyle = document.querySelector('style#page-style')
+    if (oldStyle) oldStyle.remove()
+    style.id = 'page-style'
+    document.head.appendChild(style)
+  }
+
+  document.getElementById('btn-reset')?.addEventListener('click', () => {
+    localStorage.removeItem(LABEL_SETTINGS_KEY);
+    (widthInput as HTMLInputElement).value = '60';
+    (heightInput as HTMLInputElement).value = '40';
+    (fontSizeInput as HTMLInputElement).value = '100';
+    (qrSizeInput as HTMLInputElement).value = '18';
+    checkLogo.checked = true;
+    checkQR.checked = true;
+    checkID.checked = true;
+    checkMfr.checked = true;
+    checkMat.checked = true;
+    checkColor.checked = true;
+    checkColorSwatch.checked = true;
+    for (const ef of extraFieldChecks) {
+      ef.checkbox.checked = false
+    }
+    updatePreview()
+  })
+
+  // Restore active tab now that all designer state is fully initialized
+  if (savedTab === 'designer') activateTab('designer')
+
+  // Initialize: load logo then render whichever tab is active
+  loadLabelLogo().then(() => {
+    const activeTab = localStorage.getItem(ACTIVE_TAB_KEY)
+    if (activeTab === 'designer') activateTab('designer')
+    else activateTab('print')
+  })
+
+  // Fallback: if no extra fields came from sessionStorage (e.g. direct navigation),
+  // fetch definitions from the API and rebuild the extra-fields UI.
+  if (extraFields.length === 0) {
+    ;(async () => {
+      try {
+        const [spoolDefs, filamentDefs] = await Promise.all([
+          fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+          fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+        ])
+        const allDefs: {key: string, label: string, target_type: string}[] = [
+          ...(Array.isArray(spoolDefs) ? spoolDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'spool'})),
+          ...(Array.isArray(filamentDefs) ? filamentDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'filament'})),
+        ]
+        if (allDefs.length === 0) return
+
+        // Attempt to get actual spool values
+        const spoolCustom: Record<string, string> = {}
+        const filamentCustom: Record<string, string> = {}
+        const spoolRes = await fetch(`/api/v1/spools/${id}`, { credentials: 'include' })
+        if (spoolRes.ok) {
+          const sd = await spoolRes.json()
+          if (sd.custom_fields) {
+            for (const [k, v] of Object.entries(sd.custom_fields as Record<string, unknown>)) {
+              if (v !== null && v !== undefined) spoolCustom[k] = String(v)
+            }
+          }
+          if (sd.filament?.custom_fields) {
+            for (const [k, v] of Object.entries(sd.filament.custom_fields as Record<string, unknown>)) {
+              if (v !== null && v !== undefined) filamentCustom[k] = String(v)
+            }
+          }
+        }
+
+        // Populate extraFields and rebuild UI
+        const hasBothSources = allDefs.some(d => d.target_type === 'spool') && allDefs.some(d => d.target_type === 'filament')
+        const scopeAttr = (() => {
+          const existing = document.querySelector('.fm-checkbox-group')
+          if (!existing) return null
+          return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
+        })()
+
+        for (const def of allDefs) {
+          const valueMap = def.target_type === 'spool' ? spoolCustom : filamentCustom
+          const ef = {
+            key: `${def.target_type}.${def.key}`,
+            label: def.label,
+            value: valueMap[def.key] ?? '',
+            source: def.target_type,
+          }
+          extraFields.push(ef)
+
+          const lbl = document.createElement('label')
+          lbl.className = 'fm-checkbox-group'
+          const cb = document.createElement('input')
+          cb.type = 'checkbox'
+          cb.id = `check-ef-${ef.key}`
+          cb.checked = savedExtraFieldSettings[ef.key] || false
+          const span = document.createElement('span')
+          span.textContent = hasBothSources
+            ? `${ef.label} (${def.target_type === 'spool' ? ((window as any).__t('dashboard.spool') || 'Spool') : ((window as any).__t('spools.filament') || 'Filament')})`
+            : ef.label
+          if (scopeAttr) {
+            lbl.setAttribute(scopeAttr.name, '')
+            cb.setAttribute(scopeAttr.name, '')
+            span.setAttribute(scopeAttr.name, '')
+          }
+          lbl.appendChild(cb)
+          lbl.appendChild(span)
+          extraFieldsCheckboxes.appendChild(lbl)
+          extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
+          cb.addEventListener('change', () => updatePreview())
+        }
+
+        // Show the print-settings extra-fields section
+        extraFieldsTitle.style.display = ''
+        extraFieldsCheckboxes.style.display = ''
+        document.getElementById('title-extra-fields')!.textContent = (window as any).__t('spools.extraFieldsLabel') || 'Extra Fields'
+
+        // Rebuild token areas in the designer so extra-field chips appear
+        buildTokenArea('ds-title-token-area',  'ds-title-tpl')
+        buildTokenArea('ds-title2-token-area', 'ds-title2-tpl')
+        buildTokenArea('ds-info-token-area',   'ds-info-tpl')
+        buildTokenArea('ds-info2-token-area',  'ds-info2-tpl')
+
+        updatePreview()
+      } catch { /* ignore */ }
+    })()
+  }
+</script>
