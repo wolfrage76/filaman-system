@@ -256,7 +256,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
   </div>
   
   <!-- Modal: Von Tag übernehmen -->
-  <div id="import-tag-modal" class="fm-modal-overlay" style="display: none;">
+  <div id="import-tag-modal" class="fm-modal-overlay">
     <div class="fm-modal" style="max-width: 440px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h2 style="margin: 0; font-weight: 600; font-size: 1.1rem;" data-i18n="spools.importFromTagTitle">Von Tag übernehmen</h2>
@@ -925,12 +925,12 @@ const filamentId = Astro.url.searchParams.get('filament_id')
     let importSelectedDeviceId: number | null = null
 
     function openImportTagModal() {
-      importTagModal.style.display = ''
+      importTagModal.classList.add('open')
       loadDevicesForImport()
     }
 
     function closeImportTagModal() {
-      importTagModal.style.display = 'none'
+      importTagModal.classList.remove('open')
       if (importPollInterval) { clearInterval(importPollInterval); importPollInterval = null }
       importTagContent.innerHTML = ''
     }
