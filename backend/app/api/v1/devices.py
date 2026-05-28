@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession
 
@@ -245,7 +246,9 @@ async def write_rfid_tag(
         app_settings = settings_result.scalar_one_or_none()
         if app_settings and app_settings.rfid_extended_data_enabled:
             spool_result = await db.execute(
-                select(Spool).where(Spool.id == data.spool_id)
+                select(Spool)
+                .options(selectinload(Spool.filament))
+                .where(Spool.id == data.spool_id)
             )
             spool_obj = spool_result.scalar_one_or_none()
             if spool_obj:
