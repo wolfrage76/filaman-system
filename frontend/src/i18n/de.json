@@ -516,6 +516,7 @@
     "importFromTagTimeout": "Zeitüberschreitung – kein Tag erkannt. Bitte erneut versuchen.",
     "importFromTagTriggerFailed": "Tag-Scan konnte auf dem Gerät nicht gestartet werden. Bitte Verbindung oder Firmware prüfen.",
     "importFromTagScanFailed": "Tag-Scan fehlgeschlagen. Bitte erneut versuchen.",
+    "importFromTagResolveFailed": "Tag-Daten konnten nicht automatisch in ein Filament übernommen werden.",
     "importFromTagNoDevices": "Keine aktiven Geräte verfügbar. Bitte Gerät einschalten und verbinden.",
     "importFromTagNoMatch": "Kein passendes Filament gefunden für",
     "importFromTagMatched": "Filament erkannt",

@@ -25,6 +25,8 @@ from app.api.v1.schemas_filament import (
     FilamentCreate,
     FilamentDetailResponse,
     FilamentResponse,
+    ResolveFilamentFromTagRequest,
+    ResolveFilamentFromTagResponse,
     FilamentUpdate,
     ManufacturerCreate,
     ManufacturerResponse,
@@ -32,7 +34,15 @@ from app.api.v1.schemas_filament import (
 )
 from app.core.config import settings, MANUFACTURER_LOGO_DIR
 from app.core.event_bus import event_bus
-from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
+from app.models import (
+    Color,
+    Filament,
+    FilamentColor,
+    Manufacturer,
+    Spool,
+    SpoolStatus,
+    SystemExtraField,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -543,6 +553,192 @@ async def delete_color(
 
 
 router_filaments = APIRouter(prefix="/filaments", tags=["filaments"])
+
+
+def _parse_temp_value(value: int | float | str | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(round(value))
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return int(round(float(stripped)))
+        except ValueError:
+            return None
+    return None
+
+
+def _parse_diameter_value(value: float | str | None) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, float):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return float(stripped)
+        except ValueError:
+            return None
+    return None
+
+
+async def _ensure_filament_temp_fields(db: DBSession) -> list[str]:
+    created_keys: list[str] = []
+    required_fields = [
+        {
+            "target_type": "filament",
+            "key": "min_temp",
+            "label": "Min Temp",
+            "field_type": "number",
+        },
+        {
+            "target_type": "filament",
+            "key": "max_temp",
+            "label": "Max Temp",
+            "field_type": "number",
+        },
+    ]
+
+    for field in required_fields:
+        result = await db.execute(
+            select(SystemExtraField).where(
+                SystemExtraField.target_type == field["target_type"],
+                SystemExtraField.key == field["key"],
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing is None:
+            db.add(SystemExtraField(**field))
+            created_keys.append(field["key"])
+
+    return created_keys
+
+
+@router_filaments.post(
+    "/resolve-from-tag",
+    response_model=ResolveFilamentFromTagResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def resolve_filament_from_tag(
+    data: ResolveFilamentFromTagRequest,
+    db: DBSession,
+    principal=RequirePermission("spools:create"),
+):
+    brand_raw = (data.brand or "").strip()
+    material_type_raw = (data.type or "").strip().upper()
+
+    if not material_type_raw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "validation_error", "message": "Tag field 'type' is required"},
+        )
+
+    brand_name = brand_raw or "Generic"
+    min_temp = _parse_temp_value(data.min_temp)
+    max_temp = _parse_temp_value(data.max_temp)
+
+    if min_temp is not None and max_temp is not None and max_temp < min_temp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "validation_error",
+                "message": "max_temp must be greater than or equal to min_temp",
+            },
+        )
+
+    manufacturer_created = False
+    manufacturer_result = await db.execute(
+        select(Manufacturer).where(func.lower(Manufacturer.name) == brand_name.lower())
+    )
+    manufacturer = manufacturer_result.scalar_one_or_none()
+    if manufacturer is None:
+        next_mfr_id = await get_next_available_id(db, Manufacturer)
+        manufacturer = Manufacturer(id=next_mfr_id, name=brand_name)
+        db.add(manufacturer)
+        await db.flush()
+        manufacturer_created = True
+
+    filament_result = await db.execute(
+        select(Filament)
+        .where(Filament.manufacturer_id == manufacturer.id)
+        .where(func.upper(Filament.material_type) == material_type_raw)
+        .order_by(Filament.id.asc())
+        .limit(1)
+    )
+    filament = filament_result.scalar_one_or_none()
+
+    filament_created = False
+    filament_updated = False
+    if filament is None:
+        diameter = _parse_diameter_value(data.diameter) or 1.75
+        subtype = (data.subtype or "").strip()
+        designation = f"{brand_name} {material_type_raw}"
+        if subtype:
+            designation = f"{designation} {subtype}"
+
+        next_filament_id = await get_next_available_id(db, Filament)
+        filament = Filament(
+            id=next_filament_id,
+            manufacturer_id=manufacturer.id,
+            designation=designation,
+            material_type=material_type_raw,
+            diameter_mm=diameter,
+            color_mode="single",
+        )
+        db.add(filament)
+        await db.flush()
+        filament_created = True
+    else:
+        designation = filament.designation
+
+    custom_fields = dict(filament.custom_fields or {})
+    before_custom_fields = dict(custom_fields)
+    if min_temp is not None:
+        custom_fields["min_temp"] = min_temp
+    if max_temp is not None:
+        custom_fields["max_temp"] = max_temp
+    if custom_fields != before_custom_fields:
+        filament.custom_fields = custom_fields
+        filament_updated = True
+
+    created_system_fields: list[str] = []
+    if min_temp is not None or max_temp is not None:
+        created_system_fields = await _ensure_filament_temp_fields(db)
+
+    if created_system_fields:
+        response_cache.delete("extra_fields:filament:all")
+        response_cache.delete("extra_fields:all:all")
+
+    await db.commit()
+    await db.refresh(filament)
+
+    if manufacturer_created:
+        await event_bus.publish({"event": "manufacturers_changed"})
+    if filament_created or filament_updated:
+        await event_bus.publish({"event": "filaments_changed"})
+        response_cache.delete("filament_types")
+
+    final_custom_fields = filament.custom_fields or {}
+    return ResolveFilamentFromTagResponse(
+        filament_id=filament.id,
+        filament_created=filament_created,
+        filament_updated=filament_updated,
+        manufacturer_id=manufacturer.id,
+        manufacturer_name=manufacturer.name,
+        manufacturer_created=manufacturer_created,
+        material_type=material_type_raw,
+        designation=filament.designation,
+        min_temp=final_custom_fields.get("min_temp"),
+        max_temp=final_custom_fields.get("max_temp"),
+        system_extra_fields_created=created_system_fields,
+    )
 
 # Default filament types (always included in the types list)
 DEFAULT_FILAMENT_TYPES = ["PLA", "PETG", "ABS", "ASA", "TPU", "NYLON", "PC"]

@@ -143,6 +143,29 @@ class FilamentCreate(BaseModel):
     colors: list[FilamentColorEntry] | None = None
 
 
+class ResolveFilamentFromTagRequest(BaseModel):
+    brand: str | None = None
+    type: str | None = None
+    subtype: str | None = None
+    min_temp: int | float | str | None = None
+    max_temp: int | float | str | None = None
+    diameter: float | str | None = None
+
+
+class ResolveFilamentFromTagResponse(BaseModel):
+    filament_id: int
+    filament_created: bool
+    filament_updated: bool
+    manufacturer_id: int
+    manufacturer_name: str
+    manufacturer_created: bool
+    material_type: str
+    designation: str
+    min_temp: int | None = None
+    max_temp: int | None = None
+    system_extra_fields_created: list[str] = []
+
+
 class FilamentUpdate(BaseModel):
     manufacturer_id: int | None = None
     designation: str | None = None

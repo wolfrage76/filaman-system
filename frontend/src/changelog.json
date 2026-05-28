@@ -5,12 +5,14 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "feature", "text": "Beim Übernehmen von Tag-Daten wird jetzt bei Bedarf automatisch der Hersteller und ein passendes Filament angelegt oder ausgewählt. Enthaltene Temperaturwerte werden direkt als Filament-Zusatzfelder übernommen." },
           { "type": "fix", "text": "Beim Anlegen einer neuen Spule startet die Funktion 'Von Tag übernehmen' jetzt zuverlässig den Tag-Scan auf der Waage. Falls der Scan nicht gestartet werden kann oder fehlschlägt, wird sofort eine klare Fehlermeldung angezeigt." },
           { "type": "feature", "text": "RFID-Tags können jetzt mit erweiterten Filamentdaten (Material, Farbe, Temperaturen, Hersteller) beschrieben werden – kompatibel mit OpenSpool- und FilaMan-Protokoll. Die Einstellung ist unter Admin → App-Einstellungen konfigurierbar." },
           { "type": "feature", "text": "Beim Anlegen einer neuen Spule können Daten direkt von einem NFC-Tag importiert werden – unterstützt werden OpenSpool- und FilaMan-Protokoll." },
           { "type": "feature", "text": "Erweiterter Label-Designer: Spulen-Labels können jetzt frei gestaltet werden – mit individuellen Elementen, eigenem Layout und direktem Druck aus FilaMan heraus." }
         ],
         "en": [
+          { "type": "feature", "text": "When importing from tag data, the manufacturer and a matching filament are now created or selected automatically when needed. Included temperature values are applied directly as filament extra fields." },
           { "type": "fix", "text": "When creating a new spool, the 'Import from Tag' action now reliably starts tag scanning on the scale. If scanning cannot be started or fails, a clear error message is shown immediately." },
           { "type": "feature", "text": "RFID tags can now be written with extended filament data (material, color, temperatures, brand) – compatible with OpenSpool and FilaMan protocols. The setting can be configured under Admin → App Settings." },
           { "type": "feature", "text": "When creating a new spool, data can be imported directly from an NFC tag – supports OpenSpool and FilaMan protocols." },

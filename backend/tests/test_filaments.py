@@ -466,6 +466,98 @@ class TestFilamentCRUD:
         assert data["spool_material"] == "Plastic"
 
     @pytest.mark.asyncio
+    async def test_resolve_from_tag_creates_manufacturer_filament_and_temps(self, auth_client, db_session):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={
+                "brand": "eSun",
+                "type": "PLA",
+                "min_temp": "180",
+                "max_temp": "230",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["manufacturer_created"] is True
+        assert payload["filament_created"] is True
+        assert payload["material_type"] == "PLA"
+        assert payload["min_temp"] == 180
+        assert payload["max_temp"] == 230
+
+        manufacturer_result = await db_session.execute(
+            select(Manufacturer).where(Manufacturer.id == payload["manufacturer_id"])
+        )
+        manufacturer = manufacturer_result.scalar_one_or_none()
+        assert manufacturer is not None
+        assert manufacturer.name == "eSun"
+
+        filament_result = await db_session.execute(
+            select(Filament).where(Filament.id == payload["filament_id"])
+        )
+        filament = filament_result.scalar_one_or_none()
+        assert filament is not None
+        assert filament.custom_fields is not None
+        assert filament.custom_fields["min_temp"] == 180
+        assert filament.custom_fields["max_temp"] == 230
+
+    @pytest.mark.asyncio
+    async def test_resolve_from_tag_reuses_existing_records_and_updates_temps(self, auth_client, db_session):
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="Prusament")
+        filament = await _create_filament(
+            db_session,
+            manufacturer.id,
+            designation="Prusament PETG",
+            material_type="PETG",
+            custom_fields={"min_temp": 220},
+        )
+
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={
+                "brand": "prusament",
+                "type": "petg",
+                "min_temp": "225",
+                "max_temp": "255",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["manufacturer_created"] is False
+        assert payload["filament_created"] is False
+        assert payload["filament_updated"] is True
+        assert payload["filament_id"] == filament.id
+        assert payload["manufacturer_id"] == manufacturer.id
+        assert payload["material_type"] == "PETG"
+        assert payload["min_temp"] == 225
+        assert payload["max_temp"] == 255
+
+        await db_session.refresh(filament)
+        assert filament.custom_fields is not None
+        assert filament.custom_fields["min_temp"] == 225
+        assert filament.custom_fields["max_temp"] == 255
+
+    @pytest.mark.asyncio
+    async def test_resolve_from_tag_requires_type(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={"brand": "NoType"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "validation_error"
+
+    @pytest.mark.asyncio
     async def test_get_filament_detail(self, auth_client, db_session):
         client, _ = auth_client
 
