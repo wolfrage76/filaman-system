@@ -1015,14 +1015,27 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       importTagContent.appendChild(wrapper)
 
       try {
-        await fetch(`/api/v1/devices/${deviceId}/request-tag-scan`, {
+        const triggerRes = await fetch(`/api/v1/devices/${deviceId}/request-tag-scan`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
           body: '{}',
         })
+
+        if (!triggerRes.ok) {
+          let apiMsg: string | null = null
+          try {
+            const payload = await triggerRes.json()
+            if (typeof payload?.detail?.message === 'string') apiMsg = payload.detail.message
+            else if (typeof payload?.message === 'string') apiMsg = payload.message
+          } catch {
+            apiMsg = null
+          }
+          showImportError(apiMsg || t('spools.importFromTagTriggerFailed'))
+          return
+        }
       } catch {
-        showImportError(t('spools.importFromTagTimeout'))
+        showImportError(t('spools.importFromTagTriggerFailed'))
         return
       }
 
@@ -1039,10 +1052,18 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         }
         try {
           const res = await fetch(`/api/v1/devices/${deviceId}/tag-scan-result`, { credentials: 'include' })
+          if (!res.ok) {
+            clearInterval(importPollInterval!); importPollInterval = null
+            showImportError(t('spools.importFromTagScanFailed'))
+            return
+          }
           const data = await res.json()
           if (data.status === 'success' && data.tag_data) {
             clearInterval(importPollInterval!); importPollInterval = null
             applyTagDataToForm(data.tag_data)
+          } else if (data.status === 'error') {
+            clearInterval(importPollInterval!); importPollInterval = null
+            showImportError(data.error_message || t('spools.importFromTagScanFailed'))
           }
         } catch { /* ignore poll errors */ }
       }, 1000)

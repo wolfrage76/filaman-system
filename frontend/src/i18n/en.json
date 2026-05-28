@@ -512,6 +512,8 @@
     "importFromTagSelectDevice": "Select a device",
     "importFromTagPlaceOnScale": "Place spool on scale and hold tag ready...",
     "importFromTagTimeout": "Timeout – no tag detected. Please try again.",
+    "importFromTagTriggerFailed": "Could not start tag scan on the device. Please check connection or firmware.",
+    "importFromTagScanFailed": "Tag scan failed. Please try again.",
     "importFromTagNoDevices": "No active devices available. Please switch on and connect a device.",
     "importFromTagNoMatch": "No matching filament found for",
     "importFromTagMatched": "Filament detected",

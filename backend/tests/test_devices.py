@@ -421,3 +421,84 @@ class TestLocateSpool:
 
         await db_session.refresh(spool)
         assert spool.location_id == location.id
+
+
+class TestTagScan:
+    @pytest.mark.asyncio
+    async def test_request_tag_scan_success(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        device = await _create_device(db_session, ip_address="192.168.1.10")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        with patch("app.api.v1.devices.httpx.AsyncClient") as mock_httpx:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.post = AsyncMock(return_value=mock_response)
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_client_instance
+
+            response = await client.post(
+                f"/api/v1/devices/{device.id}/request-tag-scan",
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+        await db_session.refresh(device)
+        assert device.custom_fields is not None
+        assert device.custom_fields["last_tag_scan"]["status"] == "pending"
+
+    @pytest.mark.asyncio
+    async def test_request_tag_scan_device_rejects_request(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        device = await _create_device(db_session, ip_address="192.168.1.10")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+
+        with patch("app.api.v1.devices.httpx.AsyncClient") as mock_httpx:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.post = AsyncMock(return_value=mock_response)
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_client_instance
+
+            response = await client.post(
+                f"/api/v1/devices/{device.id}/request-tag-scan",
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+        assert response.status_code == 502
+        assert response.json()["detail"]["code"] == "device_scan_request_failed"
+
+        await db_session.refresh(device)
+        assert device.custom_fields is not None
+        assert device.custom_fields["last_tag_scan"]["status"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_receive_tag_data_error_status_updates_scan_state(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        await _create_device(db_session, device_code="ABC123")
+        token, device_id = await _register_device(client, "ABC123", csrf_token)
+
+        response = await client.post(
+            "/api/v1/devices/tag-data",
+            json={"tag_json": "{\"scan_status\":\"error\",\"error_message\":\"Timeout - no tag found\"}"},
+            headers={
+                **_device_headers(token),
+                "X-CSRF-Token": csrf_token,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+
+        result = await db_session.execute(select(Device).where(Device.id == device_id))
+        device = result.scalar_one()
+        assert device.custom_fields is not None
+        assert device.custom_fields["last_tag_scan"]["status"] == "error"
+        assert device.custom_fields["last_tag_scan"]["error_message"] == "Timeout - no tag found"
+        assert device.custom_fields["last_tag_scan"]["tag_data"] is None

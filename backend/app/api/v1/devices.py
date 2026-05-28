@@ -654,13 +654,45 @@ async def request_tag_scan(
     device.custom_fields = new_cf
     await db.commit()
 
-    # Scan-Request ans Gerät senden (Fire & Forget)
+    # Scan-Request ans Gerät senden und Ergebnis prüfen
     device_url = f"http://{device.ip_address}/api/v1/rfid/scan-request"
+    request_error: str | None = None
     try:
         async with httpx.AsyncClient(timeout=5.0, http2=False, follow_redirects=True) as client:
-            await client.post(device_url, json={})
+            response = await client.post(device_url, json={})
+
+        if response.status_code >= 400:
+            if response.status_code == status.HTTP_404_NOT_FOUND:
+                request_error = "Geraete-Firmware unterstuetzt '/api/v1/rfid/scan-request' nicht."
+            else:
+                request_error = f"Geraet antwortete mit HTTP {response.status_code}."
     except Exception as e:
-        logger.warning(f"Could not reach device {device_id} for scan-request: {e}")
+        request_error = f"Geraet nicht erreichbar: {e}"
+
+    if request_error:
+        logger.warning(
+            "Tag scan request failed for device %s (%s): %s",
+            device_id,
+            device_url,
+            request_error,
+        )
+
+        new_cf = dict(device.custom_fields or {})
+        new_cf["last_tag_scan"] = {
+            "status": "error",
+            "error_message": request_error,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        device.custom_fields = new_cf
+        await db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "device_scan_request_failed",
+                "message": "Tag-Scan konnte auf dem Geraet nicht gestartet werden. Bitte Firmware/Verbindung pruefen.",
+            },
+        )
 
     return {"success": True, "message": "Scan-Request gesendet"}
 
@@ -676,17 +708,39 @@ async def receive_tag_data(
 
     logger.info(f"Received tag data from device {device.id}: {data.tag_json[:100]}...")
 
+    parse_ok = True
     try:
         tag_data = _json.loads(data.tag_json)
     except Exception:
+        parse_ok = False
         tag_data = {"raw": data.tag_json}
+
+    scan_status = "success"
+    scan_error_message: str | None = None
+
+    if not parse_ok:
+        scan_status = "error"
+        scan_error_message = "Ungueltige Tag-Daten vom Geraet empfangen"
+    elif isinstance(tag_data, dict):
+        status_hint = str(tag_data.get("scan_status") or tag_data.get("status") or "").strip().lower()
+        if status_hint in {"error", "timeout", "failed", "failure"}:
+            scan_status = "error"
+            scan_error_message = str(tag_data.get("error_message") or "Tag-Scan fehlgeschlagen")
+
+    if scan_status == "error":
+        logger.warning(
+            "Received tag scan error from device %s: %s",
+            device.id,
+            scan_error_message,
+        )
 
     if device.custom_fields is None:
         device.custom_fields = {}
     new_cf = dict(device.custom_fields)
     new_cf["last_tag_scan"] = {
-        "status": "success",
-        "tag_data": tag_data,
+        "status": scan_status,
+        "tag_data": tag_data if scan_status == "success" else None,
+        "error_message": scan_error_message,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     device.custom_fields = new_cf
