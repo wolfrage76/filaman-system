@@ -12,6 +12,16 @@ const filamentId = Astro.url.searchParams.get('filament_id')
   <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="spools.newSpool">New Spool</h1>
   
   <div class="fm-card" style="max-width: 640px; padding: 24px;">
+    <button
+      type="button"
+      id="btn-import-from-tag"
+      class="fm-btn"
+      disabled
+      style="width: 100%; margin-bottom: 20px; background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; opacity: 0.45; cursor: not-allowed;"
+      data-i18n="spools.importFromTag"
+    >
+      Von Tag übernehmen
+    </button>
     <form id="spool-form" novalidate style="display: grid; gap: 16px;">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <div>
@@ -242,15 +252,6 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         >
           Cancel
         </a>
-        <button
-          type="button"
-          id="btn-import-from-tag"
-          class="fm-btn fm-btn-outline"
-          style="margin-left: auto;"
-          data-i18n="spools.importFromTag"
-        >
-          Von Tag übernehmen
-        </button>
       </div>
     </form>
   </div>
@@ -725,6 +726,18 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       }
     }
 
+    async function checkActiveDevicesForImport() {
+      try {
+        const res = await fetch('/api/v1/devices/active', { credentials: 'include' })
+        const devices: any[] = await res.json()
+        if (devices && devices.length > 0 && btnImportFromTag) {
+          btnImportFromTag.disabled = false
+          btnImportFromTag.style.opacity = '1'
+          btnImportFromTag.style.cursor = 'pointer'
+        }
+      } catch { /* ignore */ }
+    }
+
     function applyFilamentDefaults(selectedFilamentId: number) {
       const filament = filaments.find((f) => f.id === selectedFilamentId)
       if (!filament) return
@@ -1105,5 +1118,6 @@ const filamentId = Astro.url.searchParams.get('filament_id')
     importTagModal?.addEventListener('click', (e) => { if (e.target === importTagModal) closeImportTagModal() })
 
     loadOptions()
+    checkActiveDevicesForImport()
   </script>
 </Layout>
