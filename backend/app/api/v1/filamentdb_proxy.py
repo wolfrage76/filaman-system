@@ -18,6 +18,11 @@ from app.api.deps import DBSession, PrincipalDep
 from app.core.config import settings, MANUFACTURER_LOGO_DIR
 from app.models import Color, FilamentColor, Manufacturer
 from app.models.plugin import InstalledPlugin
+from app.utils.search import (
+    FUZZY_MATCH_THRESHOLD,
+    fuzzy_token_score,
+    search_probe_terms,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +30,22 @@ router = APIRouter(prefix="/filamentdb", tags=["FilamentDB Proxy"])
 
 _TIMEOUT = 15.0  # seconds
 _BASE_URL = property(lambda _: settings.filamentdb_url.rstrip("/"))
+_FUZZY_PROBE_PAGE_SIZE = 50
+_LOOKUP_TEXT_KEYS = {
+    "brand",
+    "color_name",
+    "designation",
+    "key",
+    "manufacturer_name",
+    "material",
+    "material_key",
+    "material_name",
+    "material_subtype",
+    "name",
+    "slug",
+    "spool_profile_name",
+    "title",
+}
 
 
 @router.get("/status")
@@ -75,6 +96,101 @@ async def _proxy_get(path: str, params: dict[str, Any] | None = None) -> Any:
                 "message": "Cannot reach FilamentDB",
             },
         )
+
+
+def _response_items(data: Any) -> list[dict[str, Any]]:
+    if not isinstance(data, dict):
+        return []
+    items = data.get("items")
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _item_key(item: dict[str, Any], fallback_index: int) -> tuple[str, Any]:
+    item_id = item.get("id")
+    if item_id is not None:
+        return ("id", item_id)
+    return ("text", _lookup_text(item) or fallback_index)
+
+
+def _lookup_text(item: dict[str, Any]) -> str:
+    values: list[str] = []
+
+    def collect(value: Any, key: str | None = None) -> None:
+        if isinstance(value, dict):
+            for child_key, child_value in value.items():
+                collect(child_value, child_key)
+        elif isinstance(value, list):
+            for child_value in value:
+                collect(child_value, key)
+        elif isinstance(value, str) and key in _LOOKUP_TEXT_KEYS:
+            values.append(value)
+
+    collect(item)
+    return " ".join(values)
+
+
+async def _search_with_fuzzy_fallback(
+    path: str,
+    params: dict[str, Any],
+    *,
+    search: str | None,
+    page: int,
+    page_size: int,
+) -> Any:
+    direct_data = await _proxy_get(path, params)
+    if not search or _response_items(direct_data):
+        return direct_data
+
+    probe_terms = search_probe_terms(search)
+    if not probe_terms:
+        return direct_data
+
+    base_params = {
+        key: value
+        for key, value in params.items()
+        if key not in {"search", "page", "page_size"}
+    }
+    probe_page_size = min(max(page_size, _FUZZY_PROBE_PAGE_SIZE), 100)
+    candidates: dict[tuple[str, Any], dict[str, Any]] = {}
+
+    for term in probe_terms:
+        probe_params = {
+            **base_params,
+            "search": term,
+            "page": 1,
+            "page_size": probe_page_size,
+        }
+        probe_data = await _proxy_get(path, probe_params)
+        for index, item in enumerate(_response_items(probe_data)):
+            candidates.setdefault(_item_key(item, index), item)
+
+    scored: list[tuple[float, str, dict[str, Any]]] = []
+    for item in candidates.values():
+        text = _lookup_text(item)
+        score = fuzzy_token_score(search, text)
+        if score >= FUZZY_MATCH_THRESHOLD:
+            label = item.get("designation") or item.get("name") or ""
+            scored.append((score, str(label).lower(), item))
+
+    scored.sort(key=lambda entry: (-entry[0], entry[1]))
+
+    start = (page - 1) * page_size
+    paged_items = [item for _, _, item in scored[start : start + page_size]]
+    if not paged_items:
+        return direct_data
+
+    response = dict(direct_data) if isinstance(direct_data, dict) else {}
+    response.update(
+        {
+            "items": paged_items,
+            "total": len(scored),
+            "page": page,
+            "page_size": page_size,
+        }
+    )
+    return response
 
 
 # ── Search endpoints ───────────────────────────────────────────────
@@ -141,7 +257,13 @@ async def search_filaments(
         params["manufacturer_id"] = manufacturer_id
     if material_key:
         params["material_key"] = material_key
-    return await _proxy_get("/filaments", params)
+    return await _search_with_fuzzy_fallback(
+        "/filaments",
+        params,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/spool-profiles")
@@ -155,7 +277,13 @@ async def search_spool_profiles(
     params: dict[str, Any] = {"page": page, "page_size": page_size}
     if search:
         params["search"] = search
-    return await _proxy_get("/spool-profiles", params)
+    return await _search_with_fuzzy_fallback(
+        "/spool-profiles",
+        params,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/spool-profile-image")

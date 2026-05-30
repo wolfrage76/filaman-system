@@ -2,7 +2,6 @@
 
 import copy
 import logging
-import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -15,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.cache import response_cache
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
+from app.utils.search import FUZZY_MATCH_THRESHOLD, fuzzy_token_score
 
 logger = logging.getLogger(__name__)
 
@@ -33,52 +33,7 @@ SYNC_CACHE_TTL_SECONDS = 300
 from app.core.config import MANUFACTURER_LOGO_DIR as LOGO_DIR
 
 # Schwellwert fuer Fuzzy-Matching (75%)
-FUZZY_THRESHOLD = 0.75
-
-# Synonyme fuer Normalisierung (werden auf die kanonische Form gemappt)
-_SYNONYMS: dict[str, str] = {
-    "+": "plus",
-}
-
-
-def _normalize_designation(name: str) -> str:
-    """Normalisiert eine Filament-Bezeichnung fuer Fuzzy-Matching.
-
-    - Lowercase
-    - Klammern werden zu Leerzeichen (Inhalt bleibt erhalten)
-    - Sonderzeichen (_, -, /, ,) → Leerzeichen
-    - Whitespace normalisieren
-    """
-    s = name.lower().strip()
-    s = re.sub(r"[()[\]{}<>]", " ", s)
-    s = re.sub(r"[_,\-/]", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
-
-
-def _tokenize(name: str) -> set[str]:
-    """Tokenisiert und vereinheitlicht Synonyme."""
-    tokens: set[str] = set()
-    for tok in _normalize_designation(name).split():
-        tokens.add(_SYNONYMS.get(tok, tok))
-    return tokens
-
-
-def _fuzzy_match_score(a: str, b: str) -> float:
-    """Symmetrischer Token-Overlap Score.
-
-    Gibt den hoeheren Wert aus beiden Richtungen zurueck:
-      max(|A∩B|/|A|, |A∩B|/|B|)
-
-    So matchen sowohl "Feuerrot" vs "Rot (Feuerrot)" als auch
-    "PLA Rot (Feuerrot)" vs "PLA Rot".
-    """
-    tokens_a = _tokenize(a)
-    tokens_b = _tokenize(b)
-    if not tokens_a or not tokens_b:
-        return 0.0
-    overlap = len(tokens_a & tokens_b)
-    return max(overlap / len(tokens_a), overlap / len(tokens_b))
+FUZZY_THRESHOLD = FUZZY_MATCH_THRESHOLD
 
 
 def _resolve_mfr_id(fil: dict[str, Any]) -> int | None:
@@ -510,7 +465,7 @@ class FilamentDBImportService:
                 best_score = 0.0
                 best_name: str | None = None
                 for local_desig in candidates:
-                    score = _fuzzy_match_score(local_desig, designation)
+                    score = fuzzy_token_score(local_desig, designation)
                     if score > best_score:
                         best_score = score
                         best_name = local_desig
@@ -669,7 +624,7 @@ class FilamentDBImportService:
                 best_score = 0.0
                 best_fil: Filament | None = None
                 for local_desig, local_fil in candidates:
-                    score = _fuzzy_match_score(local_desig, fdb_desig_raw)
+                    score = fuzzy_token_score(local_desig, fdb_desig_raw)
                     if score > best_score:
                         best_score = score
                         best_fil = local_fil
@@ -1193,7 +1148,7 @@ class FilamentDBImportService:
                 best_score = 0.0
                 best_candidate: Filament | None = None
                 for candidate in fuzzy_candidates_result.scalars().all():
-                    score = _fuzzy_match_score(candidate.designation or "", designation)
+                    score = fuzzy_token_score(candidate.designation or "", designation)
                     if score > best_score:
                         best_score = score
                         best_candidate = candidate
