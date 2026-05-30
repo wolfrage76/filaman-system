@@ -5,6 +5,7 @@ and a prepare-filament endpoint that auto-creates missing manufacturers
 and colors locally before returning pre-filled data for the create form.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -30,21 +31,21 @@ router = APIRouter(prefix="/filamentdb", tags=["FilamentDB Proxy"])
 
 _TIMEOUT = 15.0  # seconds
 _BASE_URL = property(lambda _: settings.filamentdb_url.rstrip("/"))
+_FUZZY_FALLBACK_TIMEOUT = 8.0
 _FUZZY_PROBE_PAGE_SIZE = 50
-_LOOKUP_TEXT_KEYS = {
-    "brand",
+_LOOKUP_TEXT_MAX_DEPTH = 4
+_LOOKUP_TEXT_MAX_VALUES = 32
+_FILAMENT_LOOKUP_TEXT_KEYS = {
     "color_name",
     "designation",
-    "key",
-    "manufacturer_name",
-    "material",
     "material_key",
     "material_name",
     "material_subtype",
+}
+_SPOOL_PROFILE_LOOKUP_TEXT_KEYS = {
+    "manufacturer_name",
     "name",
-    "slug",
-    "spool_profile_name",
-    "title",
+    "spool_material",
 }
 
 
@@ -64,14 +65,25 @@ def _api_url(path: str) -> str:
     return f"{settings.filamentdb_url.rstrip('/')}/api/v1{path}"
 
 
-async def _proxy_get(path: str, params: dict[str, Any] | None = None) -> Any:
+async def _proxy_get(
+    path: str,
+    params: dict[str, Any] | None = None,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> Any:
     """Forward a GET request to the FilamentDB API."""
     url = _api_url(path)
+
+    async def fetch(active_client: httpx.AsyncClient) -> Any:
+        resp = await active_client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+
     try:
+        if client is not None:
+            return await fetch(client)
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
+            return await fetch(client)
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
@@ -107,24 +119,30 @@ def _response_items(data: Any) -> list[dict[str, Any]]:
     return [item for item in items if isinstance(item, dict)]
 
 
-def _item_key(item: dict[str, Any], fallback_index: int) -> tuple[str, Any]:
+def _item_key(
+    item: dict[str, Any],
+    fallback_index: int,
+    text_keys: set[str],
+) -> tuple[str, Any]:
     item_id = item.get("id")
     if item_id is not None:
         return ("id", item_id)
-    return ("text", _lookup_text(item) or fallback_index)
+    return ("text", _lookup_text(item, text_keys) or fallback_index)
 
 
-def _lookup_text(item: dict[str, Any]) -> str:
+def _lookup_text(item: dict[str, Any], text_keys: set[str]) -> str:
     values: list[str] = []
 
-    def collect(value: Any, key: str | None = None) -> None:
+    def collect(value: Any, key: str | None = None, depth: int = 0) -> None:
+        if depth > _LOOKUP_TEXT_MAX_DEPTH or len(values) >= _LOOKUP_TEXT_MAX_VALUES:
+            return
         if isinstance(value, dict):
             for child_key, child_value in value.items():
-                collect(child_value, child_key)
+                collect(child_value, child_key, depth + 1)
         elif isinstance(value, list):
             for child_value in value:
-                collect(child_value, key)
-        elif isinstance(value, str) and key in _LOOKUP_TEXT_KEYS:
+                collect(child_value, key, depth + 1)
+        elif isinstance(value, str) and key in text_keys:
             values.append(value)
 
     collect(item)
@@ -138,6 +156,7 @@ async def _search_with_fuzzy_fallback(
     search: str | None,
     page: int,
     page_size: int,
+    text_keys: set[str],
 ) -> Any:
     direct_data = await _proxy_get(path, params)
     if not search or _response_items(direct_data):
@@ -155,20 +174,43 @@ async def _search_with_fuzzy_fallback(
     probe_page_size = min(max(page_size, _FUZZY_PROBE_PAGE_SIZE), 100)
     candidates: dict[tuple[str, Any], dict[str, Any]] = {}
 
-    for term in probe_terms:
-        probe_params = {
+    probe_params_list = [
+        {
             **base_params,
             "search": term,
             "page": 1,
             "page_size": probe_page_size,
         }
-        probe_data = await _proxy_get(path, probe_params)
+        for term in probe_terms
+    ]
+
+    async def fetch_probe(
+        client: httpx.AsyncClient,
+        probe_params: dict[str, Any],
+    ) -> Any | None:
+        try:
+            return await _proxy_get(path, probe_params, client=client)
+        except HTTPException:
+            return None
+
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            probe_data_list = await asyncio.wait_for(
+                asyncio.gather(
+                    *(fetch_probe(client, probe_params) for probe_params in probe_params_list)
+                ),
+                timeout=_FUZZY_FALLBACK_TIMEOUT,
+            )
+    except TimeoutError:
+        return direct_data
+
+    for probe_data in probe_data_list:
         for index, item in enumerate(_response_items(probe_data)):
-            candidates.setdefault(_item_key(item, index), item)
+            candidates.setdefault(_item_key(item, index, text_keys), item)
 
     scored: list[tuple[float, str, dict[str, Any]]] = []
     for item in candidates.values():
-        text = _lookup_text(item)
+        text = _lookup_text(item, text_keys)
         score = fuzzy_token_score(search, text)
         if score >= FUZZY_MATCH_THRESHOLD:
             label = item.get("designation") or item.get("name") or ""
@@ -263,6 +305,7 @@ async def search_filaments(
         search=search,
         page=page,
         page_size=page_size,
+        text_keys=_FILAMENT_LOOKUP_TEXT_KEYS,
     )
 
 
@@ -283,6 +326,7 @@ async def search_spool_profiles(
         search=search,
         page=page,
         page_size=page_size,
+        text_keys=_SPOOL_PROFILE_LOOKUP_TEXT_KEYS,
     )
 
 
