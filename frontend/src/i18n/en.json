@@ -1126,7 +1126,7 @@
     "suffixSpool": "Spool",
     "suffixFilament": "Filament",
     "exporting": "Exporting...",
-    "pngExportFailed": "PNG export failed. Please check your internet connection.",
-    "pdfExportFailed": "PDF export failed. Please check your internet connection."
+    "pngExportFailed": "PNG export failed. Please check that all label images and logos loaded correctly.",
+    "pdfExportFailed": "PDF export failed. Please check that all label images and logos loaded correctly."
   }
 }

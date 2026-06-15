@@ -41,7 +41,8 @@ export async function captureLabelElement(element: HTMLElement, options: LabelCa
     return await toPng(element, {
       pixelRatio: options.pixelRatio ?? 4,
       backgroundColor: '#ffffff',
-      cacheBust: true,
+      // Manufacturer logos can be object URLs; cache-busting would make blob: URLs invalid.
+      cacheBust: false,
       skipFonts: true,
       filter: (node: Node) => {
         if (node instanceof Element && window.getComputedStyle(node).display === 'none') {

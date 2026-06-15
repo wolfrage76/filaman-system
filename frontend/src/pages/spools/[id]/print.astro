@@ -1363,7 +1363,7 @@ const { id } = Astro.params
       try {
         downloadDataUrl(await captureActiveLabelPng(), `${buildExportBaseName()}.png`)
       } catch (error) {
-        alert(getTranslation('labelPrint.pngExportFailed', 'PNG export failed.'))
+        alert(getTranslation('labelPrint.pngExportFailed', 'PNG export failed. Please check that all label images and logos loaded correctly.'))
         console.error('Failed to export label PNG:', error)
       }
     })
@@ -1378,7 +1378,7 @@ const { id } = Astro.params
           `${buildExportBaseName()}.pdf`,
         )
       } catch (error) {
-        alert(getTranslation('labelPrint.pdfExportFailed', 'PDF export failed.'))
+        alert(getTranslation('labelPrint.pdfExportFailed', 'PDF export failed. Please check that all label images and logos loaded correctly.'))
         console.error('Failed to export label PDF:', error)
       }
     })
