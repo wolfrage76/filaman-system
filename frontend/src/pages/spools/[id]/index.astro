@@ -101,6 +101,16 @@ const { id } = Astro.params
   </div>
   
 
+  <div id="slicer-profile-section" class="hidden" style="margin-top: 32px;">
+    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="printers.slicerProfile">Slicer Profile</h2>
+    <div class="fm-card" style="padding: 24px;">
+      <label class="fm-label" data-i18n="printers.bambuSlicerProfile">Bambu Slicer Profile</label>
+      <div id="slicer-profile-picker" style="max-width: 520px;"></div>
+      <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 8px;" data-i18n="printers.slicerProfileSpoolHint">Synced to this spool in Bambuddy across all Bambu printers.</p>
+      <span id="slicer-profile-msg" class="hidden" style="font-size: 0.85rem;"></span>
+    </div>
+  </div>
+
   <div id="printer-params-section" class="hidden" style="margin-top: 32px;">
     <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="printers.printerParameters">Printer Parameters</h2>
     <div class="fm-card" style="padding: 24px;">
@@ -291,6 +301,7 @@ const { id } = Astro.params
         renderSpool()
         loadPrinterSlotOverview()
         loadPrintersForParams()
+        initSlicerProfilePicker()
         loadEvents()
         setupActions()
       } catch (error) {
@@ -1126,64 +1137,121 @@ const { id } = Astro.params
       </div>`
     }
 
-    function wireCloudComboboxes() {
-      document.querySelectorAll('.cloud-combo').forEach((combo: any) => {
-        const hidden = combo.querySelector('.param-value') as HTMLInputElement
-        const search = combo.querySelector('.cloud-combo-search') as HTMLInputElement
-        const list = combo.querySelector('.cloud-combo-list') as HTMLElement
+    function wireCombo(combo: any, onSelect: ((code: string) => void) | null) {
+      const hidden = combo.querySelector('.param-value') as HTMLInputElement
+      const search = combo.querySelector('.cloud-combo-search') as HTMLInputElement
+      const list = combo.querySelector('.cloud-combo-list') as HTMLElement
 
-        const renderList = (query: string) => {
-          const q = query.trim().toLowerCase()
-          const matches = (q
-            ? cloudPresets.filter((p: any) => (p.displayName || '').toLowerCase().includes(q))
-            : cloudPresets).slice(0, 200)
-          if (matches.length === 0) {
-            list.innerHTML = `<div style="padding:8px 10px; color:var(--text-muted); font-size:0.85rem;">${escapeHtml(t('printers.noProfileMatches') || 'No matches')}</div>`
-            return
-          }
-          list.innerHTML = matches.map((p: any) => {
-            const sel = p.code === hidden.value ? ' style="background:var(--accent-muted, rgba(59,130,246,0.15));"' : ''
-            return `<div class="cloud-combo-opt" data-code="${escapeHtml(p.code)}"${sel}
-              style="padding:7px 10px; cursor:pointer; font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
-              title="${escapeHtml(p.displayName)}">${escapeHtml(p.displayName)}</div>`
-          }).join('')
-          list.querySelectorAll('.cloud-combo-opt').forEach((opt: any) => {
-            opt.addEventListener('mousedown', (ev: Event) => {
-              ev.preventDefault()
-              const code = opt.dataset.code
-              hidden.value = code
-              search.value = presetLabel(code)
-              list.style.display = 'none'
-              onCloudProfileSelected(code)
-            })
-          })
+      const renderList = (query: string) => {
+        const q = query.trim().toLowerCase()
+        const matches = (q
+          ? cloudPresets.filter((p: any) => (p.displayName || '').toLowerCase().includes(q))
+          : cloudPresets).slice(0, 200)
+        if (matches.length === 0) {
+          list.innerHTML = `<div style="padding:8px 10px; color:var(--text-muted); font-size:0.85rem;">${escapeHtml(t('printers.noProfileMatches') || 'No matches')}</div>`
+          return
         }
-
-        search.addEventListener('focus', () => { renderList(''); list.style.display = 'block' })
-        search.addEventListener('input', () => { renderList(search.value); list.style.display = 'block' })
-        search.addEventListener('blur', () => {
-          setTimeout(() => {
+        list.innerHTML = matches.map((p: any) => {
+          const sel = p.code === hidden.value ? ' style="background:var(--accent-muted, rgba(59,130,246,0.15));"' : ''
+          return `<div class="cloud-combo-opt" data-code="${escapeHtml(p.code)}"${sel}
+            style="padding:7px 10px; cursor:pointer; font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+            title="${escapeHtml(p.displayName)}">${escapeHtml(p.displayName)}</div>`
+        }).join('')
+        list.querySelectorAll('.cloud-combo-opt').forEach((opt: any) => {
+          opt.addEventListener('mousedown', (ev: Event) => {
+            ev.preventDefault()
+            const code = opt.dataset.code
+            hidden.value = code
+            search.value = presetLabel(code)
             list.style.display = 'none'
-            search.value = presetLabel(hidden.value)
-          }, 150)
+            if (onSelect) onSelect(code)
+          })
         })
+      }
+
+      search.addEventListener('focus', () => { renderList(''); list.style.display = 'block' })
+      search.addEventListener('input', () => { renderList(search.value); list.style.display = 'block' })
+      search.addEventListener('blur', () => {
+        setTimeout(() => {
+          list.style.display = 'none'
+          search.value = presetLabel(hidden.value)
+        }, 150)
       })
     }
 
+    function wireCloudComboboxes() {
+      document.querySelectorAll('#printer-params-list .cloud-combo').forEach((combo: any) =>
+        wireCombo(combo, (code: string) => onCloudProfileSelected(code, currentPrinterId)))
+    }
+
     // Spool-level select: push immediately to Bambuddy so both systems match.
-    async function onCloudProfileSelected(code: string) {
-      if (!code || currentDriverKey !== 'bambuddy' || !currentPrinterId) return
+    async function onCloudProfileSelected(code: string, printerId: number) {
+      if (!code || !printerId) return
       try {
-        await fetch(`/api/v1/printers/${currentPrinterId}/driver/action`, {
+        await fetch(`/api/v1/printers/${printerId}/driver/action`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
           signal: getAbortSignal(),
           body: JSON.stringify({ action: 'set_spool_profile', params: { spool_id: parseInt(id), code } }),
         })
+        showSlicerMsg(t('common.saved') || 'Saved', false)
         showParamsFeedback(true)
       } catch (e) {
-        if (!isAbortError(e)) console.error('Failed to set spool profile:', e)
+        if (!isAbortError(e)) { console.error('Failed to set spool profile:', e); showSlicerMsg(t('printers.paramsSaveFailed') || 'Failed', true) }
+      }
+    }
+
+    // -- Standalone (printer-independent) slicer profile picker --
+    let slicerRepPrinterId = 0
+
+    function showSlicerMsg(text: string, isError: boolean) {
+      const msg = document.getElementById('slicer-profile-msg')
+      if (!msg) return
+      msg.textContent = text
+      msg.style.color = isError ? 'var(--error-text)' : 'var(--success-text)'
+      msg.classList.remove('hidden')
+      setTimeout(() => msg.classList.add('hidden'), 3000)
+    }
+
+    async function initSlicerProfilePicker() {
+      try {
+        const res = await fetch('/api/v1/printers', { credentials: 'include', signal: getAbortSignal() })
+        if (!res.ok) return
+        const data = await res.json()
+        const bambuPrinters = (data.items || data || []).filter((p: any) => p.driver_key === 'bambuddy')
+        if (bambuPrinters.length === 0) return
+        let rep = 0
+        for (const p of bambuPrinters) {
+          try {
+            const h = await fetch(`/api/v1/printers/${p.id}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
+            if (h.ok) { const hj = await h.json(); if (hj && (hj.connected || hj.running)) { rep = p.id; break } }
+          } catch {}
+        }
+        if (!rep) rep = bambuPrinters[0].id
+        slicerRepPrinterId = rep
+        await loadCloudPresets(rep, 'bambuddy')
+        if (cloudPresets.length === 0) return
+        // current value: spool-level, fallback to filament-level
+        let currentCode = ''
+        try {
+          const [spRes, flRes] = await Promise.all([
+            fetch(`/api/v1/spools/${id}/printer-params?printer_id=${rep}`, { credentials: 'include', signal: getAbortSignal() }),
+            spool?.filament_id ? fetch(`/api/v1/filaments/${spool.filament_id}/printer-params?printer_id=${rep}`, { credentials: 'include', signal: getAbortSignal() }) : Promise.resolve(null),
+          ])
+          const sp = spRes && spRes.ok ? await spRes.json() : []
+          const fl = flRes && flRes.ok ? await flRes.json() : []
+          const sm = (sp || []).find((x: any) => x.param_key === 'bambu_idx')
+          const fm = (fl || []).find((x: any) => x.param_key === 'bambu_idx')
+          currentCode = (sm && sm.param_value) || (fm && fm.param_value) || ''
+        } catch {}
+        const c = document.getElementById('slicer-profile-picker')!
+        c.innerHTML = renderCloudCombobox('bambu_idx', currentCode, '', '')
+        const combo = c.querySelector('.cloud-combo')
+        if (combo) wireCombo(combo, (code: string) => onCloudProfileSelected(code, slicerRepPrinterId))
+        document.getElementById('slicer-profile-section')!.classList.remove('hidden')
+      } catch (e) {
+        if (!isAbortError(e)) console.error('Slicer picker init failed:', e)
       }
     }
 
