@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
+import { updateLabelPrintPageStyle } from './label-print-style'
 
 const QR_PIXEL_SIZE = 400
 
@@ -134,18 +135,7 @@ export function buildStandardLabelDataFromApiSpool(spool: any, extraFields: Stan
 }
 
 export function updateStandardLabelPageStyle(widthMm: number, heightMm: number, pageStyleId = 'page-style') {
-  let styleEl = document.getElementById(pageStyleId)
-  if (!styleEl) {
-    styleEl = document.createElement('style')
-    styleEl.id = pageStyleId
-    document.head.appendChild(styleEl)
-  }
-  const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
-  const printOrientation = widthMm >= heightMm ? 'landscape' : 'portrait'
-  styleEl.innerHTML = `
-    ${isSafari ? '' : `@page { size: ${widthMm}mm ${heightMm}mm ${printOrientation}; margin: 0; }`}
-    @media print { .label-preview { width:${widthMm}mm !important; height:${heightMm}mm !important; min-width:${widthMm}mm !important; min-height:${heightMm}mm !important; max-width:${widthMm}mm !important; max-height:${heightMm}mm !important; transform: none !important; transform-origin: unset !important; } }
-  `
+  updateLabelPrintPageStyle({ widthMm, heightMm, styleId: pageStyleId })
 }
 
 export async function renderStandardLabel(options: RenderStandardLabelOptions) {

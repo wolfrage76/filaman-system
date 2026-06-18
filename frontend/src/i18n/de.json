@@ -1114,7 +1114,7 @@
     "extraFieldsTitle": "Zusatzfelder",
     "truncateLabel": "Feldname kürzen auf (Zeichen, 0 = aus)",
     "previewTitle": "Vorschau",
-    "zoomLabel": "Zoom (%)",
+    "zoomLabel": "Vorschau-Zoom (%)",
     "zoomOut": "Verkleinern",
     "zoomIn": "Vergrößern",
     "zoomReset": "Zoom zurücksetzen",

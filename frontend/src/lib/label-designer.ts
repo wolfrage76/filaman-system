@@ -6,6 +6,7 @@ import {
   renderTemplateText,
   type SpoolData,
 } from './label-template'
+import { updateLabelPrintPageStyle } from './label-print-style'
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
 
 export const DESIGNER_KEY = 'filaman-label-designer-v1'
@@ -689,24 +690,5 @@ export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
 }
 
 export function updateDesignerPageStyle(widthMm: number, heightMm: number, styleId = 'page-style') {
-  const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
-  const printOrientation = widthMm >= heightMm ? 'landscape' : 'portrait'
-  const pageRule = isSafari ? '' : `@page { size: ${widthMm}mm ${heightMm}mm ${printOrientation}; margin: 0; }`
-  const style = document.createElement('style')
-  style.innerHTML = `
-    ${pageRule}
-    @media print {
-      .label-preview {
-        width: ${widthMm}mm !important; height: ${heightMm}mm !important;
-        min-width: ${widthMm}mm !important; min-height: ${heightMm}mm !important;
-        max-width: ${widthMm}mm !important; max-height: ${heightMm}mm !important;
-        transform: none !important;
-        transform-origin: unset !important;
-      }
-    }
-  `
-  const oldStyle = document.querySelector(`style#${styleId}`)
-  if (oldStyle) oldStyle.remove()
-  style.id = styleId
-  document.head.appendChild(style)
+  updateLabelPrintPageStyle({ widthMm, heightMm, styleId })
 }

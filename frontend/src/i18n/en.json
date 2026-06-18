@@ -1112,7 +1112,7 @@
     "extraFieldsTitle": "Extra Fields",
     "truncateLabel": "Truncate field name (chars, 0 = off)",
     "previewTitle": "Preview",
-    "zoomLabel": "Zoom (%)",
+    "zoomLabel": "Preview zoom (%)",
     "zoomOut": "Zoom out",
     "zoomIn": "Zoom in",
     "zoomReset": "Reset zoom",
