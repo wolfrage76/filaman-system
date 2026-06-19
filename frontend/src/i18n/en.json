@@ -594,7 +594,14 @@
     "paramsSaveFailed": "Failed to save parameters.",
     "paramsCleared": "Parameters cleared.",
     "paramsManagement": "Manage printer-specific filament and spool parameters here.",
-    "inheritedFromFilament": "Inherited from filament"
+    "inheritedFromFilament": "Inherited from filament",
+    "searchProfile": "Search profile…",
+    "noProfileMatches": "No matches",
+    "applyProfileToExisting": "Apply this slicer profile to existing spools of this filament?\n\nOK = update all existing spools\nCancel = only new spools",
+    "slicerProfile": "Slicer Profile",
+    "bambuSlicerProfile": "Bambu Slicer Profile",
+    "slicerProfileHint": "Applies to this filament across all Bambu printers and any new spools made from it.",
+    "slicerProfileSpoolHint": "Synced to this spool in Bambuddy across all Bambu printers."
   },
   "locations": {
     "title": "Locations",

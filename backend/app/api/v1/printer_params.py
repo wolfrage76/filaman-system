@@ -18,6 +18,24 @@ from app.api.v1.schemas_printer_params import (
 router_filament_params = APIRouter()
 router_spool_params = APIRouter()
 
+# bambu_idx holds generic AMS codes (SUN20012). Cloud presets (PFUS…) belong in
+# bambu_slicer_setting_id via the driver's set_*_profile actions.
+def _reject_cloud_preset_in_bambu_idx(param_key: str, param_value: str | None) -> None:
+    if param_key != "bambu_idx" or not param_value:
+        return
+    value = param_value.strip()
+    if value.startswith("PFUS"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "invalid_param_value",
+                "message": (
+                    "bambu_idx must be a generic AMS code (e.g. SUN20012), not a cloud "
+                    "preset. Use the Slicer Profile picker."
+                ),
+            },
+        )
+
 
 async def _get_valid_param_keys(db: AsyncSession, printer_id: int, target_type: str) -> set[str] | None:
     """Get valid param_keys for a printer from its driver's SystemExtraField definitions.
@@ -91,6 +109,7 @@ async def upsert_filament_printer_params(
 
     results = []
     for item in body.params:
+        _reject_cloud_preset_in_bambu_idx(item.param_key, item.param_value)
         query = select(FilamentPrinterParam).where(
             FilamentPrinterParam.filament_id == filament_id,
             FilamentPrinterParam.printer_id == printer_id,
@@ -189,6 +208,7 @@ async def upsert_spool_printer_params(
 
     results = []
     for item in body.params:
+        _reject_cloud_preset_in_bambu_idx(item.param_key, item.param_value)
         query = select(SpoolPrinterParam).where(
             SpoolPrinterParam.spool_id == spool_id,
             SpoolPrinterParam.printer_id == printer_id,

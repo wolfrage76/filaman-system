@@ -3,13 +3,24 @@ import logging
 import httpx
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Header, status
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession
 
 logger = logging.getLogger(__name__)
+
+
+def _is_primary_worker() -> bool:
+    """Resolve primary worker state lazily to avoid import cycles."""
+    try:
+        from app import main as app_main
+        return bool(getattr(app_main, "_is_primary", False))
+    except Exception:
+        return False
+
+
 from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse, TagDataRequest, TagScanStatusResponse
 from app.core.security import Principal, generate_token_secret, hash_token
 from app.models import AppSettings, Device, Location, Spool, SpoolStatus
@@ -471,14 +482,30 @@ async def device_rfid_result(
 @router.post("/scale/weight", response_model=WeighResponse)
 async def weigh_spool(
     data: WeighRequest,
+    request: Request,
     db: DBSession,
     device: Device = Depends(get_current_device),
 ):
+    # Drivers only live on the primary Gunicorn worker. Proxy the whole request
+    # there so auto-assign can reach them; the primary handles measurement too.
+    if device.auto_assign_enabled and not _is_primary_worker():
+        try:
+            from app.api.v1.printers import _proxy_to_primary
+            payload = await _proxy_to_primary(
+                request,
+                method="POST",
+                path="/api/v1/devices/scale/weight",
+                json_body=data.model_dump(),
+            )
+            return WeighResponse.model_validate(payload)
+        except Exception as e:
+            logger.warning(f"Auto-assign primary-proxy failed, running locally: {e}")
+
     service = SpoolService(db)
-    
+
     # Find Spool: UUID has priority over ID (backward compatible)
     spool = None
-    
+
     if data.tag_uuid:
         # Normalize UUID to lowercase for case-insensitive comparison
         normalized_uuid = data.tag_uuid.lower()
@@ -525,7 +552,8 @@ async def weigh_spool(
         source="device",
         note=f"Recorded by device {device.name}",
     )
-    # Auto-assign: if device has auto_assign_enabled, notify all running drivers
+    # Auto-assign: if device has auto_assign_enabled, notify all running drivers.
+    # Drivers only live on the primary Gunicorn worker; proxy if we're not it.
     logger.debug(f"Auto-assign check: device={device.name} (id={device.id}), auto_assign_enabled={device.auto_assign_enabled}")
     if device.auto_assign_enabled:
         try:

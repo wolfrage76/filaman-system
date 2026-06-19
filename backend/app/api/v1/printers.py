@@ -625,15 +625,18 @@ async def driver_action(
             params["spool_id"] = normalized_spool_id
 
     try:
+        result: Any = None
         if callable(method):
             import asyncio
 
             if asyncio.iscoroutinefunction(method):
-                await method(**params)
+                result = await method(**params)
             else:
-                method(**params)
+                result = method(**params)
         return DriverActionResponse(
-            success=True, message=f"Action '{data.action}' executed"
+            success=True,
+            message=f"Action '{data.action}' executed",
+            data=result if isinstance(result, dict) else None,
         )
     except TypeError as e:
         raise HTTPException(
@@ -699,6 +702,64 @@ async def driver_health(
         return shared
 
     return {"running": False, "connected": False}
+
+
+@router.get("/{printer_id}/driver/cloud-presets")
+async def driver_cloud_presets(
+    printer_id: int,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+    refresh: int | None = Query(None),
+):
+    """Returns the driver's cloud slicer-profile catalog for the FilaMan picker.
+
+    Read-only. Proxies to the primary worker (where the driver runs).
+    Response shape: {"presets": [{code, name, displayName, isCustom}], "count": N}.
+    """
+    if not _is_primary_worker():
+        payload = await _proxy_to_primary(
+            request,
+            method="GET",
+            path=f"/api/v1/printers/{printer_id}/driver/cloud-presets"
+            + ("?refresh=1" if refresh else ""),
+        )
+        if isinstance(payload, dict):
+            return payload
+        return {"presets": [], "count": 0}
+
+    driver = plugin_manager.drivers.get(printer_id)
+    if not driver:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "driver_not_running",
+                "message": "Driver is not running for this printer",
+            },
+        )
+
+    method = getattr(driver, "list_cloud_presets", None)
+    if not callable(method):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsupported",
+                "message": "Driver does not provide a cloud preset catalog",
+            },
+        )
+
+    try:
+        result = method(force=bool(refresh))
+        if inspect.isawaitable(result):
+            result = await result
+        if isinstance(result, dict):
+            return result
+        return {"presets": result or [], "count": len(result or [])}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "action_failed", "message": str(e)},
+        )
 
 
 @router.post("/reconnect-all")
