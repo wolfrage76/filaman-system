@@ -699,12 +699,22 @@ const { id } = Astro.params
       }
     }
 
+    const BAMBUDDY_PROFILE_PARAM_KEYS = ['bambu_idx', 'bambu_slicer_setting_id']
+    function isBambuddyCloudProfileManaged(): boolean {
+      return currentDriverKey === 'bambuddy' && cloudPresets.length > 0
+    }
+    function excludeManagedProfileParams(params: { param_key: string; param_value: string | null }[]) {
+      if (!isBambuddyCloudProfileManaged()) return params
+      return params.filter(p => !BAMBUDDY_PROFILE_PARAM_KEYS.includes(p.param_key))
+    }
+
     // Searchable combobox markup: visible search input shows the profile NAME,
-    // a hidden .param-value input carries the CODE (setting_id) for save.
-    function renderCloudCombobox(key: string, code: string): string {
+    // hidden input carries the preset code (driver action, not params PUT).
+    function renderCloudCombobox(key: string, code: string, forParamsSave = true): string {
       const label = presetLabel(code)
+      const hiddenClass = forParamsSave ? 'param-value' : 'slicer-profile-code'
       return `<div class="cloud-combo" data-key="${key}" style="flex: 2; position: relative;">
-        <input type="hidden" class="param-value" data-key="${key}" value="${escapeHtml(code)}" />
+        <input type="hidden" class="${hiddenClass}" data-key="${key}" value="${escapeHtml(code)}" />
         <input type="text" class="fm-input cloud-combo-search" autocomplete="off" spellcheck="false"
           placeholder="${escapeHtml(t('printers.searchProfile') || 'Search profile…')}"
           value="${escapeHtml(label)}" style="width: 100%;" />
@@ -713,7 +723,7 @@ const { id } = Astro.params
     }
 
     function wireCombo(combo: any, onSelect: ((code: string) => void) | null) {
-      const hidden = combo.querySelector('.param-value') as HTMLInputElement
+      const hidden = combo.querySelector('.param-value, .slicer-profile-code') as HTMLInputElement
       const search = combo.querySelector('.cloud-combo-search') as HTMLInputElement
       const list = combo.querySelector('.cloud-combo-list') as HTMLElement
 
@@ -777,13 +787,18 @@ const { id } = Astro.params
       if (!code || !slicerRepPrinterId) return
       const applyAll = window.confirm(t('printers.applyProfileToExisting') || 'Apply this slicer profile to existing spools of this filament?\n\nOK = update all existing spools\nCancel = only new spools')
       try {
-        await fetch(`/api/v1/printers/${slicerRepPrinterId}/driver/action`, {
+        const res = await fetch(`/api/v1/printers/${slicerRepPrinterId}/driver/action`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfTokenGlobal() },
           credentials: 'include',
           signal: getAbortSignal(),
           body: JSON.stringify({ action: 'set_filament_profile', params: { filament_id: parseInt(id), code, apply_to_existing: applyAll } }),
         })
+        if (!res.ok) throw new Error('set_filament_profile failed')
+        try {
+          const pr = await fetch(`/api/v1/filaments/${id}/printer-params?printer_id=${slicerRepPrinterId}`, { credentials: 'include', signal: getAbortSignal() })
+          if (pr.ok) currentPrinterParams = await pr.json()
+        } catch {}
         showSlicerMsg(t('common.saved') || 'Saved', false)
       } catch (e) {
         if (!isAbortError(e)) { console.error('Failed to apply filament profile:', e); showSlicerMsg(t('printers.paramsSaveFailed') || 'Failed', true) }
@@ -811,11 +826,11 @@ const { id } = Astro.params
         let currentCode = ''
         try {
           const pr = await fetch(`/api/v1/filaments/${id}/printer-params?printer_id=${rep}`, { credentials: 'include', signal: getAbortSignal() })
-          if (pr.ok) { const pp = await pr.json(); const m = (pp || []).find((x: any) => x.param_key === 'bambu_idx'); currentCode = (m && m.param_value) || '' }
+          if (pr.ok) { const pp = await pr.json(); const sid = (pp || []).find((x: any) => x.param_key === 'bambu_slicer_setting_id'); const m = (pp || []).find((x: any) => x.param_key === 'bambu_idx'); currentCode = (sid && sid.param_value) || (m && m.param_value) || '' }
         } catch {}
         await ensureCodeLabel(rep, currentCode)
         const c = document.getElementById('slicer-profile-picker')!
-        c.innerHTML = renderCloudCombobox('bambu_idx', currentCode)
+        c.innerHTML = renderCloudCombobox('bambu_idx', currentCode, false)
         const combo = c.querySelector('.cloud-combo')
         if (combo) wireCombo(combo, applyFilamentProfileFromPicker)
         document.getElementById('slicer-profile-section')!.classList.remove('hidden')
@@ -848,12 +863,12 @@ const { id } = Astro.params
       }
 
       container.innerHTML = fieldDefinitions.map((fd: any) => {
+        if (isBambuddyCloudProfileManaged() && fd.key === 'bambu_idx') return ''
+
         const value = valuesMap[fd.key] || ''
         let inputHtml = ''
 
-        if (fd.key === 'bambu_idx' && currentDriverKey === 'bambuddy' && cloudPresets.length > 0) {
-          inputHtml = renderCloudCombobox(fd.key, value)
-        } else if (fd.field_type === 'dropdown' && fd.options) {
+        if (fd.field_type === 'dropdown' && fd.options) {
           const opts = fd.options.map((o: string) => {
             const selected = value === o ? ' selected' : ''
             return `<option value="${o}"${selected}>${o}</option>`
@@ -894,7 +909,9 @@ const { id } = Astro.params
       })
 
       // Filter out empty values for clean storage
-      const nonEmptyParams = params.filter(p => p.param_value !== null && p.param_value !== '')
+      const nonEmptyParams = excludeManagedProfileParams(
+        params.filter(p => p.param_value !== null && p.param_value !== '')
+      )
 
       if (nonEmptyParams.length === 0) {
         try {
@@ -924,32 +941,9 @@ const { id } = Astro.params
           body: JSON.stringify({ params: nonEmptyParams }),
         })
         if (res.ok) {
-          const prevCode = (currentPrinterParams.find((p: any) => p.param_key === 'bambu_idx') || {}).param_value || ''
           currentPrinterParams = await res.json()
           renderPrinterParams()
           showParamsMessage(t('printers.paramsSaved'), false)
-          // Bambu cloud profile: mirror to peer printers and optionally apply to
-          // existing spools of this filament (exactly like Bambuddy semantics).
-          if (currentDriverKey === 'bambuddy') {
-            const newCode = (nonEmptyParams.find((p: any) => p.param_key === 'bambu_idx') || {}).param_value || ''
-            if (newCode && newCode !== prevCode) {
-              const applyAll = window.confirm(
-                t('printers.applyProfileToExisting') ||
-                'Apply this slicer profile to existing spools of this filament?\n\nOK = update all existing spools\nCancel = only new spools'
-              )
-              try {
-                await fetch(`/api/v1/printers/${currentPrinterId}/driver/action`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfTokenGlobal() },
-                  credentials: 'include',
-                  signal: getAbortSignal(),
-                  body: JSON.stringify({ action: 'set_filament_profile', params: { filament_id: parseInt(id), code: newCode, apply_to_existing: applyAll } }),
-                })
-              } catch (e) {
-                if (!isAbortError(e)) console.error('Failed to apply filament profile:', e)
-              }
-            }
-          }
         } else {
           showParamsMessage(t('printers.paramsSaveFailed'), true)
         }

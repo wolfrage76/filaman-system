@@ -1592,6 +1592,208 @@ const { id } = Astro.params
     color: var(--btn-primary-text);
   }
 
+  .ds-tokens-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 -6px 4px -6px;
+    padding: 4px 6px 3px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .ds-tokens-group-header .ds-tokens-group-label {
+    margin: 0;
+    padding: 0;
+    border-bottom: none;
+  }
+
+  .ds-modifier-chips {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    margin-left: auto;
+  }
+
+  .ds-modifier-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--accent) 70%, var(--border));
+    background: color-mix(in srgb, var(--bg-elevated) 72%, var(--accent) 12%);
+    color: var(--accent);
+    cursor: pointer;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 0.57rem;
+    font-weight: 700;
+    line-height: 1;
+    transition: background var(--transition), border-color var(--transition), color var(--transition);
+  }
+
+  .ds-modifier-chip:hover,
+  .ds-modifier-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--btn-primary-text);
+  }
+
+  .ds-modifier-chip.active {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+
+  /* Visual-only tooltip; aria-label remains the stable accessible name. */
+  .ds-modifier-chip::before {
+    content: '';
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    z-index: 20;
+    max-width: 160px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-elevated) 94%, var(--text) 6%);
+    color: var(--text-muted);
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 0.62rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, 2px);
+    transition: opacity var(--transition), transform var(--transition);
+  }
+
+  .ds-modifier-chip:hover::before,
+  .ds-modifier-chip:focus-visible::before {
+    content: attr(data-tooltip);
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  .ds-modifier-chip:nth-last-child(-n + 2)::before {
+    left: auto;
+    right: 0;
+    transform: translate(0, 2px);
+  }
+
+  .ds-modifier-chip:nth-last-child(-n + 2):hover::before,
+  .ds-modifier-chip:nth-last-child(-n + 2):focus-visible::before {
+    transform: translate(0, 0);
+  }
+
+  .ds-modifier-bold::before {
+    color: var(--text);
+    font-weight: 900;
+  }
+
+  .ds-modifier-italic::before {
+    color: var(--text);
+    font-style: italic;
+  }
+
+  .ds-modifier-underline::before {
+    color: var(--text);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .ds-modifier-inverse::before {
+    background: #000;
+    border-color: #000;
+    color: #fff;
+  }
+
+  .ds-modifier-color-inverse::before {
+    background: color-mix(in srgb, var(--accent) 72%, #000);
+    border-color: var(--accent);
+    color: var(--btn-primary-text);
+  }
+
+  .ds-modifier-color-inverse.has-filament-color::before {
+    background: var(--ds-filament-bg, #000);
+    border-color: var(--ds-filament-bg, #000);
+    color: var(--ds-filament-fg, #fff);
+  }
+
+  .ds-modifier-caps::before {
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .ds-modifier-bold {
+    font-weight: 900;
+  }
+
+  .ds-modifier-italic {
+    font-style: italic;
+  }
+
+  .ds-modifier-underline {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .ds-modifier-inverse {
+    min-width: 24px;
+    padding: 0;
+    background: #000;
+    border-color: #000;
+    color: #fff;
+    font-size: 0.84rem;
+  }
+
+  .ds-modifier-inverse:hover,
+  .ds-modifier-inverse.active {
+    background: #fff;
+    border-color: #fff;
+    color: #000;
+  }
+
+  .ds-modifier-color-inverse {
+    min-width: 24px;
+    padding: 0;
+    background: color-mix(in srgb, var(--accent) 72%, #000);
+    border-color: var(--accent);
+    color: var(--btn-primary-text);
+    font-size: 0.84rem;
+  }
+
+  .ds-modifier-color-inverse::after {
+    content: '';
+    position: absolute;
+    right: 3px;
+    bottom: 2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 1px solid var(--btn-primary-text);
+  }
+
+  .ds-modifier-color-inverse.has-filament-color {
+    background: var(--ds-filament-bg, #000);
+    border-color: var(--ds-filament-bg, #000);
+    color: var(--ds-filament-fg, #fff);
+  }
+
+  .ds-modifier-color-inverse.has-filament-color::after {
+    content: none;
+  }
+
+  .ds-modifier-caps {
+    font-size: 0.72rem;
+    line-height: 0.9;
+  }
+
   /* Token area sections — must be global because they're created dynamically via JS */
   .ds-token-area {
     margin-top: 5px;
@@ -1807,6 +2009,13 @@ const { id } = Astro.params
     finish: params.get('finish') || '',
     density: params.get('density') || '',
     price: params.get('price') || '',
+  }
+
+  function getFilamentInverseChipTheme() {
+    const background = normalizeHexColor(labelData.hex_code)
+    // Null keeps the neutral fallback icon when the current label has no valid color hex.
+    if (!background) return null
+    return { background, foreground: getReadableTextColor(background) }
   }
 
   let extraFields: {key: string, label: string, value: string, source?: string}[] = []
@@ -2070,6 +2279,23 @@ const { id } = Astro.params
     { token: '{filament.finish}',       label: 'finish' },
     { token: '{filament.density}',      label: 'density' },
     { token: '{filament.price}',        label: 'price' },
+  ]
+
+  interface DesignerModifier {
+    key: string
+    label: string
+    title: string
+    className?: string
+    wrap: (token: string) => string
+  }
+
+  const DESIGNER_MODIFIERS: DesignerModifier[] = [
+    { key: 'bold', label: 'B', title: 'Bold', className: 'ds-modifier-bold', wrap: (token) => `**${token}**` },
+    { key: 'italic', label: 'I', title: 'Italic', className: 'ds-modifier-italic', wrap: (token) => `*${token}*` },
+    { key: 'underline', label: 'U', title: 'Underline', className: 'ds-modifier-underline', wrap: (token) => `__${token}__` },
+    { key: 'inverse', label: '◐', title: 'Inverse', className: 'ds-modifier-inverse', wrap: (token) => `==${token}==` },
+    { key: 'colorInverse', label: '◐', title: 'Color Hex Inverse', className: 'ds-modifier-color-inverse', wrap: (token) => `@@${token}@@` },
+    { key: 'caps', label: '⇧', title: 'Uppercase', className: 'ds-modifier-caps', wrap: (token) => `^^${token}^^` },
   ]
 
   function saveDesignerSettings() {
@@ -2398,9 +2624,12 @@ const { id } = Astro.params
       <tr><td>[size=120%]text[/size]</td><td>Inline relative text size in % (50..300, % optional); works with literal text, field values, and swatches.<br><span class="ds-popover-eg">e.g. [size=140%]{filament.extruder_temp}[/size]°C or [size=120%]{color_swatch[6]}[/size] {filament.color}</span></td></tr>
       <tr><td>**text**</td><td><strong>Bold</strong></td></tr>
       <tr><td>*text*</td><td><em>Italic</em></td></tr>
+      <tr><td>__text__</td><td><u>Underline</u></td></tr>
+      <tr><td>^^text^^</td><td>Uppercase text and field values.<br><span class="ds-popover-eg">e.g. ^^{filament.color_hex}^^ → FF6A00</span></td></tr>
       <tr><td>==text==</td><td style="background:#000;color:#fff;padding:0 2px;border-radius:2px">Inverse (white on black)</td></tr>
       <tr><td>@@text@@</td><td>Inverse using filament color with automatic black/white text chosen for best contrast.<br><span class="ds-popover-eg"><span style="background:#2A5BE8;color:#fff;padding:0 2px;border-radius:2px">Blue uses white text</span> <span style="background:#F5E663;color:#000;padding:0 2px;border-radius:2px">Yellow uses black text</span></span></td></tr>
-      <tr><td>\\n</td><td>New line (in info textarea, just press Enter)</td></tr>
+      <tr><td>Nested</td><td>Text modifiers can be nested manually.<br><span class="ds-popover-eg">e.g. **__{filament.name}__** → bold + underline</span></td></tr>
+      <tr><td>Line breaks</td><td>Use an actual Return/Enter in the text area for a new line.</td></tr>
     </table>`
 
   let _activeSyntaxPopover: HTMLElement | null = null
@@ -2463,19 +2692,35 @@ const { id } = Astro.params
     // so state is preserved across rebuilds.
     area.innerHTML = ''
 
+    let activeModifier: DesignerModifier | null = null
+
+    function updateModifierButtons(group: HTMLElement) {
+      group.querySelectorAll<HTMLButtonElement>('.ds-modifier-chip').forEach(btn => {
+        const isActive = btn.dataset.modifier === activeModifier?.key
+        btn.classList.toggle('active', isActive)
+        btn.setAttribute('aria-pressed', String(isActive))
+      })
+    }
+
     function insertTok(tok: string) {
       const el = document.getElementById(targetId) as HTMLInputElement | HTMLTextAreaElement
       if (!el) return
+      const formattedTok = activeModifier ? activeModifier.wrap(tok) : tok
       const start = el.selectionStart ?? el.value.length
       const end   = el.selectionEnd   ?? el.value.length
       const before = el.value.slice(0, start)
       const after  = el.value.slice(end)
       const needSpaceBefore = before.length > 0 && !/\s$/.test(before)
       const needSpaceAfter  = after.length  > 0 && !/^\s/.test(after)
-      const insert = (needSpaceBefore ? ' ' : '') + tok + (needSpaceAfter ? ' ' : '')
+      const insert = (needSpaceBefore ? ' ' : '') + formattedTok + (needSpaceAfter ? ' ' : '')
       el.value = before + insert + after
       el.selectionStart = el.selectionEnd = start + insert.length
       el.focus()
+      // Modifiers are one-shot: apply to this token, then clear for the next click.
+      if (activeModifier) {
+        activeModifier = null
+        updateModifierButtons(area)
+      }
       saveDesignerSettings()
       updateDesignerPreview()
     }
@@ -2487,6 +2732,31 @@ const { id } = Astro.params
       chip.textContent = label
       chip.title = tok          // full token shown on hover
       chip.addEventListener('click', () => insertTok(tok))
+      return chip
+    }
+
+    function makeModifierChip(modifier: DesignerModifier, group: HTMLElement): HTMLButtonElement {
+      const chip = document.createElement('button')
+      chip.className = `ds-modifier-chip ${modifier.className ?? ''}`.trim()
+      chip.type = 'button'
+      chip.textContent = modifier.label
+      chip.title = `${modifier.title}: click, then click a token`
+      chip.dataset.tooltip = modifier.title
+      chip.dataset.modifier = modifier.key
+      if (modifier.key === 'colorInverse') {
+        const theme = getFilamentInverseChipTheme()
+        if (theme) {
+          chip.classList.add('has-filament-color')
+          chip.style.setProperty('--ds-filament-bg', theme.background)
+          chip.style.setProperty('--ds-filament-fg', theme.foreground)
+        }
+      }
+      chip.setAttribute('aria-label', `${modifier.title} token modifier`)
+      chip.setAttribute('aria-pressed', 'false')
+      chip.addEventListener('click', () => {
+        activeModifier = activeModifier?.key === modifier.key ? null : modifier
+        updateModifierButtons(group)
+      })
       return chip
     }
 
@@ -2506,13 +2776,22 @@ const { id } = Astro.params
 
     // ── Filament group ──
     const filGroup = document.createElement('div')
+    const filHeader = document.createElement('div')
+    filHeader.className = 'ds-tokens-group-header'
     const filLbl = document.createElement('div')
     filLbl.className = 'ds-tokens-group-label'
     filLbl.textContent = 'Filament'
+    const modifierGroup = document.createElement('div')
+    modifierGroup.className = 'ds-modifier-chips'
+    for (const modifier of DESIGNER_MODIFIERS) {
+      modifierGroup.appendChild(makeModifierChip(modifier, modifierGroup))
+    }
     const filChips = document.createElement('div')
     filChips.className = 'ds-token-hints'
     for (const { token, label } of DESIGNER_TOKENS) filChips.appendChild(makeChip(token, label))
-    filGroup.appendChild(filLbl)
+    filHeader.appendChild(filLbl)
+    filHeader.appendChild(modifierGroup)
+    filGroup.appendChild(filHeader)
     filGroup.appendChild(filChips)
     body.appendChild(filGroup)
 

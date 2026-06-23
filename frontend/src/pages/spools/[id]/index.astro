@@ -1124,6 +1124,18 @@ const { id } = Astro.params
       return p ? p.displayName : code
     }
 
+    // Slicer profiles use driver actions (set_spool_profile): full preset →
+    // bambu_slicer_setting_id, generic AMS code → bambu_idx. Params PUT must not
+    // write PFUS codes into bambu_idx (standalone picker handles profiles).
+    const BAMBUDDY_PROFILE_PARAM_KEYS = ['bambu_idx', 'bambu_slicer_setting_id']
+    function isBambuddyCloudProfileManaged(): boolean {
+      return currentDriverKey === 'bambuddy' && cloudPresets.length > 0
+    }
+    function excludeManagedProfileParams(params: { param_key: string; param_value: string | null }[]) {
+      if (!isBambuddyCloudProfileManaged()) return params
+      return params.filter(p => !BAMBUDDY_PROFILE_PARAM_KEYS.includes(p.param_key))
+    }
+
     // Codes reflected from the printer's AMS (e.g. "SUN20010") are not part of
     // the selectable cloud-preset catalog, so the picker can't label them.
     // Ask the driver to resolve the readable name and inject a display-only
@@ -1147,13 +1159,14 @@ const { id } = Astro.params
       }
     }
 
-    function renderCloudCombobox(key: string, code: string, placeholderLabel: string, inheritedStyle: string): string {
+    function renderCloudCombobox(key: string, code: string, placeholderLabel: string, inheritedStyle: string, forParamsSave = true): string {
       const label = presetLabel(code)
       const ph = placeholderLabel
         ? escapeHtml(presetLabel(placeholderLabel))
         : escapeHtml(t('printers.searchProfile') || 'Search profile…')
+      const hiddenClass = forParamsSave ? 'param-value' : 'slicer-profile-code'
       return `<div class="cloud-combo" data-key="${key}" style="flex: 2; position: relative;${inheritedStyle}">
-        <input type="hidden" class="param-value" data-key="${key}" value="${escapeHtml(code)}" />
+        <input type="hidden" class="${hiddenClass}" data-key="${key}" value="${escapeHtml(code)}" />
         <input type="text" class="fm-input cloud-combo-search" autocomplete="off" spellcheck="false"
           placeholder="${ph}" value="${escapeHtml(label)}" style="width: 100%;" />
         <div class="cloud-combo-list" style="display:none; position:absolute; z-index:50; left:0; right:0; max-height:260px; overflow-y:auto; background:var(--surface, #1e1e1e); border:1px solid var(--border, #444); border-radius:6px; margin-top:2px; box-shadow:0 4px 16px rgba(0,0,0,0.3);"></div>
@@ -1161,7 +1174,7 @@ const { id } = Astro.params
     }
 
     function wireCombo(combo: any, onSelect: ((code: string) => void) | null) {
-      const hidden = combo.querySelector('.param-value') as HTMLInputElement
+      const hidden = combo.querySelector('.param-value, .slicer-profile-code') as HTMLInputElement
       const search = combo.querySelector('.cloud-combo-search') as HTMLInputElement
       const list = combo.querySelector('.cloud-combo-list') as HTMLElement
 
@@ -1211,13 +1224,18 @@ const { id } = Astro.params
     async function onCloudProfileSelected(code: string, printerId: number) {
       if (!code || !printerId) return
       try {
-        await fetch(`/api/v1/printers/${printerId}/driver/action`, {
+        const res = await fetch(`/api/v1/printers/${printerId}/driver/action`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
           signal: getAbortSignal(),
           body: JSON.stringify({ action: 'set_spool_profile', params: { spool_id: parseInt(id), code } }),
         })
+        if (!res.ok) throw new Error('set_spool_profile failed')
+        try {
+          const pr = await fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() })
+          if (pr.ok) currentPrinterParams = await pr.json()
+        } catch {}
         showSlicerMsg(t('common.saved') || 'Saved', false)
         showParamsFeedback(true)
       } catch (e) {
@@ -1264,13 +1282,15 @@ const { id } = Astro.params
           ])
           const sp = spRes && spRes.ok ? await spRes.json() : []
           const fl = flRes && flRes.ok ? await flRes.json() : []
+          const sSid = (sp || []).find((x: any) => x.param_key === 'bambu_slicer_setting_id')
+          const fSid = (fl || []).find((x: any) => x.param_key === 'bambu_slicer_setting_id')
           const sm = (sp || []).find((x: any) => x.param_key === 'bambu_idx')
           const fm = (fl || []).find((x: any) => x.param_key === 'bambu_idx')
-          currentCode = (sm && sm.param_value) || (fm && fm.param_value) || ''
+          currentCode = (sSid && sSid.param_value) || (fSid && fSid.param_value) || (sm && sm.param_value) || (fm && fm.param_value) || ''
         } catch {}
         await ensureCodeLabel(rep, currentCode)
         const c = document.getElementById('slicer-profile-picker')!
-        c.innerHTML = renderCloudCombobox('bambu_idx', currentCode, '', '')
+        c.innerHTML = renderCloudCombobox('bambu_idx', currentCode, '', '', false)
         const combo = c.querySelector('.cloud-combo')
         if (combo) wireCombo(combo, (code: string) => onCloudProfileSelected(code, slicerRepPrinterId))
         document.getElementById('slicer-profile-section')!.classList.remove('hidden')
@@ -1305,6 +1325,9 @@ const { id } = Astro.params
       }
 
       container.innerHTML = fieldDefinitions.map(fd => {
+        // Profile picker lives in the standalone slicer section; params save only handles AMS tuning fields.
+        if (isBambuddyCloudProfileManaged() && fd.key === 'bambu_idx') return ''
+
         const spoolValue = spoolValuesMap[fd.key] || ''
         const filamentValue = filamentValuesMap[fd.key] || ''
         const value = spoolValue || filamentValue
@@ -1312,10 +1335,7 @@ const { id } = Astro.params
         let inputHtml = ''
         const inheritedStyle = isInherited ? ' opacity: 0.6; font-style: italic;' : ''
 
-        if (fd.key === 'bambu_idx' && currentDriverKey === 'bambuddy' && cloudPresets.length > 0) {
-          // Inherited filament value shown as placeholder; own value populates input.
-          inputHtml = renderCloudCombobox(fd.key, spoolValue, isInherited ? filamentValue : '', inheritedStyle)
-        } else if (fd.field_type === 'dropdown' && fd.options) {
+        if (fd.field_type === 'dropdown' && fd.options) {
           const opts = fd.options.map((o: any) => {
             const selected = value === o ? ' selected' : ''
             return `<option value="${o}"${selected}>${o}</option>`
@@ -1374,8 +1394,10 @@ const { id } = Astro.params
         if (key) params.push({ param_key: key, param_value: value })
       })
 
-      // Filter out empty values for clean storage
-      const nonEmptyParams = params.filter(p => p.param_value !== null && p.param_value !== '')
+      // Filter out empty values for clean storage; never PUT cloud presets into bambu_idx
+      const nonEmptyParams = excludeManagedProfileParams(
+        params.filter(p => p.param_value !== null && p.param_value !== '')
+      )
 
       if (nonEmptyParams.length === 0) {
         try {
@@ -1802,7 +1824,8 @@ const { id } = Astro.params
         spoolParams.forEach((p: any) => { if (p.param_value) valMap[p.param_key] = p.param_value })
 
         filamentData = {
-          tray_info_idx: valMap['bambu_tray_idx'] || 'GFL99',
+          tray_info_idx: valMap['bambu_idx'] || valMap['bambu_tray_idx'] || 'GFL99',
+          bambu_idx: valMap['bambu_idx'] || valMap['bambu_tray_idx'] || '',
           nozzle_temp_min: parseInt(valMap['bambu_nozzle_temp_min']) || 190,
           nozzle_temp_max: parseInt(valMap['bambu_nozzle_temp_max']) || 230,
           material_type: spool.filament?.material_type || 'PLA',
@@ -1813,6 +1836,7 @@ const { id } = Astro.params
         console.error('Failed to fetch params for assign:', e)
         filamentData = {
           tray_info_idx: 'GFL99',
+          bambu_idx: '',
           nozzle_temp_min: 190,
           nozzle_temp_max: 230,
           material_type: spool.filament?.material_type || 'PLA',

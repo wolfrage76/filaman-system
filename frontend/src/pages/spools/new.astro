@@ -80,6 +80,28 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             />
           </div>
           <div>
+            <label class="fm-label" data-i18n="spools.spoolCoreWeight">Core / Adapter Weight (g)</label>
+            <div style="display: flex; align-items: center; gap: 8px; margin: 6px 0 8px;">
+              <input type="checkbox" id="uses_spool_core" style="width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;" />
+              <label for="uses_spool_core" style="font-size: 0.875rem; cursor: pointer; margin: 0;" data-i18n="spools.usesSpoolCore">Uses spool core / adapter</label>
+            </div>
+            <div id="spool_core_weight_container" style="display: none;">
+              <input
+                type="number"
+                id="spool_core_weight_g"
+                name="spool_core_weight_g"
+                step="1"
+                min="0"
+                placeholder="Global default"
+                data-i18n-placeholder="spools.spoolCoreWeightPlaceholder"
+                class="fm-input"
+              />
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;" data-i18n="spools.spoolCoreWeightHint">Weight of cardboard inner tube, spool holder, or scale adapter — always on the scale when weighing. Leave blank to use the global default.</div>
+            </div>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+          <div>
             <label for="spool_material" class="fm-label" data-i18n="spools.spoolMaterial">Spool Material</label>
             <select id="spool_material" name="spool_material" class="fm-select">
               <option value="">-</option>
@@ -657,6 +679,22 @@ const filamentId = Astro.url.searchParams.get('filament_id')
               (document.getElementById('empty_spool_weight_g') as HTMLInputElement).value = String(dup.empty_spool_weight_g)
             }
 
+            // Spool Core Weight
+            {
+              const dupCoreCheckbox = document.getElementById('uses_spool_core') as HTMLInputElement
+              const dupCoreContainer = document.getElementById('spool_core_weight_container')!
+              const dupCoreInput = document.getElementById('spool_core_weight_g') as HTMLInputElement
+              if (dup.spool_core_weight_g === 0) {
+                dupCoreCheckbox.checked = false
+                dupCoreContainer.style.display = 'none'
+                dupCoreInput.value = ''
+              } else {
+                dupCoreCheckbox.checked = true
+                dupCoreContainer.style.display = 'block'
+                dupCoreInput.value = dup.spool_core_weight_g != null ? String(dup.spool_core_weight_g) : ''
+              }
+            }
+
             // Spool Material
             if (dup.spool_material) {
               (document.getElementById('spool_material') as HTMLSelectElement).value = dup.spool_material
@@ -786,7 +824,14 @@ const filamentId = Astro.url.searchParams.get('filament_id')
     const form = document.getElementById('spool-form') as HTMLFormElement
     const errorMessage = document.getElementById('error-message') as HTMLElement
     const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement
-    
+
+    // Wire checkbox toggle for core weight field
+    const usesCoreCheckbox = document.getElementById('uses_spool_core') as HTMLInputElement
+    const coreWeightContainer = document.getElementById('spool_core_weight_container')!
+    usesCoreCheckbox.addEventListener('change', () => {
+      coreWeightContainer.style.display = usesCoreCheckbox.checked ? 'block' : 'none'
+    })
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault()
       
@@ -802,6 +847,15 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       
       const emptyWeight = formData.get('empty_spool_weight_g')
       if (emptyWeight) data.empty_spool_weight_g = parseFloat(emptyWeight as string)
+
+      const usesCoreChk = (document.getElementById('uses_spool_core') as HTMLInputElement).checked
+      if (!usesCoreChk) {
+        data.spool_core_weight_g = 0  // explicitly disabled for this spool
+      } else {
+        const coreWeight = formData.get('spool_core_weight_g')
+        if (coreWeight) data.spool_core_weight_g = parseFloat(coreWeight as string)
+        // else omit → null → backend uses global default
+      }
 
       const purchasePrice = formData.get('purchase_price')
       if (purchasePrice) data.purchase_price = parseFloat(purchasePrice as string)

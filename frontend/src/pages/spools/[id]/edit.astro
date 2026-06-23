@@ -95,6 +95,28 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
               />
             </div>
             <div>
+              <label class="fm-label" data-i18n="spools.spoolCoreWeight">Core / Adapter Weight (g)</label>
+              <div style="display: flex; align-items: center; gap: 8px; margin: 6px 0 8px;">
+                <input type="checkbox" id="uses_spool_core" style="width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;" />
+                <label for="uses_spool_core" style="font-size: 0.875rem; cursor: pointer; margin: 0;" data-i18n="spools.usesSpoolCore">Uses spool core / adapter</label>
+              </div>
+              <div id="spool_core_weight_container" style="display: none;">
+                <input
+                  type="number"
+                  id="spool_core_weight_g"
+                  name="spool_core_weight_g"
+                  step="1"
+                  min="0"
+                  placeholder="Global default"
+                  data-i18n-placeholder="spools.spoolCoreWeightPlaceholder"
+                  class="fm-input"
+                />
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;" data-i18n="spools.spoolCoreWeightHint">Weight of cardboard inner tube, spool holder, or scale adapter — always on the scale when weighing. Leave blank to use the global default.</div>
+              </div>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+            <div>
               <label for="spool_material" class="fm-label" data-i18n="spools.spoolMaterial">Spool Material</label>
               <select id="spool_material" name="spool_material" class="fm-select">
                 <option value="">-</option>
@@ -626,6 +648,21 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
       (document.getElementById('initial_total_weight_g') as HTMLInputElement).value = s.initial_total_weight_g != null ? String(s.initial_total_weight_g) : ''
       ;(document.getElementById('empty_spool_weight_g') as HTMLInputElement).value = s.empty_spool_weight_g != null ? String(s.empty_spool_weight_g) : ''
+
+      // Core weight: 0 = explicitly no core; null = use global default; >0 = spool-specific value
+      const usesCoreCheckbox = document.getElementById('uses_spool_core') as HTMLInputElement
+      const coreContainer = document.getElementById('spool_core_weight_container')!
+      const coreInput = document.getElementById('spool_core_weight_g') as HTMLInputElement
+      if (s.spool_core_weight_g === 0) {
+        usesCoreCheckbox.checked = false
+        coreContainer.style.display = 'none'
+        coreInput.value = ''
+      } else {
+        usesCoreCheckbox.checked = true
+        coreContainer.style.display = 'block'
+        coreInput.value = s.spool_core_weight_g != null ? String(s.spool_core_weight_g) : ''
+      }
+
       ;(document.getElementById('low_weight_threshold_g') as HTMLInputElement).value = s.low_weight_threshold_g != null ? String(s.low_weight_threshold_g) : '100'
 
       ;(document.getElementById('spool_material') as HTMLInputElement).value = s.spool_material || ''
@@ -667,6 +704,13 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
     const errorMessage = document.getElementById('error-message') as HTMLElement
     const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement
 
+    // Wire checkbox toggle for core weight field
+    const usesCoreCheckbox = document.getElementById('uses_spool_core') as HTMLInputElement
+    const coreWeightContainer = document.getElementById('spool_core_weight_container')!
+    usesCoreCheckbox.addEventListener('change', () => {
+      coreWeightContainer.style.display = usesCoreCheckbox.checked ? 'block' : 'none'
+    })
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault()
       
@@ -690,6 +734,14 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
       const emptySpoolWeight = formData.get('empty_spool_weight_g')
       patchData.empty_spool_weight_g = emptySpoolWeight ? parseFloat(emptySpoolWeight as string) : null
+
+      const usesCoreChk = (document.getElementById('uses_spool_core') as HTMLInputElement).checked
+      if (!usesCoreChk) {
+        patchData.spool_core_weight_g = 0  // explicitly disabled for this spool
+      } else {
+        const spoolCoreWeight = formData.get('spool_core_weight_g')
+        patchData.spool_core_weight_g = spoolCoreWeight ? parseFloat(spoolCoreWeight as string) : null  // null = use global default
+      }
 
       const spoolMaterial = formData.get('spool_material')
       patchData.spool_material = spoolMaterial || null

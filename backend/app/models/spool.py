@@ -62,6 +62,7 @@ class Spool(Base, TimestampMixin):
 
     initial_total_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spool_core_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     remaining_weight_g: Mapped[float | None] = mapped_column(
         Float, nullable=True, index=True
     )
