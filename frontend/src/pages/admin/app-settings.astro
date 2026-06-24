@@ -132,6 +132,31 @@ import Layout from '../../layouts/Layout.astro'
       </div>
     </div>
 
+    <!-- Spool Weight Defaults Card (full width) -->
+    <div class="fm-card" style="padding: 20px;">
+      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;">Spool Weight Defaults</h2>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 16px;">Global weight settings applied to all spools. Individual spools can override these on their Edit page.</p>
+
+      <div>
+        <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="default-spool-core-weight">Default Core / Adapter Weight (g)</label>
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 8px;">
+          Extra weight added on top of the empty spool weight when calculating remaining filament from a scale reading.
+          Use this for cardboard inner tubes, spool holders, or scale adapters that are always present when weighing a spool.
+          <br><strong>Formula:</strong> Remaining = Scale reading − Empty spool weight − Core/adapter weight.
+          <br>Leave blank or set to 0 to disable.
+        </p>
+        <input
+          type="number"
+          id="default-spool-core-weight"
+          step="1"
+          min="0"
+          placeholder="0 (disabled)"
+          class="fm-input"
+          style="max-width: 200px;"
+        />
+      </div>
+    </div>
+
     <!-- Form message AND Save button OUTSIDE the cards, below the grid -->
     <div id="form-message" class="hidden" style="padding: 10px 14px; border-radius: 8px; font-size: 0.85rem;"></div>
     <button type="submit" id="save-btn" class="fm-btn fm-btn-primary" style="justify-self: start; padding: 10px 28px;" data-i18n="admin.appSettingsSave">Save</button>
@@ -160,6 +185,7 @@ import Layout from '../../layouts/Layout.astro'
       const rfidExtendedDataInput = document.getElementById('rfid-extended-data-enabled') as HTMLInputElement
       const rfidProtocolSelect = document.getElementById('rfid-protocol') as HTMLSelectElement
       const rfidProtocolSection = document.getElementById('rfid-protocol-section')!
+      const defaultSpoolCoreWeightInput = document.getElementById('default-spool-core-weight') as HTMLInputElement
 
       function showMessage(text: string, isError: boolean) {
         formMessage.textContent = text
@@ -191,6 +217,7 @@ import Layout from '../../layouts/Layout.astro'
           rfidExtendedDataInput.checked = data.rfid_extended_data_enabled ?? false
           rfidProtocolSelect.value = data.rfid_protocol || 'openspool'
           updateRfidProtocolVisibility()
+          defaultSpoolCoreWeightInput.value = data.default_spool_core_weight_g != null ? String(data.default_spool_core_weight_g) : ''
         } else {
           showMessage(t('admin.appSettingsLoadFailed'), true)
         }
@@ -205,11 +232,13 @@ import Layout from '../../layouts/Layout.astro'
         saveBtn.disabled = true
         saveBtn.textContent = t('admin.appSettingsSaving')
 
+        const rawCoreWeight = defaultSpoolCoreWeightInput.value.trim()
         const payload = {
           login_disabled: loginDisabledInput.checked,
           currency: currencySelect.value,
           rfid_extended_data_enabled: rfidExtendedDataInput.checked,
           rfid_protocol: rfidProtocolSelect.value,
+          default_spool_core_weight_g: rawCoreWeight !== '' ? parseFloat(rawCoreWeight) : null,
         }
 
         try {

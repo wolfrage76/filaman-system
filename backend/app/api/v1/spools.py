@@ -542,6 +542,10 @@ async def update_spools_bulk(
             spool.low_weight_threshold_g = data.low_weight_threshold_g
         if data.empty_spool_weight_g is not None:
             spool.empty_spool_weight_g = data.empty_spool_weight_g
+        if data.clear_spool_core_weight:
+            spool.spool_core_weight_g = None
+        elif data.spool_core_weight_g is not None:
+            spool.spool_core_weight_g = data.spool_core_weight_g
         if data.purchase_price is not None:
             spool.purchase_price = data.purchase_price
         count += 1

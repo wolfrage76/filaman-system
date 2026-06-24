@@ -51,6 +51,7 @@ class SpoolCreate(BaseModel):
     stocked_in_at: datetime | None = None
     initial_total_weight_g: float | None = None
     empty_spool_weight_g: float | None = None
+    spool_core_weight_g: float | None = None
     remaining_weight_g: float | None = None
     spool_outer_diameter_mm: float | None = None
     spool_width_mm: float | None = None
@@ -73,6 +74,7 @@ class SpoolUpdate(BaseModel):
     purchase_price: float | None = None
     initial_total_weight_g: float | None = None
     empty_spool_weight_g: float | None = None
+    spool_core_weight_g: float | None = None
     spool_outer_diameter_mm: float | None = None
     spool_width_mm: float | None = None
     spool_material: str | None = None
@@ -94,6 +96,7 @@ class SpoolResponse(BaseModel):
     last_used_at: datetime | None
     initial_total_weight_g: float | None
     empty_spool_weight_g: float | None
+    spool_core_weight_g: float | None
     remaining_weight_g: float | None
     spool_outer_diameter_mm: float | None
     spool_width_mm: float | None
@@ -147,6 +150,8 @@ class BulkSpoolUpdateRequest(BaseModel):
     status_id: int | None = None
     low_weight_threshold_g: int | None = None
     empty_spool_weight_g: float | None = None
+    spool_core_weight_g: float | None = None
+    clear_spool_core_weight: bool = False
     purchase_price: float | None = None
 
 

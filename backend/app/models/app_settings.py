@@ -1,6 +1,6 @@
 """AppSettings model for global application configuration."""
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, Float, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -20,3 +20,4 @@ class AppSettings(Base, TimestampMixin):
     currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
     rfid_extended_data_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     rfid_protocol: Mapped[str] = mapped_column(String(20), default="openspool", nullable=False)
+    default_spool_core_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)

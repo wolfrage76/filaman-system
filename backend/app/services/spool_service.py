@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.security import Principal
-from app.models import Filament, Location, Spool, SpoolEvent, SpoolStatus
+from app.models import AppSettings, Filament, Location, Spool, SpoolEvent, SpoolStatus
 
 # Aggregation window for consumption events (in minutes)
 # Events within this window from the same source will be aggregated
@@ -55,12 +55,33 @@ class SpoolService:
             return result.scalar_one_or_none()
         return None
 
-    def _get_tara(self, spool: Spool) -> float | None:
+    def _get_tara(self, spool: Spool, core_weight_g: float = 0.0) -> float | None:
+        base = None
         if spool.empty_spool_weight_g is not None:
-            return spool.empty_spool_weight_g
-        if spool.filament and spool.filament.default_spool_weight_g is not None:
-            return spool.filament.default_spool_weight_g
-        return None
+            base = spool.empty_spool_weight_g
+        elif spool.filament and spool.filament.default_spool_weight_g is not None:
+            base = spool.filament.default_spool_weight_g
+        if base is None:
+            return None
+        return base + core_weight_g
+
+    async def _resolve_core_weight(self, spool: Spool) -> float:
+        """Return the effective core weight for a spool.
+
+        Priority:
+        1. Per-spool spool_core_weight_g (including explicit 0 to disable default)
+        2. Global default_spool_core_weight_g from AppSettings
+        3. 0 (no adjustment)
+        """
+        if spool.spool_core_weight_g is not None:
+            return spool.spool_core_weight_g
+        settings_result = await self.db.execute(
+            select(AppSettings).where(AppSettings.id == 1)
+        )
+        app_settings = settings_result.scalar_one_or_none()
+        if app_settings and app_settings.default_spool_core_weight_g is not None:
+            return app_settings.default_spool_core_weight_g
+        return 0.0
 
     async def _get_status_by_key(self, key: str) -> SpoolStatus | None:
         result = await self.db.execute(
@@ -194,7 +215,8 @@ class SpoolService:
         source: str = "ui",
         note: str | None = None,
     ) -> tuple[SpoolEvent, float | None]:
-        tara = self._get_tara(spool)
+        core_weight_g = await self._resolve_core_weight(spool)
+        tara = self._get_tara(spool, core_weight_g)
         meta: dict[str, Any] = {}
 
         if tara is None:
@@ -280,7 +302,8 @@ class SpoolService:
             if measured_weight_g is None:
                 raise ValueError("measured_weight_g required for absolute adjustment")
 
-            tara = self._get_tara(spool)
+            core_weight_g = await self._resolve_core_weight(spool)
+            tara = self._get_tara(spool, core_weight_g)
 
             if tara is None:
                 meta["tara_missing"] = True
@@ -567,10 +590,11 @@ class SpoolService:
 
         last_plausible_remaining: float | None = spool.remaining_weight_g
         blocked_event_id: int | None = None
+        rebuild_core_weight = await self._resolve_core_weight(spool)
 
         for event in events:
             if event.event_type == "measurement":
-                tara = self._get_tara(spool)
+                tara = self._get_tara(spool, rebuild_core_weight)
                 if tara is None:
                     blocked_event_id = event.id
                     remaining = None
@@ -598,7 +622,7 @@ class SpoolService:
             elif event.event_type == "manual_adjust":
                 adj_type = event.meta.get("adjustment_type") if event.meta else None
                 if adj_type == "absolute":
-                    tara = self._get_tara(spool)
+                    tara = self._get_tara(spool, rebuild_core_weight)
                     if tara is None:
                         blocked_event_id = event.id
                         remaining = None
