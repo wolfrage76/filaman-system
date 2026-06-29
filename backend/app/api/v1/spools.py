@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
+from app.api.v1.printers import pick_bambuddy_driver, _is_primary_worker, _proxy_to_primary
 from app.core.cache import response_cache
 from app.core.db_utils import get_next_available_id, get_next_available_ids
 from app.api.v1.schemas import PaginatedResponse
@@ -1003,3 +1005,105 @@ async def device_measurement(
     )
     await event_bus.publish({"event": "spools_changed"})
     return event
+
+
+class DefaultSlicerProfileBody(BaseModel):
+    base_name: str = Field(..., min_length=1)
+
+
+class ModelSlicerProfileBody(BaseModel):
+    base_name: str | None = None
+    clear_override: bool = False
+
+
+@router_spools.post("/{spool_id}/slicer-profile/default")
+@router_spools.put("/{spool_id}/slicer-profile/default")
+async def set_spool_default_slicer_profile(
+    spool_id: int,
+    body: DefaultSlicerProfileBody,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """Set default Bambu cloud slicer profile for a spool (all connected models)."""
+    if not _is_primary_worker():
+        return await _proxy_to_primary(
+            request,
+            method="POST",
+            path=f"/api/v1/spools/{spool_id}/slicer-profile/default",
+            json_body=body.model_dump(),
+        )
+    spool = await db.get(Spool, spool_id)
+    if not spool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Spool not found"},
+        )
+    _printer_id, driver = await pick_bambuddy_driver(db)
+    method = getattr(driver, "set_default_spool_profile", None)
+    if not callable(method):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsupported",
+                "message": "Driver does not support default slicer profiles",
+            },
+        )
+    result = await method(int(spool_id), base_name=body.base_name.strip())
+    return result
+
+
+@router_spools.post("/{spool_id}/slicer-profile/models/{model}")
+@router_spools.put("/{spool_id}/slicer-profile/models/{model}")
+async def set_spool_model_slicer_profile(
+    spool_id: int,
+    model: str,
+    body: ModelSlicerProfileBody,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """Set or clear a per-model slicer profile override on a spool."""
+    if not _is_primary_worker():
+        return await _proxy_to_primary(
+            request,
+            method="POST",
+            path=f"/api/v1/spools/{spool_id}/slicer-profile/models/{model}",
+            json_body=body.model_dump(),
+        )
+    spool = await db.get(Spool, spool_id)
+    if not spool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Spool not found"},
+        )
+    _printer_id, driver = await pick_bambuddy_driver(db)
+    method = getattr(driver, "set_spool_profile_for_model", None)
+    if not callable(method):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsupported",
+                "message": "Driver does not support per-model slicer profiles",
+            },
+        )
+    if body.clear_override:
+        result = await method(
+            int(spool_id), model.strip().upper(), clear_override=True
+        )
+    else:
+        if not body.base_name or not body.base_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "invalid_params",
+                    "message": "base_name is required",
+                },
+            )
+        result = await method(
+            int(spool_id),
+            model.strip().upper(),
+            base_name=body.base_name.strip(),
+            link_others=False,
+        )
+    return result
