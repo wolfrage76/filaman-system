@@ -23,6 +23,7 @@ from app.api.v1.schemas_spool import (
     MoveLocationRequest,
     SpoolBulkCreate,
     SpoolCreate,
+    SpoolEventColor,
     SpoolEventResponse,
     SpoolResponse,
     SpoolStatusResponse,
@@ -596,11 +597,43 @@ async def list_all_spool_events(
 ):
     result = await db.execute(
         select(SpoolEvent)
+        .options(
+            selectinload(SpoolEvent.spool)
+            .selectinload(Spool.filament)
+            .options(
+                selectinload(Filament.manufacturer),
+                selectinload(Filament.filament_colors).selectinload(
+                    FilamentColor.color
+                ),
+            )
+        )
         .order_by(SpoolEvent.event_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    items = list(result.scalars().all())
+    events = list(result.scalars().all())
+
+    items: list[SpoolEventResponse] = []
+    for ev in events:
+        resp = SpoolEventResponse.model_validate(ev)
+        filament = ev.spool.filament if ev.spool else None
+        if filament is not None:
+            resp.manufacturer_name = (
+                filament.manufacturer.name if filament.manufacturer else None
+            )
+            resp.manufacturer_color_name = filament.manufacturer_color_name
+            resp.material_type = filament.material_type
+            resp.colors = [
+                SpoolEventColor(
+                    hex_code=fc.color.hex_code,
+                    name=fc.display_name_override or fc.color.name,
+                )
+                for fc in sorted(
+                    filament.filament_colors, key=lambda c: c.position
+                )
+                if fc.color is not None
+            ]
+        items.append(resp)
 
     count_result = await db.execute(select(func.count()).select_from(SpoolEvent))
     total = count_result.scalar() or 0
