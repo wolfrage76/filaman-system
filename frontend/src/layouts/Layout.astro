@@ -1,12 +1,16 @@
 ---
 import '../styles/global.css'
+import '../styles/v2.css'
 import { VERSION } from '../version.js'
 
 interface Props {
   title: string
+  /** 'v2' marks a redesigned page: forces the v2 shell and edge-to-edge main. */
+  variant?: 'v1' | 'v2'
 }
 
-const { title } = Astro.props
+const { title, variant = 'v1' } = Astro.props
+const isV2Page = variant === 'v2'
 ---
 
 <html lang="en" data-theme="brand">
@@ -21,13 +25,36 @@ const { title } = Astro.props
     />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
-    <script is:inline>
+    <script is:inline data-v2-page={isV2Page ? '1' : '0'}>
       (function() {
         const t = localStorage.getItem('theme') || 'brand';
         document.documentElement.setAttribute('data-theme', t);
         const l = localStorage.getItem('lang') || 'en';
         document.documentElement.setAttribute('lang', l);
         
+        // UI version (admin setting mirrored to localStorage by ui-version.ts)
+        try {
+          const isV2Page = document.currentScript && document.currentScript.getAttribute('data-v2-page') === '1';
+          const ui = localStorage.getItem('fm_ui') === 'v2' ? 'v2' : 'v1';
+          const path = location.pathname;
+          let target = null;
+          if (ui === 'v2') {
+            const p = path.replace(/\/+$/, '') || '/';
+            let m;
+            if (p === '/' || p === '/index.html') target = '/v2/';
+            else if (p === '/spools') target = '/v2/spools/';
+            else if ((m = p.match(/^\/spools\/(\d+)$/))) target = '/v2/spools/' + m[1];
+            else if ((m = p.match(/^\/printers\/(\d+)$/))) target = '/v2/printers/' + m[1];
+          } else if (/^\/v2(\/|$)/.test(path)) {
+            const rest = path.replace(/^\/v2/, '');
+            target = rest === '' || rest === '/' ? '/' : rest;
+          }
+          if (target && target !== path && target !== path + '/') {
+            location.replace(target + location.search);
+          }
+          if (ui === 'v2' || isV2Page) document.documentElement.classList.add('ui-v2');
+        } catch (e) {}
+
         // Sidebar state
         const s = localStorage.getItem('sidebar-collapsed');
         const isMobile = window.innerWidth <= 768;
@@ -54,6 +81,13 @@ const { title } = Astro.props
             </div>
           </div>
 
+          <!-- v2: global search -->
+          <label class="v2-only v2-side-search" id="v2-side-search">
+            <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round;"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+            <input type="search" id="v2-side-search-input" placeholder="Search spools…" autocomplete="off" />
+            <span class="v2-kbd">/</span>
+          </label>
+
           <!-- Navigation -->
           <nav style="display: grid; gap: 6px;">
             <a href="/" class="fm-nav-item">
@@ -67,10 +101,12 @@ const { title } = Astro.props
             <a href="/filaments" class="fm-nav-item">
               <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-filaments"></use></svg></span>
               <span data-i18n="nav.filaments">Filaments</span>
+              <span class="v2-only v2-count" data-v2-count="filaments"></span>
             </a>
             <a href="/spools" class="fm-nav-item">
               <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-spools"></use></svg></span>
               <span data-i18n="nav.spools">Spools</span>
+              <span class="v2-only v2-count" data-v2-count="spools"></span>
             </a>
             <a href="/locations" class="fm-nav-item">
               <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-locations"></use></svg></span>
@@ -79,6 +115,7 @@ const { title } = Astro.props
             <a href="/printers" class="fm-nav-item">
               <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-printers"></use></svg></span>
               <span data-i18n="nav.printers">Printers</span>
+              <span class="v2-only v2-count" data-v2-count="printers"></span>
             </a>
             <a href="/spool-log" class="fm-nav-item">
               <span class="fm-nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
@@ -88,6 +125,8 @@ const { title } = Astro.props
               <span class="fm-nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
               <span data-i18n="nav.display">Display</span>
             </a>
+
+            <div id="v2-live"></div>
 
             <div id="plugin-nav" class="invisible" style="margin-top: 4px;"></div>
 
@@ -169,7 +208,7 @@ const { title } = Astro.props
       </aside>
       <div id="sidebar-backdrop" class="fm-sidebar-backdrop"></div>
 
-      <main style="padding: 32px; overflow-y: auto;">
+      <main class={isV2Page ? 'fm-main-v2' : ''} style={isV2Page ? 'overflow: hidden;' : 'padding: 32px; overflow-y: auto;'}>
         <slot />
       </main>
     </div>
@@ -196,6 +235,7 @@ const { title } = Astro.props
       import { getAbortSignal } from '../lib/abort'
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
       import { navHrefFor } from '../lib/plugin-nav'
+      import { applyUiVersion, cachedUiVersion, fetchUiVersion, hrefForVersion, type UiVersion } from '../lib/ui-version'
 
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
@@ -353,6 +393,7 @@ const { title } = Astro.props
 
           loadPluginNav()
           checkSystemVersion(user)
+          syncUiVersion()
 
           // Auth succeeded — reveal page content
           document.getElementById('fm-page')!.style.visibility = 'visible'
@@ -369,6 +410,110 @@ const { title } = Astro.props
       }
 
       checkAuth()
+
+      /* ── UI version (v1 classic / v2 console) ─────────────────── */
+      const IS_V2_PAGE = document.querySelector('script[data-v2-page="1"]') !== null
+      let uiVersion: UiVersion = IS_V2_PAGE ? 'v2' : cachedUiVersion()
+      applyUiNav(uiVersion)
+
+      async function syncUiVersion() {
+        const server = await fetchUiVersion(getAbortSignal())
+        if (!server) return
+        if (server !== cachedUiVersion() || server !== uiVersion) {
+          uiVersion = server
+          if (applyUiVersion(server)) return
+          // On a v2 page while the setting is v1 the redirect above already fired;
+          // otherwise just refresh the shell.
+          if (!IS_V2_PAGE) document.documentElement.classList.toggle('ui-v2', server === 'v2')
+          applyUiNav(uiVersion)
+        }
+        if (uiVersion === 'v2') loadV2Sidebar()
+      }
+
+      function applyUiNav(version: UiVersion) {
+        document.querySelectorAll<HTMLAnchorElement>('.fm-nav-item[href]').forEach(a => {
+          const raw = a.dataset.v1Href || a.getAttribute('href') || ''
+          if (!a.dataset.v1Href) a.dataset.v1Href = raw
+          a.setAttribute('href', hrefForVersion(raw, version))
+        })
+        highlightActiveNav()
+      }
+
+      let v2SidebarLoaded = false
+      async function loadV2Sidebar() {
+        if (v2SidebarLoaded) return
+        v2SidebarLoaded = true
+        // Search box → spools list
+        const searchInput = document.getElementById('v2-side-search-input') as HTMLInputElement | null
+        searchInput?.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            const q = searchInput.value.trim()
+            window.location.href = '/v2/spools/' + (q ? `?search=${encodeURIComponent(q)}` : '')
+          }
+        })
+        document.addEventListener('keydown', (e) => {
+          if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return
+          const el = document.activeElement as HTMLElement | null
+          if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
+          e.preventDefault()
+          searchInput?.focus()
+        })
+        loadV2Counts()
+        loadV2Live()
+        window.addEventListener('filaman:data-changed', (e: Event) => {
+          const ev = (e as CustomEvent).detail?.event
+          if (ev === 'spools_changed' || ev === 'filaments_changed') loadV2Counts()
+          if (ev === 'printer_status' || ev === 'printer_update' || ev === 'slots_update') loadV2Live()
+        })
+      }
+
+      async function loadV2Counts() {
+        const set = (key: string, n: number | undefined) => {
+          const el = document.querySelector<HTMLElement>(`[data-v2-count="${key}"]`)
+          if (el) el.textContent = typeof n === 'number' ? String(n) : ''
+        }
+        const total = async (url: string) => {
+          try {
+            const r = await fetch(url, { credentials: 'include', signal: getAbortSignal() })
+            if (!r.ok) return undefined
+            const d = await r.json()
+            return typeof d.total === 'number' ? d.total : undefined
+          } catch { return undefined }
+        }
+        set('spools', await total('/api/v1/spools?page=1&page_size=1'))
+        set('filaments', await total('/api/v1/filaments?page=1&page_size=1'))
+        set('printers', await total('/api/v1/printers?page=1&page_size=1'))
+      }
+
+      let v2LiveTimer: number | null = null
+      async function loadV2Live() {
+        const box = document.getElementById('v2-live')
+        if (!box) return
+        try {
+          const r = await fetch('/api/v1/display?fields=slots', { credentials: 'include', signal: getAbortSignal() })
+          if (!r.ok) { box.classList.remove('has-live'); return }
+          const d = await r.json()
+          const printers: any[] = d.printers || []
+          if (!printers.length) { box.classList.remove('has-live'); return }
+          const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
+          const stateLabel = (p: any) => {
+            const st = String(p.state || '').toLowerCase()
+            if (p.connected === false) return { cls: '', text: 'offline' }
+            if (st.includes('run') || st.includes('print')) return { cls: 'on', text: 'printing' }
+            if (st.includes('pause')) return { cls: 'warn', text: 'paused' }
+            if (st.includes('err') || st.includes('fail')) return { cls: 'warn', text: st }
+            if (st === 'unknown' || !st) return { cls: p.connected ? 'on' : '', text: p.connected ? 'online' : '—' }
+            return { cls: '', text: st }
+          }
+          box.innerHTML = '<div class="v2-side-label hide-collapsed">Live</div>' + printers.map(p => {
+            const sl = stateLabel(p)
+            return `<a class="v2-live-item" href="/v2/printers/${p.id}"><span class="v2-dot ${sl.cls}"></span><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${esc(p.name)}</span><span class="v2-live-meta">${esc(sl.text)}</span></a>`
+          }).join('')
+          box.classList.add('has-live')
+          if (v2LiveTimer) clearTimeout(v2LiveTimer)
+          v2LiveTimer = window.setTimeout(loadV2Live, 60000)
+        } catch { box.classList.remove('has-live') }
+      }
 
       /* ── System version check ────────────────────────────────── */
       async function checkSystemVersion(user: any) {
@@ -484,11 +629,14 @@ const { title } = Astro.props
         let bestNavMatch: Element | null = null
         let bestNavLen = 0
         const items = document.querySelectorAll('.fm-nav-item')
+        const v1Path = currentPath.replace(/^\/v2(?=\/|$)/, '') || '/'
         items.forEach(item => {
           item.classList.remove('active')
-          const href = item.getAttribute('href')
+          const href = (item as HTMLElement).dataset.v1Href || item.getAttribute('href')
           if (!href) return
-          if (href === currentPath || href === currentTarget || (href !== '/' && currentPath.startsWith(href + '/'))) {
+          const cur = item.getAttribute('href') || ''
+          const matchesV2 = cur === currentPath || cur === currentPath + '/' || cur === currentTarget
+          if (matchesV2 || href === v1Path || href === currentTarget || (href !== '/' && v1Path.startsWith(href + '/'))) {
             if (href.length > bestNavLen) {
               bestNavLen = href.length
               bestNavMatch = item

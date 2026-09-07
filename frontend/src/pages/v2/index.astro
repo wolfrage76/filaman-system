@@ -1,0 +1,220 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Dashboard" variant="v2">
+  <div class="v2-page">
+    <header class="v2-header">
+      <div class="v2-row" style="align-items: baseline; gap: 12px;">
+        <h1 data-i18n="dashboard.title">Dashboard</h1>
+        <span class="v2-sub" id="dash-updated"></span>
+      </div>
+      <div class="v2-row">
+        <a href="/spools/new" class="v2-btn primary"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>Add spool</a>
+      </div>
+    </header>
+
+    <div class="v2-body">
+      <div class="v2-grid" style="grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);">
+        <div class="v2-card v2-row" style="padding: 12px 16px; gap: 20px;">
+          <div class="v2-field" style="min-width: 150px;">
+            <label>Spool status</label>
+            <div class="v2-value v2-num" style="font-size: 22px;"><span id="st-total">—</span> <span class="v2-muted" style="font-size: 13px; font-weight: 500;">spools · <span id="st-kg">—</span></span></div>
+          </div>
+          <div style="width: 1px; align-self: stretch; background: var(--border);"></div>
+          <div style="flex: 1 1 0; display: flex; justify-content: space-around; align-items: center;" id="st-buckets">
+            <a class="v2-stat" href="/v2/spools/?level=full" style="text-decoration: none; color: inherit;"><div class="v2-stat-n" style="color: var(--accent);" id="st-full">—</div><div class="v2-stat-l">Full</div></a>
+            <a class="v2-stat" href="/v2/spools/?level=normal" style="text-decoration: none; color: inherit;"><div class="v2-stat-n" style="color: var(--accent-2);" id="st-normal">—</div><div class="v2-stat-l">Normal</div></a>
+            <a class="v2-stat" href="/v2/spools/?level=low" style="text-decoration: none; color: inherit;"><div class="v2-stat-n" style="color: var(--accent-3);" id="st-low">—</div><div class="v2-stat-l">Low</div></a>
+            <a class="v2-stat" href="/v2/spools/?level=crit" style="text-decoration: none; color: inherit;"><div class="v2-stat-n" style="color: var(--error-text);" id="st-crit">—</div><div class="v2-stat-l">Critical</div></a>
+            <a class="v2-stat" href="/v2/spools/?status=empty" style="text-decoration: none; color: inherit;"><div class="v2-stat-n" style="color: var(--text-dim);" id="st-empty">—</div><div class="v2-stat-l">Empty</div></a>
+          </div>
+        </div>
+        <div class="v2-card" style="padding: 12px 14px;">
+          <div class="v2-field"><label>Value on hand</label><div class="v2-value v2-num" style="font-size: 22px;" id="st-value">—</div></div>
+          <div class="v2-dim" style="font-size: 11px; margin-top: 2px;" id="st-value-sub">at purchase price</div>
+        </div>
+      </div>
+
+      <div class="v2-grid v2-grid-main">
+        <div class="v2-card" style="display: flex; flex-direction: column; min-height: 0;">
+          <div class="v2-card-h">
+            <span>Needs attention <span class="v2-dim v2-num" style="font-weight: 500; margin-left: 6px;" id="att-count"></span></span>
+            <a href="/v2/spools/?level=low">All low stock →</a>
+          </div>
+          <div style="flex: 1 1 0; min-height: 200px; max-height: 420px; overflow-y: auto;">
+            <table class="v2-table">
+              <thead><tr><th style="width: 30px;"></th><th>Spool</th><th>Where</th><th class="r">Left</th></tr></thead>
+              <tbody id="att-rows"><tr><td colspan="4" class="v2-empty"><span class="v2-spin"></span></td></tr></tbody>
+            </table>
+          </div>
+          <div class="v2-row" style="padding: 10px 14px; border-top: 1px solid var(--border);" id="att-summary"></div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+          <div class="v2-card">
+            <div class="v2-card-h"><span>Printers</span><a href="/display">Open display →</a></div>
+            <div class="v2-card-body" id="printers-box" style="display: flex; flex-direction: column; gap: 12px;"><div class="v2-empty"><span class="v2-spin"></span></div></div>
+          </div>
+          <div class="v2-card" style="flex: 1 1 0;">
+            <div class="v2-card-h"><span>Recent activity</span><a href="/spool-log">Full log →</a></div>
+            <div style="padding: 4px 14px 8px; display: flex; flex-direction: column;" id="activity-box"><div class="v2-empty"><span class="v2-spin"></span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="v2-card">
+        <div class="v2-card-h"><span>Stock by material</span><span class="v2-dim" style="font-weight: 500; font-size: 12px;">remaining weight · spools</span></div>
+        <div class="v2-card-body v2-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));" id="material-box"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { initI18n, translatePage } from '../../lib/i18n'
+    import { formatPrice, initCurrency } from '../../lib/format'
+    import { esc, getJson, swatchBackground, filamentName, fmtG, fmtKg, remainingLevel, remainingHtml, loadSlotMap, whereHtml, relTime, type SlotLocation } from '../../lib/v2'
+
+    await initI18n()
+    translatePage()
+    const currency = await initCurrency()
+
+    const $ = (id: string) => document.getElementById(id)!
+
+    async function loadStats() {
+      const d = await getJson<any>('/api/v1/dashboard/stats?limit=50')
+      if (!d) return
+      const dist = d.spool_distribution || {}
+      const total = ['empty', 'full', 'normal', 'low', 'critical'].reduce((a, k) => a + (dist[k] || 0), 0)
+      $('st-total').textContent = String(total)
+      $('st-full').textContent = String(dist.full ?? 0)
+      $('st-normal').textContent = String(dist.normal ?? 0)
+      $('st-low').textContent = String(dist.low ?? 0)
+      $('st-crit').textContent = String(dist.critical ?? 0)
+      $('st-empty').textContent = String(dist.empty ?? 0)
+      const stats: any[] = d.filament_stats || []
+      const totalG = stats.reduce((a, s) => a + (s.total_weight_g || 0), 0)
+      $('st-kg').textContent = fmtKg(totalG)
+      $('st-value').textContent = formatPrice(d.total_value_available ?? 0, currency)
+      const top = stats.slice().sort((a, b) => b.total_weight_g - a.total_weight_g).slice(0, 2)
+      $('st-value-sub').textContent = 'at purchase price' + (top.length ? ' · ' + top.map(s => `${s.filament_type} ${fmtKg(s.total_weight_g)}`).join(' · ') : '')
+      const max = Math.max(1, ...stats.map(s => s.total_weight_g || 0))
+      const palette = ['var(--accent)', 'var(--accent-2)', 'var(--accent-3)', 'var(--text-muted)', 'var(--text-dim)']
+      $('material-box').innerHTML = stats.slice().sort((a, b) => b.total_weight_g - a.total_weight_g).map((s, i) => `
+        <a href="/v2/spools/?type=${encodeURIComponent(s.filament_type)}" style="text-decoration: none; color: inherit;">
+          <div class="v2-row" style="justify-content: space-between; font-size: 12px;"><b>${esc(s.filament_type)}</b><span class="v2-num v2-muted">${s.total_weight_g >= 1000 ? fmtKg(s.total_weight_g) : fmtG(s.total_weight_g)} · ${s.spool_count}</span></div>
+          <div class="v2-bar wide" style="margin-top: 6px;"><i style="width: ${Math.round((s.total_weight_g / max) * 100)}%; background: ${palette[Math.min(i, palette.length - 1)]};"></i></div>
+        </a>`).join('') || '<div class="v2-empty">No spools yet.</div>'
+      $('dash-updated').textContent = new Date().toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    }
+
+    let slotMap = new Map<number, SlotLocation>()
+    let locNames = new Map<number, string>()
+
+    async function loadAttention() {
+      const [locs, spools] = await Promise.all([
+        getJson<any>('/api/v1/locations?page=1&page_size=200'),
+        getJson<any>('/api/v1/spools?page=1&page_size=200&sort_by=remaining_weight_g&sort_order=asc'),
+      ])
+      locNames = new Map((locs?.items || []).map((l: any) => [l.id, l.name]))
+      const items: any[] = (spools?.items || []).filter((s: any) => ['low', 'crit'].includes(remainingLevel(s)))
+      const rows = $('att-rows')
+      $('att-count').textContent = items.length ? String(items.length) : ''
+      if (!items.length) {
+        rows.innerHTML = '<tr><td colspan="4" class="v2-empty">Nothing is running low.</td></tr>'
+      } else {
+        rows.innerHTML = items.map(s => {
+          const loc = slotMap.get(s.id)
+          return `<tr class="clickable" data-href="/v2/spools/${s.id}">
+            <td><div class="v2-swatch" style="background: ${swatchBackground(s.filament)};"></div></td>
+            <td><div style="font-weight: 600;">#${s.id} ${esc(filamentName(s.filament))}</div><div class="v2-cell-sub">${esc(s.filament?.manufacturer?.name || '—')} · ${esc(s.filament?.material_type || '')}</div></td>
+            <td>${whereHtml(loc, s.location_id ? locNames.get(s.location_id) : null)}</td>
+            <td class="r"><div style="display: flex; justify-content: flex-end;">${remainingHtml(s)}</div></td>
+          </tr>`
+        }).join('')
+      }
+      const crit = items.filter(s => remainingLevel(s) === 'crit').length
+      $('att-summary').innerHTML = `<span class="v2-pill bad"><span class="v2-dot"></span>${crit} critical</span><span class="v2-pill warn"><span class="v2-dot"></span>${items.length - crit} low</span>`
+      rows.querySelectorAll<HTMLElement>('tr[data-href]').forEach(tr => tr.addEventListener('click', e => {
+        if ((e.target as HTMLElement).closest('button, a')) return
+        window.location.href = tr.dataset.href!
+      }))
+    }
+
+    function stateInfo(p: any) {
+      const st = String(p.state || '').toLowerCase()
+      if (p.connected === false) return { cls: 'neutral', text: 'Offline' }
+      if (st.includes('run') || st.includes('print')) return { cls: 'ok', text: 'Printing' }
+      if (st.includes('pause')) return { cls: 'warn', text: 'Paused' }
+      if (st.includes('fail') || st.includes('err')) return { cls: 'bad', text: 'Error' }
+      if (st.includes('finish') || st.includes('idle') || st === 'unknown' || !st) return { cls: 'neutral', text: 'Idle' }
+      return { cls: 'neutral', text: st }
+    }
+
+    async function loadPrinters() {
+      const d = await getJson<any>('/api/v1/display')
+      const box = $('printers-box')
+      const printers: any[] = d?.printers || []
+      if (!printers.length) { box.innerHTML = '<div class="v2-empty">No active printers. <a href="/printers">Manage printers →</a></div>'; return }
+      box.innerHTML = printers.map((p, i) => {
+        const si = stateInfo(p)
+        const job = p.job
+        const pct = job?.progress != null ? Math.round(job.progress) : null
+        const remain = job?.remaining_seconds != null ? `${Math.round(job.remaining_seconds / 60)} min` : ''
+        const units: any[] = p.ams || []
+        const loaded = units.reduce((a, u) => a + (u.slots || []).filter((s: any) => !s.empty).length, 0)
+        const slotsTotal = units.reduce((a, u) => a + (u.slots || []).length, 0)
+        const strips = units.filter(u => (u.slots || []).some((s: any) => !s.empty)).map(u => `<span class="v2-row" style="gap: 3px;">${(u.slots || []).map((s: any) => s.empty
+          ? '<span style="width: 22px; height: 12px; border-radius: 3px; border: 1px dashed var(--border);"></span>'
+          : `<span title="${esc(u.label)} ${esc(s.label)} · ${esc(s.material || '')} ${esc(s.filament || '')}" style="width: 22px; height: 12px; border-radius: 3px; background: ${esc(s.color || 'var(--bg-soft)')}; border: 1px solid rgba(127,127,127,0.35); ${s.active ? 'outline: 2px solid var(--accent); outline-offset: 1px;' : ''}"></span>`).join('')}</span>`).join('<span style="width: 6px;"></span>')
+        return `<a href="/v2/printers/${p.id}" style="text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 8px; ${i ? 'padding-top: 10px; border-top: 1px solid var(--border);' : ''}">
+          <div class="v2-row">
+            <span class="v2-pill ${si.cls}"><span class="v2-dot"></span>${si.text}</span>
+            <span style="font-weight: 600;">${esc(p.name)}</span>
+            ${job?.name ? `<span class="v2-dim" style="font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;">${esc(job.name)}</span>` : `<span class="v2-dim" style="font-size: 12px;">${loaded} / ${slotsTotal} slots loaded</span>`}
+            ${pct != null ? `<span class="v2-num v2-muted" style="margin-left: auto; font-size: 12px; white-space: nowrap;">${pct}%${remain ? ' · ' + remain : ''}</span>` : ''}
+          </div>
+          ${pct != null ? `<div class="v2-bar wide" style="height: 4px;"><i style="width: ${pct}%;"></i></div>` : ''}
+          <div class="v2-row" style="flex-wrap: wrap; gap: 4px;">${strips || '<span class="v2-dim" style="font-size: 11px;">no spools loaded</span>'}</div>
+        </a>`
+      }).join('')
+    }
+
+    async function loadActivity() {
+      const d = await getJson<any>('/api/v1/spools/all-events?page=1&page_size=8')
+      const box = $('activity-box')
+      const items: any[] = d?.items || []
+      if (!items.length) { box.innerHTML = '<div class="v2-empty">No activity yet.</div>'; return }
+      const label = (e: any) => {
+        const t = String(e.event_type || '')
+        const w = e.measured_weight_g != null ? ` <span class="v2-num">${fmtG(e.measured_weight_g)}</span>` : ''
+        const dl = e.delta_weight_g != null ? `<span class="v2-dim v2-num" style="margin-left: auto;">${e.delta_weight_g > 0 ? '+' : ''}${Math.round(e.delta_weight_g)} g</span>` : ''
+        if (t === 'measurement' || t === 'weigh') return { text: `weighed${w}`, tail: dl }
+        if (t === 'move_location' || t === 'move') return { text: esc(e.note || 'moved'), tail: '' }
+        if (t === 'status_change' || t === 'opened' || t === 'empty') return { text: `status → ${esc(e.meta?.to || e.note || t)}`, tail: '' }
+        if (t === 'consumption') return { text: 'filament used', tail: dl }
+        if (t === 'created' || t === 'create') return { text: 'created', tail: '' }
+        return { text: esc(e.note || t.replace(/_/g, ' ')), tail: dl }
+      }
+      box.innerHTML = items.map(e => {
+        const l = label(e)
+        const color = e.colors?.[0]?.hex_code
+        return `<a href="/v2/spools/${e.spool_id}" class="v2-row" style="gap: 10px; height: 34px; font-size: 12.5px; text-decoration: none; color: inherit; min-width: 0;">
+          <span class="v2-dim v2-num" style="width: 64px; flex-shrink: 0; font-size: 11.5px;">${esc(relTime(e.event_at))}</span>
+          <span class="v2-swatch" style="width: 12px; height: 12px; border-radius: 3px; background: ${color ? esc(color) : 'var(--bg-soft)'};"></span>
+          <span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><b>#${e.spool_id}</b> ${l.text}</span>${l.tail}
+        </a>`
+      }).join('')
+    }
+
+    async function refresh() {
+      slotMap = await loadSlotMap()
+      await Promise.all([loadStats(), loadAttention(), loadPrinters(), loadActivity()])
+    }
+    refresh()
+
+    let pending: number | null = null
+    const schedule = () => { if (pending) clearTimeout(pending); pending = window.setTimeout(refresh, 800) }
+    window.addEventListener('filaman:data-changed', schedule)
+  </script>
+</Layout>

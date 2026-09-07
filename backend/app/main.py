@@ -617,6 +617,31 @@ if not settings.debug:
                 os.path.join(static_files_path, "printers/detail/index.html")
             )
 
+        # v2 (console redesign) dynamic routes
+        @app.get("/v2/spools/detail")
+        async def serve_v2_spool_detail_placeholder():
+            return FileResponse(
+                os.path.join(static_files_path, "v2/spools/detail/index.html")
+            )
+
+        @app.get("/v2/spools/{id}")
+        async def serve_v2_spool_detail(id: int):
+            return FileResponse(
+                os.path.join(static_files_path, "v2/spools/detail/index.html")
+            )
+
+        @app.get("/v2/printers/detail")
+        async def serve_v2_printer_detail_placeholder():
+            return FileResponse(
+                os.path.join(static_files_path, "v2/printers/detail/index.html")
+            )
+
+        @app.get("/v2/printers/{id}")
+        async def serve_v2_printer_detail(id: int):
+            return FileResponse(
+                os.path.join(static_files_path, "v2/printers/detail/index.html")
+            )
+
         @app.get("/filaments/colors")
         async def serve_filament_colors():
             return FileResponse(

@@ -1,0 +1,303 @@
+---
+import Layout from '../../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Spools" variant="v2">
+  <div class="v2-page">
+    <header class="v2-header">
+      <div class="v2-row" style="align-items: baseline; gap: 12px;">
+        <h1 data-i18n="nav.spools">Spools</h1>
+        <span class="v2-sub v2-num" id="sp-summary"></span>
+      </div>
+      <div class="v2-row">
+        <a href="/spools" class="v2-btn ghost" title="Open the classic spool list (bulk edit, columns, tag writing)">Classic view</a>
+        <a href="/spools/new" class="v2-btn primary"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>Add spool</a>
+      </div>
+    </header>
+
+    <div class="v2-toolbar">
+      <label class="v2-input" style="width: 300px; max-width: 100%;">
+        <svg class="v2-ico" viewBox="0 0 24 24" style="width: 14px; height: 14px; color: var(--text-dim);"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input id="f-search" type="search" placeholder="id, filament, tag, lot, manufacturer…" autocomplete="off" />
+      </label>
+      <span class="v2-chip" id="chip-manufacturer"><span class="v2-chip-label">Manufacturer</span><select id="f-manufacturer"></select></span>
+      <span class="v2-chip" id="chip-status"><span class="v2-chip-label">Status</span><select id="f-status"></select></span>
+      <span class="v2-chip" id="chip-type"><span class="v2-chip-label">Material</span><select id="f-type"></select></span>
+      <span class="v2-chip" id="chip-location"><span class="v2-chip-label">Location</span><select id="f-location"></select></span>
+      <span class="v2-chip" id="chip-level"><span class="v2-chip-label">Stock level</span><select id="f-level"><option value="">Any level</option><option value="low">Low or critical</option><option value="crit">Critical only</option><option value="full">Full</option><option value="normal">Normal</option></select></span>
+      <label class="v2-chip" style="cursor: pointer;"><input type="checkbox" id="f-archived" style="margin: 0; accent-color: var(--accent);" />Archived</label>
+      <button type="button" class="v2-btn ghost sm" id="f-clear" style="display: none;">Clear</button>
+    </div>
+
+    <div style="flex: 1 1 0; min-height: 0; overflow: auto;">
+      <table class="v2-table">
+        <thead><tr>
+          <th style="width: 36px;"><input type="checkbox" id="sel-all" style="margin: 0; accent-color: var(--accent);" /></th>
+          <th class="sortable" data-sort="id" style="width: 72px;">ID</th>
+          <th class="sortable" data-sort="manufacturer">Filament</th>
+          <th class="sortable" data-sort="material">Material</th>
+          <th class="sortable" data-sort="status_id">Status</th>
+          <th class="sortable" data-sort="remaining_weight_g" style="width: 200px;">Remaining</th>
+          <th>Where</th>
+          <th style="width: 40px;">Tag</th>
+          <th class="r sortable" data-sort="purchase_price">Price</th>
+          <th class="sortable" data-sort="last_used_at">Last used</th>
+          <th style="width: 110px;"></th>
+        </tr></thead>
+        <tbody id="rows"><tr><td colspan="11" class="v2-empty"><span class="v2-spin"></span></td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="v2-footer">
+      <span id="bulk-bar" class="v2-row" style="display: none;">
+        <span class="v2-pill ok" id="bulk-count">0 selected</span>
+        <span class="v2-chip"><span>Move to…</span><select id="bulk-location"></select></span>
+        <span class="v2-chip"><span>Change status…</span><select id="bulk-status"></select></span>
+        <button type="button" class="v2-btn sm" id="bulk-print">Print labels</button>
+        <button type="button" class="v2-btn sm ghost danger" id="bulk-archive">Archive</button>
+      </span>
+      <span style="margin-left: auto;" class="v2-row">
+        <span class="v2-dim v2-num" id="pager-info"></span>
+        <button type="button" class="v2-btn sm ghost" id="pg-prev">‹</button>
+        <button type="button" class="v2-btn sm ghost" id="pg-next">›</button>
+        <span class="v2-chip"><span id="pg-size-label">100 / page</span><select id="pg-size"><option>25</option><option>50</option><option selected>100</option><option>200</option></select></span>
+      </span>
+    </div>
+  </div>
+
+  <script>
+    import { initI18n, translatePage } from '../../../lib/i18n'
+    import { formatPrice, initCurrency } from '../../../lib/format'
+    import { esc, el, getJson, sendJson, toast, swatchBackground, filamentName, remainingHtml, remainingLevel, statusPill, loadSlotMap, whereHtml, relTime, ICON, debounce, type SlotLocation } from '../../../lib/v2'
+
+    await initI18n()
+    translatePage()
+    const currency = await initCurrency()
+
+    const rows = el('rows')
+    const url = new URL(window.location.href)
+    const state = {
+      search: url.searchParams.get('search') || '',
+      manufacturer_id: url.searchParams.get('manufacturer_id') || '',
+      status: url.searchParams.get('status') || '',      // status key
+      type: url.searchParams.get('type') || '',
+      location_id: url.searchParams.get('location_id') || '',
+      level: url.searchParams.get('level') || '',
+      archived: url.searchParams.get('archived') === '1',
+      sort_by: url.searchParams.get('sort_by') || 'id',
+      sort_order: url.searchParams.get('sort_order') || 'desc',
+      page: Number(url.searchParams.get('page') || 1),
+      page_size: Number(url.searchParams.get('page_size') || 100),
+    }
+
+    let statuses: any[] = []
+    let locations: any[] = []
+    let manufacturers: any[] = []
+    let slotMap = new Map<number, SlotLocation>()
+    let current: any[] = []
+    let total = 0
+    const selected = new Set<number>()
+
+    function fillSelect(sel: HTMLSelectElement, items: { value: string; label: string }[], placeholder: string, value: string) {
+      sel.innerHTML = `<option value="">${esc(placeholder)}</option>` + items.map(i => `<option value="${esc(i.value)}">${esc(i.label)}</option>`).join('')
+      sel.value = value
+    }
+
+    function syncChip(chipId: string, sel: HTMLSelectElement, placeholder: string) {
+      const chip = el(chipId)
+      const label = chip.querySelector('.v2-chip-label') as HTMLElement
+      const on = !!sel.value
+      chip.classList.toggle('on', on)
+      label.innerHTML = on ? `${esc(sel.options[sel.selectedIndex]?.text || sel.value)}<span class="v2-chip-x" title="Clear">${ICON.x}</span>` : `${esc(placeholder)}${ICON.chevron}`
+      label.querySelector('.v2-chip-x')?.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); sel.value = ''; sel.dispatchEvent(new Event('change')) })
+    }
+
+    async function loadLookups() {
+      const [st, lo, mf, ty] = await Promise.all([
+        getJson<any[]>('/api/v1/spools/statuses'),
+        getJson<any>('/api/v1/locations?page=1&page_size=200'),
+        getJson<any>('/api/v1/manufacturers?page=1&page_size=200'),
+        getJson<string[]>('/api/v1/filaments/types'),
+      ])
+      statuses = st || []
+      locations = lo?.items || []
+      manufacturers = (mf?.items || []).filter((m: any) => (m.spool_count ?? 1) > 0)
+      fillSelect(el<HTMLSelectElement>('f-status'), statuses.filter(s => s.key !== 'archived').map(s => ({ value: s.key, label: s.label })), 'Any status', state.status)
+      fillSelect(el<HTMLSelectElement>('f-location'), locations.map(l => ({ value: String(l.id), label: l.name })), 'Any location', state.location_id)
+      fillSelect(el<HTMLSelectElement>('f-manufacturer'), manufacturers.map((m: any) => ({ value: String(m.id), label: m.name })), 'Any manufacturer', state.manufacturer_id)
+      fillSelect(el<HTMLSelectElement>('f-type'), (ty || []).map(t => ({ value: t, label: t })), 'Any material', state.type)
+      el<HTMLSelectElement>('f-level').value = state.level
+      fillSelect(el<HTMLSelectElement>('bulk-location'), locations.map(l => ({ value: String(l.id), label: l.name })), 'Move to…', '')
+      fillSelect(el<HTMLSelectElement>('bulk-status'), statuses.filter(s => s.key !== 'archived').map(s => ({ value: s.key, label: s.label })), 'Change status…', '')
+      syncAllChips()
+    }
+
+    function syncAllChips() {
+      syncChip('chip-manufacturer', el<HTMLSelectElement>('f-manufacturer'), 'Manufacturer')
+      syncChip('chip-status', el<HTMLSelectElement>('f-status'), 'Status')
+      syncChip('chip-type', el<HTMLSelectElement>('f-type'), 'Material')
+      syncChip('chip-location', el<HTMLSelectElement>('f-location'), 'Location')
+      syncChip('chip-level', el<HTMLSelectElement>('f-level'), 'Stock level')
+      const any = state.search || state.manufacturer_id || state.status || state.type || state.location_id || state.level || state.archived
+      el('f-clear').style.display = any ? '' : 'none'
+    }
+
+    function pushUrl() {
+      const p = new URLSearchParams()
+      if (state.search) p.set('search', state.search)
+      if (state.manufacturer_id) p.set('manufacturer_id', state.manufacturer_id)
+      if (state.status) p.set('status', state.status)
+      if (state.type) p.set('type', state.type)
+      if (state.location_id) p.set('location_id', state.location_id)
+      if (state.level) p.set('level', state.level)
+      if (state.archived) p.set('archived', '1')
+      if (state.sort_by !== 'id') p.set('sort_by', state.sort_by)
+      if (state.sort_order !== 'desc') p.set('sort_order', state.sort_order)
+      if (state.page > 1) p.set('page', String(state.page))
+      if (state.page_size !== 100) p.set('page_size', String(state.page_size))
+      history.replaceState(null, '', location.pathname + (p.toString() ? '?' + p.toString() : ''))
+    }
+
+    async function load() {
+      pushUrl()
+      syncAllChips()
+      const p = new URLSearchParams({ page: String(state.page), page_size: String(state.page_size), sort_by: state.sort_by, sort_order: state.sort_order })
+      if (state.search) p.set('search', state.search)
+      if (state.manufacturer_id) p.set('manufacturer_id', state.manufacturer_id)
+      if (state.type) p.set('type', state.type)
+      if (state.location_id) p.set('location_id', state.location_id)
+      if (state.archived) p.set('include_archived', 'true')
+      const stObj = statuses.find(s => s.key === state.status)
+      if (stObj) p.set('status_id', String(stObj.id))
+      rows.innerHTML = '<tr><td colspan="11" class="v2-empty"><span class="v2-spin"></span></td></tr>'
+      const d = await getJson<any>(`/api/v1/spools?${p}`)
+      let items: any[] = d?.items || []
+      total = d?.total ?? items.length
+      if (state.level) {
+        const want = state.level === 'low' ? ['low', 'crit'] : [state.level]
+        items = items.filter(s => want.includes(remainingLevel(s)))
+      }
+      current = items
+      render()
+    }
+
+    function render() {
+      const locName = (id: number | null) => locations.find(l => l.id === id)?.name
+      const stKey = (id: number) => statuses.find(s => s.id === id)
+      el('sp-summary').textContent = state.level ? `${current.length} shown (filtered client-side) · ${total} matching` : `${total} total`
+      if (!current.length) { rows.innerHTML = '<tr><td colspan="11" class="v2-empty">No spools match these filters.</td></tr>' } else {
+        rows.innerHTML = current.map(s => {
+          const st = stKey(s.status_id)
+          const loc = slotMap.get(s.id)
+          const tag = s.rfid_uid || s.rfid_uid_2
+          return `<tr class="clickable ${selected.has(s.id) ? 'selected' : ''}" data-id="${s.id}" data-href="/v2/spools/${s.id}">
+            <td><input type="checkbox" class="sel" data-id="${s.id}" ${selected.has(s.id) ? 'checked' : ''} style="margin: 0; accent-color: var(--accent);" /></td>
+            <td class="v2-mono">#${s.id}</td>
+            <td><div class="v2-row" style="gap: 10px;"><div class="v2-swatch" style="background: ${swatchBackground(s.filament)};"></div><div style="min-width: 0;"><div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px;">${esc(filamentName(s.filament))}</div><div class="v2-cell-sub">${esc(s.filament?.manufacturer?.name || '—')}${s.lot_number ? ' · lot ' + esc(s.lot_number) : ''}</div></div></div></td>
+            <td>${esc(s.filament?.material_type || '—')}</td>
+            <td>${statusPill(st?.key, st?.label || '—')}</td>
+            <td>${remainingHtml(s, { withCapacity: true })}</td>
+            <td>${whereHtml(loc, locName(s.location_id))}</td>
+            <td>${tag ? `<span title="${esc(tag)}">${ICON.rfid}</span>` : '<span class="v2-dim">—</span>'}</td>
+            <td class="r v2-num">${s.purchase_price != null ? esc(formatPrice(s.purchase_price, currency)) : '<span class="v2-dim">—</span>'}</td>
+            <td class="v2-dim">${esc(relTime(s.last_used_at))}</td>
+            <td><div class="v2-row" style="justify-content: flex-end; gap: 4px;"><a class="v2-btn sm ghost" href="/spools/${s.id}/print" title="Print label">Label</a><a class="v2-btn sm ghost" href="/spools/${s.id}/edit" title="Edit">Edit</a></div></td>
+          </tr>`
+        }).join('')
+      }
+      const start = (state.page - 1) * state.page_size + 1
+      el('pager-info').textContent = total ? `${start}–${Math.min(total, start + state.page_size - 1)} of ${total}` : ''
+      el<HTMLButtonElement>('pg-prev').disabled = state.page <= 1
+      el<HTMLButtonElement>('pg-next').disabled = start + state.page_size - 1 >= total
+      el('pg-size-label').textContent = `${state.page_size} / page`
+      document.querySelectorAll<HTMLElement>('th.sortable').forEach(th => {
+        const k = th.dataset.sort
+        th.textContent = th.textContent!.replace(/ [↑↓]$/, '') + (k === state.sort_by ? (state.sort_order === 'asc' ? ' ↑' : ' ↓') : '')
+      })
+      rows.querySelectorAll<HTMLElement>('tr[data-href]').forEach(tr => tr.addEventListener('click', e => {
+        const t = e.target as HTMLElement
+        if (t.closest('button, a, input')) return
+        window.location.href = tr.dataset.href!
+      }))
+      rows.querySelectorAll<HTMLInputElement>('input.sel').forEach(cb => cb.addEventListener('change', () => {
+        const id = Number(cb.dataset.id)
+        cb.checked ? selected.add(id) : selected.delete(id)
+        cb.closest('tr')?.classList.toggle('selected', cb.checked)
+        updateBulk()
+      }))
+      updateBulk()
+    }
+
+    function updateBulk() {
+      const n = selected.size
+      el('bulk-bar').style.display = n ? '' : 'none'
+      el('bulk-count').textContent = `${n} selected`
+      const all = el<HTMLInputElement>('sel-all')
+      all.checked = n > 0 && current.every(s => selected.has(s.id))
+      all.indeterminate = n > 0 && !all.checked
+    }
+
+    /* filters */
+    el<HTMLInputElement>('f-search').value = state.search
+    el<HTMLInputElement>('f-search').addEventListener('input', debounce(() => { state.search = el<HTMLInputElement>('f-search').value.trim(); state.page = 1; load() }, 300))
+    const bind = (id: string, key: keyof typeof state) => el<HTMLSelectElement>(id).addEventListener('change', () => { (state as any)[key] = el<HTMLSelectElement>(id).value; state.page = 1; load() })
+    bind('f-manufacturer', 'manufacturer_id'); bind('f-status', 'status'); bind('f-type', 'type'); bind('f-location', 'location_id'); bind('f-level', 'level')
+    el<HTMLInputElement>('f-archived').checked = state.archived
+    el<HTMLInputElement>('f-archived').addEventListener('change', () => { state.archived = el<HTMLInputElement>('f-archived').checked; state.page = 1; load() })
+    el('f-clear').addEventListener('click', () => {
+      Object.assign(state, { search: '', manufacturer_id: '', status: '', type: '', location_id: '', level: '', archived: false, page: 1 })
+      el<HTMLInputElement>('f-search').value = ''
+      el<HTMLInputElement>('f-archived').checked = false
+      ;['f-manufacturer', 'f-status', 'f-type', 'f-location', 'f-level'].forEach(id => (el<HTMLSelectElement>(id).value = ''))
+      load()
+    })
+    document.querySelectorAll<HTMLElement>('th.sortable').forEach(th => th.addEventListener('click', () => {
+      const k = th.dataset.sort!
+      if (state.sort_by === k) state.sort_order = state.sort_order === 'asc' ? 'desc' : 'asc'
+      else { state.sort_by = k; state.sort_order = k === 'id' || k === 'last_used_at' ? 'desc' : 'asc' }
+      load()
+    }))
+    el('pg-prev').addEventListener('click', () => { if (state.page > 1) { state.page--; load() } })
+    el('pg-next').addEventListener('click', () => { state.page++; load() })
+    el<HTMLSelectElement>('pg-size').addEventListener('change', () => { state.page_size = Number(el<HTMLSelectElement>('pg-size').value); state.page = 1; load() })
+    el<HTMLSelectElement>('pg-size').value = String(state.page_size)
+    el<HTMLInputElement>('sel-all').addEventListener('change', () => {
+      const on = el<HTMLInputElement>('sel-all').checked
+      current.forEach(s => on ? selected.add(s.id) : selected.delete(s.id))
+      render()
+    })
+
+    /* bulk */
+    el<HTMLSelectElement>('bulk-location').addEventListener('change', async () => {
+      const v = el<HTMLSelectElement>('bulk-location').value
+      if (!v) return
+      const r = await sendJson('/api/v1/spools/bulk', 'PATCH', { spool_ids: [...selected], location_id: Number(v) })
+      el<HTMLSelectElement>('bulk-location').value = ''
+      if (r.ok) { toast(`Moved ${selected.size} spool(s)`); selected.clear(); load() } else toast(r.error, 'bad')
+    })
+    el<HTMLSelectElement>('bulk-status').addEventListener('change', async () => {
+      const v = el<HTMLSelectElement>('bulk-status').value
+      if (!v) return
+      const r = await sendJson('/api/v1/spools/bulk/status', 'POST', { spool_ids: [...selected], status: v })
+      el<HTMLSelectElement>('bulk-status').value = ''
+      if (r.ok) { toast(`Updated ${selected.size} spool(s)`); selected.clear(); load() } else toast(r.error, 'bad')
+    })
+    el('bulk-print').addEventListener('click', () => { window.open(`/spools/print?ids=${[...selected].join(',')}`, '_blank') })
+    el('bulk-archive').addEventListener('click', async () => {
+      const ok = await (window as any).__fmConfirm?.(`Archive ${selected.size} spool(s)? They stay in the database and can be shown with the Archived filter.`, { title: 'Archive spools', okLabel: 'Archive' })
+      if (ok === false) return
+      const r = await sendJson('/api/v1/spools/bulk', 'DELETE', { spool_ids: [...selected], permanent: false })
+      if (r.ok) { toast('Archived'); selected.clear(); load() } else toast(r.error, 'bad')
+    })
+
+    /* boot */
+    slotMap = await loadSlotMap()
+    await loadLookups()
+    await load()
+    const refresh = debounce(async () => { slotMap = await loadSlotMap(); load() }, 800)
+    window.addEventListener('filaman:data-changed', (e: Event) => {
+      const ev = (e as CustomEvent).detail?.event
+      if (ev === 'spools_changed' || ev === 'slots_update' || ev === 'locations_changed') refresh()
+    })
+  </script>
+</Layout>

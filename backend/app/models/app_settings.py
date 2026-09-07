@@ -26,3 +26,5 @@ class AppSettings(Base, TimestampMixin):
     bambu_unmatched_profile_fallback: Mapped[str] = mapped_column(
         String(20), default="generic", nullable=False
     )
+    # Which frontend is served by default: "v1" (classic) or "v2" (console redesign).
+    ui_version: Mapped[str] = mapped_column(String(8), default="v1", nullable=False)

@@ -1,0 +1,179 @@
+---
+import Layout from '../../../layouts/Layout.astro'
+
+export function getStaticPaths() {
+  return [{ params: { id: 'detail' } }]
+}
+---
+
+<Layout title="FilaMan - Printer" variant="v2">
+  <div class="v2-page">
+    <div class="v2-crumbs">
+      <a href="/printers">Printers</a><span class="v2-sep">/</span><span class="v2-muted" id="crumb-name">…</span>
+      <div style="margin-left: auto;" class="v2-row" id="printer-switch"></div>
+    </div>
+
+    <div class="v2-body">
+      <div id="head" class="v2-row" style="gap: 16px; align-items: center; flex-wrap: wrap;"><div class="v2-empty" style="width: 100%;"><span class="v2-spin"></span></div></div>
+      <div id="alerts" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      <div class="v2-row" id="slots-summary"></div>
+      <div class="v2-grid v2-grid-2" id="ams-grid"></div>
+      <div class="v2-grid v2-grid-3" id="ht-grid"></div>
+      <div id="no-slots" class="v2-empty" hidden>This printer has no slots yet. Start the driver or configure slots in the <a id="no-slots-classic" href="#">classic printer page</a>.</div>
+    </div>
+  </div>
+
+  <script>
+    import { initI18n, translatePage, getLang } from '../../../lib/i18n'
+    import { esc, el, getJson, sendJson, toast, fmtG, relTime, ICON, debounce } from '../../../lib/v2'
+
+    await initI18n()
+    translatePage()
+
+    const id = Number(window.location.pathname.match(/\/v2\/printers\/(\d+)/)?.[1] || 0)
+    let printer: any = null
+    let display: any = null
+    let health: any = null
+
+    function stateInfo(p: any) {
+      const st = String(p?.state || '').toLowerCase()
+      if (p?.connected === false || health?.connected === false) return { cls: 'neutral', text: 'Offline' }
+      if (st.includes('run') || st.includes('print')) return { cls: 'ok', text: 'Printing' }
+      if (st.includes('pause')) return { cls: 'warn', text: 'Paused' }
+      if (st.includes('fail') || st.includes('err')) return { cls: 'bad', text: 'Error' }
+      if (st.includes('finish')) return { cls: 'neutral', text: 'Finished' }
+      if (st.includes('idle') || st === 'unknown' || !st) return { cls: 'neutral', text: health?.connected ? 'Idle' : (printer?.is_active ? 'Idle' : 'Inactive') }
+      return { cls: 'neutral', text: st }
+    }
+
+    function renderHead() {
+      const si = stateInfo(display)
+      const job = display?.job
+      const rawTemps = display?.temperatures
+      const online = display?.connected !== false && health?.connected !== false
+      const temps = online && rawTemps && ((rawTemps.nozzle ?? 0) > 0 || (rawTemps.bed ?? 0) > 0) ? rawTemps : null
+      const pct = job?.progress != null ? Math.round(job.progress) : null
+      const eta = job?.remaining_seconds != null ? new Date(Date.now() + job.remaining_seconds * 1000) : null
+      const running = !!health?.running
+      const syncActions: any[] = running ? (health?.sync_actions || []) : []
+      el('crumb-name').textContent = printer.name
+      document.title = `FilaMan - ${printer.name}`
+      el('head').innerHTML = `
+        <div style="min-width: 0;">
+          <div class="v2-row" style="gap: 10px; flex-wrap: wrap;">
+            <h1 class="v2-serif" style="margin: 0; font-size: 24px;">${esc(printer.name)}</h1>
+            <span class="v2-pill ${si.cls}"><span class="v2-dot"></span>${esc(si.text)}</span>
+            <span class="v2-pill neutral">${esc(printer.driver_key || 'no driver')}${printer.driver_config?.printer_id != null ? ` · #${esc(printer.driver_config.printer_id)}` : ''}</span>
+            ${running ? '' : '<span class="v2-pill warn">driver stopped</span>'}
+          </div>
+          <div class="v2-muted" style="font-size: 12.5px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            ${job?.name ? `${esc(job.name)}${job.layer != null ? ` · layer ${job.layer}${job.total_layers ? ' / ' + job.total_layers : ''}` : ''}` : 'No active job'}
+            ${temps ? ` · nozzle <span class="v2-num">${Math.round(temps.nozzle ?? 0)}${temps.nozzle_target ? '/' + Math.round(temps.nozzle_target) : ''} °C</span> · bed <span class="v2-num">${Math.round(temps.bed ?? 0)}${temps.bed_target ? '/' + Math.round(temps.bed_target) : ''} °C</span>${temps.chamber != null ? ` · chamber <span class="v2-num">${Math.round(temps.chamber)} °C</span>` : ''}` : ''}
+          </div>
+        </div>
+        ${pct != null ? `<div style="flex: 1 1 200px; max-width: 360px;">
+          <div class="v2-row" style="justify-content: space-between; font-size: 11.5px;"><span class="v2-muted v2-num">${pct}%</span><span class="v2-muted v2-num">${job.remaining_seconds != null ? `${Math.round(job.remaining_seconds / 60)} min left${eta ? ' · done ' + eta.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : ''}` : ''}</span></div>
+          <div class="v2-bar wide" style="height: 6px; margin-top: 4px;"><i style="width: ${pct}%;"></i></div>
+        </div>` : ''}
+        <div class="v2-row" style="margin-left: auto; flex-wrap: wrap; justify-content: flex-end;">
+          ${syncActions.map(a => `<button type="button" class="v2-btn ghost ${a.variant === 'danger' ? 'danger' : ''}" data-action="${esc(a.action)}">${a.action === 'trigger_sync' ? ICON.sync : ''}${esc(getLang() === 'de' ? (a.label_de || a.label) : a.label)}</button>`).join('')}
+          <button type="button" class="v2-btn ghost" id="btn-driver">${running ? 'Stop driver' : 'Start driver'}</button>
+          <a class="v2-btn ghost" href="/printers/${printer.id}">Settings</a>
+        </div>`
+      el('head').querySelectorAll<HTMLButtonElement>('[data-action]').forEach(b => b.addEventListener('click', async () => {
+        b.disabled = true
+        const r = await sendJson(`/api/v1/printers/${printer.id}/driver/action`, 'POST', { action: b.dataset.action, params: {} })
+        b.disabled = false
+        if (r.ok) { toast(r.data?.message || 'Done'); setTimeout(reload, 1500) } else toast(r.error, 'bad')
+      }))
+      el('btn-driver').addEventListener('click', async () => {
+        const r = await sendJson(`/api/v1/printers/${printer.id}/driver/${running ? 'stop' : 'start'}`, 'POST', {})
+        if (r.ok) { toast(running ? 'Driver stopped' : 'Driver started'); setTimeout(reload, 1500) } else toast(r.error, 'bad')
+      })
+    }
+
+    function levelClass(pct: number | null) { return pct == null ? '' : pct <= 7 ? 'crit' : pct <= 15 ? 'low' : '' }
+
+    function slotTile(unit: any, s: any) {
+      if (s.empty) {
+        return `<div class="v2-slot empty" title="${esc(unit.label)} ${esc(s.label)}">empty</div>`
+      }
+      const pct = s.remaining_percent
+      const grams = s.remaining_grams
+      const name = [s.manufacturer, s.filament || s.color_name].filter(Boolean).join(' · ')
+      return `<div class="v2-slot ${s.active ? 'active' : ''} ${s.spool_id ? 'clickable' : ''}" data-spool="${s.spool_id ?? ''}" data-unit="${unit.ams_id}" data-slot="${s.slot}" title="${esc(unit.label)} ${esc(s.label)}${s.last_used ? ' · last used ' + relTime(s.last_used) : ''}">
+        <div class="v2-slot-top">
+          <span class="v2-swatch" style="width: 22px; height: 22px; border-radius: 6px; background: ${esc(s.color || 'var(--bg-soft)')};"></span>
+          <span class="v2-slot-mat">${esc(s.material || '?')}</span>
+          <span class="v2-slot-id">${s.rfid ? ICON.rfid.replace('width: 14px; height: 14px;', 'width: 11px; height: 11px;') : ''}<span class="v2-mono v2-dim" style="font-size: 10.5px;">${s.spool_id ? '#' + s.spool_id : esc(s.label)}</span></span>
+        </div>
+        <div class="v2-slot-name">${esc(name || (s.spool_id ? 'Unknown filament' : 'Printer-only spool'))}</div>
+        <div class="v2-slot-bar">
+          ${pct != null ? `<div class="v2-bar ${levelClass(pct)}" style="flex: 1 1 0;"><i style="width: ${pct}%;"></i></div><span class="v2-num" style="font-size: 10.5px; color: var(--text-muted);">${pct}%${grams != null ? ' · ' + fmtG(grams) : ''}</span>` : `<span class="v2-dim" style="font-size: 10.5px;">${s.spool_id ? 'not weighed' : 'no FilaMan spool'}</span>`}
+          ${s.active ? '<span class="v2-pill ok" style="height: 16px; font-size: 9.5px; padding: 0 6px;">feeding</span>' : ''}
+        </div>
+      </div>`
+    }
+
+    function renderUnits() {
+      const units: any[] = display?.ams || []
+      const ams = units.filter(u => u.kind === 'ams')
+      const others = units.filter(u => u.kind !== 'ams')
+      const unitCard = (u: any) => `<div class="v2-card" style="padding: 10px;">
+        <div class="v2-row" style="justify-content: space-between; margin-bottom: 8px;">
+          <span style="font-weight: 700; font-size: 12.5px;">${esc(u.label)}</span>
+          <span class="v2-dim v2-num" style="font-size: 11px;">${[u.temperature != null ? `${Math.round(u.temperature)} °C` : '', u.humidity != null ? `${Math.round(u.humidity)}% RH` : '', u.drying?.status ? `drying ${esc(String(u.drying.status))}` : ''].filter(Boolean).join(' · ') || `${(u.slots || []).length} slot${(u.slots || []).length === 1 ? '' : 's'}`}</span>
+        </div>
+        <div class="v2-grid" style="grid-template-columns: repeat(${Math.max(1, Math.min(4, (u.slots || []).length))}, minmax(0, 1fr)); gap: 6px;">${(u.slots || []).map((s: any) => slotTile(u, s)).join('')}</div>
+      </div>`
+      el('ams-grid').innerHTML = ams.map(unitCard).join('')
+      el('ht-grid').innerHTML = others.map(unitCard).join('')
+      const all = units.flatMap(u => u.slots || [])
+      const loaded = all.filter(s => !s.empty)
+      const low = loaded.filter(s => s.remaining_percent != null && s.remaining_percent <= 15)
+      el('slots-summary').innerHTML = all.length ? `<span style="font-weight: 600;">${all.length} slots</span><span class="v2-dim">·</span><span class="v2-dim">${loaded.length} loaded · ${all.length - loaded.length} empty${low.length ? ` · ${low.length} low` : ''}</span><span class="v2-dim" style="margin-left: auto; font-size: 12px;">Click a spool for details</span>` : ''
+      el('no-slots').hidden = all.length > 0
+      el<HTMLAnchorElement>('no-slots-classic').href = `/printers/${printer.id}`
+      // alerts: driver/printer alerts + low & feeding
+      const alerts: string[] = []
+      for (const a of display?.alerts || []) alerts.push(`<div class="v2-notice ${a.severity === 'danger' ? 'bad' : 'warn'}">${ICON.warn}<span><b>${esc(a.title)}</b>${a.detail ? ' — ' + esc(a.detail) : ''}</span><span class="v2-dim" style="margin-left: auto; font-size: 11px;">${esc(a.source || '')}</span></div>`)
+      const feeding = loaded.find(s => s.active)
+      if (feeding && feeding.remaining_percent != null && feeding.remaining_percent <= 15) {
+        const unit = units.find(u => (u.slots || []).includes(feeding))
+        const twins = loaded.filter(s => s !== feeding && s.material === feeding.material && s.filament && s.filament === feeding.filament)
+        const twinTxt = twins.length ? `Same filament loaded in ${twins.map(t => { const u = units.find(x => (x.slots || []).includes(t)); return `${u?.label} ${t.label} (${t.remaining_percent ?? '?'}%)` }).join(', ')}.` : `No other spool of ${esc(feeding.filament || feeding.material || 'this filament')} is loaded.`
+        alerts.push(`<div class="v2-notice warn">${ICON.warn}<span><b>${esc(unit?.label || '')} ${esc(feeding.label)}</b> is at ${feeding.remaining_percent}% and feeding. ${twinTxt}</span>${feeding.spool_id ? `<a class="v2-btn sm" style="margin-left: auto;" href="/v2/spools/${feeding.spool_id}">Open spool</a>` : ''}</div>`)
+      }
+      el('alerts').innerHTML = alerts.join('')
+      // interactions
+      document.querySelectorAll<HTMLElement>('.v2-slot[data-spool]').forEach(t => t.addEventListener('click', () => { if (t.dataset.spool) window.location.href = `/v2/spools/${t.dataset.spool}` }))
+    }
+
+    async function renderSwitch() {
+      const d = await getJson<any>('/api/v1/printers?page=1&page_size=50')
+      const items: any[] = d?.items || []
+      el('printer-switch').innerHTML = items.map(p => `<a class="v2-chip ${p.id === id ? 'on' : ''}" href="/v2/printers/${p.id}" style="text-decoration: none;">${esc(p.name)}</a>`).join('') + `<a class="v2-chip" href="/display" style="text-decoration: none;" title="Kiosk display">Kiosk</a>`
+    }
+
+    async function reload() {
+      const [p, d, h] = await Promise.all([
+        getJson<any>(`/api/v1/printers/${id}`),
+        getJson<any>(`/api/v1/display/printers/${id}`),
+        getJson<any>(`/api/v1/printers/${id}/driver/health?refresh=1`),
+      ])
+      if (!p) { el('head').innerHTML = '<div class="v2-empty">Printer not found. <a href="/printers">Back to printers</a></div>'; return }
+      printer = p; display = d?.printers?.[0] || null; health = h
+      renderHead(); renderUnits()
+    }
+
+    renderSwitch()
+    await reload()
+    const refresh = debounce(reload, 600)
+    window.addEventListener('filaman:data-changed', (e: Event) => {
+      const ev = (e as CustomEvent).detail
+      if (ev?.printer_id != null && Number(ev.printer_id) !== id) return
+      if (['slots_update', 'printer_update', 'printer_status', 'spools_changed'].includes(ev?.event)) refresh()
+    })
+    setInterval(reload, 30000)
+  </script>
+</Layout>

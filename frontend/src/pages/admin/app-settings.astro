@@ -177,6 +177,23 @@ import Layout from '../../layouts/Layout.astro'
       </p>
     </div>
 
+    <!-- User Interface Card (full width) -->
+    <div class="fm-card" style="padding: 20px;">
+      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;" data-i18n="admin.uiVersionTitle">User Interface</h2>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 16px;" data-i18n="admin.uiVersionDesc">
+        Choose which interface FilaMan opens for everyone. The classic interface and the console
+        redesign share the same data; switching is instant and can be reverted at any time.
+      </p>
+      <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="ui-version" data-i18n="admin.uiVersionLabel">Interface</label>
+      <select id="ui-version" class="fm-select" style="max-width: 320px;">
+        <option value="v1" data-i18n="admin.uiVersionV1">Classic (v1)</option>
+        <option value="v2" data-i18n="admin.uiVersionV2">Console redesign (v2)</option>
+      </select>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 8px 0 0;" data-i18n="admin.uiVersionHint">
+        The redesign covers the dashboard, spool list, spool detail and printer pages. Every other page keeps its current layout under the new navigation.
+      </p>
+    </div>
+
     <!-- Form message AND Save button OUTSIDE the cards, below the grid -->
     <div id="form-message" class="hidden" style="padding: 10px 14px; border-radius: 8px; font-size: 0.85rem;"></div>
     <button type="submit" id="save-btn" class="fm-btn fm-btn-primary" style="justify-self: start; padding: 10px 28px;" data-i18n="admin.appSettingsSave">Save</button>
@@ -207,6 +224,7 @@ import Layout from '../../layouts/Layout.astro'
       const rfidProtocolSection = document.getElementById('rfid-protocol-section')!
       const defaultSpoolCoreWeightInput = document.getElementById('default-spool-core-weight') as HTMLInputElement
       const bambuUnmatchedFallbackSelect = document.getElementById('bambu-unmatched-fallback') as HTMLSelectElement
+      const uiVersionSelect = document.getElementById('ui-version') as HTMLSelectElement
 
       function showMessage(text: string, isError: boolean) {
         formMessage.textContent = text
@@ -240,6 +258,7 @@ import Layout from '../../layouts/Layout.astro'
           updateRfidProtocolVisibility()
           defaultSpoolCoreWeightInput.value = data.default_spool_core_weight_g != null ? String(data.default_spool_core_weight_g) : ''
           bambuUnmatchedFallbackSelect.value = data.bambu_unmatched_profile_fallback || 'generic'
+          uiVersionSelect.value = data.ui_version || 'v1'
         } else {
           showMessage(t('admin.appSettingsLoadFailed'), true)
         }
@@ -262,6 +281,7 @@ import Layout from '../../layouts/Layout.astro'
           rfid_protocol: rfidProtocolSelect.value,
           default_spool_core_weight_g: rawCoreWeight !== '' ? parseFloat(rawCoreWeight) : null,
           bambu_unmatched_profile_fallback: bambuUnmatchedFallbackSelect.value,
+          ui_version: uiVersionSelect.value,
         }
 
         try {
@@ -278,6 +298,8 @@ import Layout from '../../layouts/Layout.astro'
 
           if (resp.ok) {
             localStorage.setItem('currency', currencySelect.value)
+            localStorage.setItem('fm_ui', uiVersionSelect.value)
+            document.documentElement.classList.toggle('ui-v2', uiVersionSelect.value === 'v2')
             showMessage(t('admin.appSettingsSaveSuccess'), false)
           } else {
             const err = await resp.json().catch(() => ({}))

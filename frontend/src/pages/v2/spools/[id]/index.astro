@@ -1,0 +1,417 @@
+---
+import Layout from '../../../../layouts/Layout.astro'
+
+export function getStaticPaths() {
+  return [{ params: { id: 'detail' } }]
+}
+---
+
+<Layout title="FilaMan - Spool" variant="v2">
+  <div class="v2-page">
+    <div class="v2-crumbs">
+      <a href="/v2/spools/">Spools</a><span class="v2-sep">/</span><span class="v2-muted" id="crumb-id">#…</span>
+      <span style="margin-left: auto;" class="v2-dim" id="crumb-meta"></span>
+      <a id="classic-link" href="#" class="v2-dim" title="Open this spool in the classic interface">Classic view</a>
+    </div>
+
+    <div class="v2-body" id="page" style="gap: 0;">
+      <div id="hero" class="v2-row" style="align-items: flex-start; gap: 20px;"><div class="v2-empty" style="width: 100%;"><span class="v2-spin"></span></div></div>
+      <div id="slot-overview" class="v2-card" style="margin-top: 14px; padding: 10px 14px; display: none; flex-direction: column; gap: 8px;"></div>
+
+      <div id="cards" class="v2-grid v2-grid-4" style="margin-top: 18px; display: none;">
+        <div class="v2-card v2-row" style="padding: 12px 14px; grid-column: span 2; gap: 16px; align-items: center;">
+          <div style="flex: 1 1 0; min-width: 0;">
+            <div class="v2-field"><label>Remaining</label><div class="v2-value v2-num" style="font-size: 26px;" id="c-remaining">—</div></div>
+            <div class="v2-bar wide" style="height: 8px; margin-top: 8px;" id="c-bar"><i style="width: 0;"></i></div>
+            <div class="v2-dim v2-row" style="font-size: 11px; margin-top: 6px; justify-content: space-between;"><span id="c-threshold"></span><span class="v2-num" id="c-gross"></span></div>
+          </div>
+          <div style="width: 1px; align-self: stretch; background: var(--border);"></div>
+          <div style="width: 160px;">
+            <div class="v2-field"><label>Usage</label><div class="v2-value v2-num" id="c-usage">—</div></div>
+            <div class="v2-dim" style="font-size: 11px; margin-top: 4px;" id="c-usage-sub"></div>
+          </div>
+        </div>
+        <div class="v2-card" style="padding: 12px 14px;">
+          <div class="v2-field"><label>Slicer profile</label><div class="v2-value v2-row" style="gap: 6px;" id="c-profile">—</div></div>
+          <div class="v2-dim v2-mono" style="font-size: 11px; margin-top: 4px;" id="c-profile-sub"></div>
+        </div>
+        <div class="v2-card" style="padding: 12px 14px;">
+          <div class="v2-field"><label>Purchase</label><div class="v2-value v2-num" id="c-price">—</div></div>
+          <div class="v2-dim" style="font-size: 11px; margin-top: 4px;" id="c-price-sub"></div>
+        </div>
+      </div>
+
+      <div class="v2-tabs" style="margin-top: 20px;" id="tabs">
+        <button type="button" data-tab="overview" class="active">Overview</button>
+        <button type="button" data-tab="slicer">Slicer profile</button>
+        <button type="button" data-tab="params">Printer params</button>
+        <button type="button" data-tab="history">History<span class="v2-tab-count" id="tab-history-count"></span></button>
+        <button type="button" data-tab="fields">Extra fields<span class="v2-tab-count" id="tab-fields-count"></span></button>
+      </div>
+
+      <!-- Overview -->
+      <section class="v2-tabpanel" data-panel="overview" style="padding-top: 16px;">
+        <div class="v2-grid v2-grid-main">
+          <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+            <div class="v2-card">
+              <div class="v2-card-h"><span>Weight history</span><span class="v2-dim" style="font-weight: 500; font-size: 12px;" id="chart-range"></span></div>
+              <div class="v2-card-body" id="chart"><div class="v2-empty"><span class="v2-spin"></span></div></div>
+            </div>
+            <div class="v2-card">
+              <div class="v2-card-h"><span>Recent events</span><a href="#" data-goto="history">All →</a></div>
+              <table class="v2-table"><tbody id="recent-events"></tbody></table>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+            <div class="v2-card">
+              <div class="v2-card-h"><span>Details</span><a id="edit-link" href="#">Edit</a></div>
+              <div style="padding: 4px 14px 8px;" class="v2-grid v2-grid-2" id="details"></div>
+            </div>
+            <div class="v2-card">
+              <div class="v2-card-h"><span>Filament</span><a id="filament-link" href="#">Open →</a></div>
+              <div class="v2-card-body" style="display: flex; flex-direction: column; gap: 8px; font-size: 12.5px;" id="filament-box"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Slicer profile (reuses the classic picker module) -->
+      <section class="v2-tabpanel" data-panel="slicer" hidden style="padding-top: 16px;">
+        <div id="slicer-profile-section" class="hidden">
+          <div class="v2-card v2-card-body">
+            <div class="v2-field"><label>Bambu slicer profile</label></div>
+            <div id="slicer-profile-picker"></div>
+            <p class="v2-dim" style="font-size: 12px; margin: 8px 0 0;">Synced to this spool in Bambuddy across all Bambu printers.</p>
+            <div id="slicer-profile-coverage" class="hidden" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
+            <span id="slicer-profile-msg" class="hidden" style="font-size: 0.85rem;"></span>
+          </div>
+        </div>
+        <div id="slicer-none" class="v2-empty" hidden>No Bambu printer is connected, so there is no slicer profile to manage.</div>
+      </section>
+
+      <!-- Printer params (read-only summary; editing stays in the classic page) -->
+      <section class="v2-tabpanel" data-panel="params" hidden style="padding-top: 16px;">
+        <div class="v2-card">
+          <div class="v2-card-h">
+            <span class="v2-row"><span>Printer parameters</span><span class="v2-chip" style="margin-left: 8px;"><span id="params-printer-label">Printer</span><select id="params-printer"></select></span></span>
+            <a id="params-classic" href="#">Edit in classic view →</a>
+          </div>
+          <table class="v2-table"><thead><tr><th>Parameter</th><th>Spool value</th><th>Filament default</th></tr></thead><tbody id="params-rows"><tr><td colspan="3" class="v2-empty">Pick a printer.</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <!-- History -->
+      <section class="v2-tabpanel" data-panel="history" hidden style="padding-top: 16px;">
+        <div class="v2-card">
+          <table class="v2-table"><thead><tr><th>When</th><th>Type</th><th>Note</th><th class="r">Measured</th><th class="r">Δ</th></tr></thead><tbody id="history-rows"></tbody></table>
+        </div>
+      </section>
+
+      <!-- Extra fields -->
+      <section class="v2-tabpanel" data-panel="fields" hidden style="padding-top: 16px;">
+        <div class="v2-card">
+          <div class="v2-card-h"><span>Extra fields</span><a id="fields-edit" href="#">Edit</a></div>
+          <table class="v2-table"><tbody id="fields-rows"></tbody></table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    import { t, initI18n, translatePage } from '../../../../lib/i18n'
+    import { formatPrice, initCurrency } from '../../../../lib/format'
+    import { getAbortSignal, isAbortError } from '../../../../lib/abort'
+    import { initPerModelProfilePicker } from '../../../../lib/cloud-profile-picker'
+    import { openSpoolActionModal, openWriteTagModal, loadActiveDevices, removeRfidTag, duplicateSpool, openDeleteModal } from '../../../../lib/spool-actions'
+    import { initSlotOverview } from '../../../../lib/spool-slot-overview'
+    import { esc, el, getJson, csrf, swatchBackground, filamentName, colorName, fmtG, fmtDate, fmtDateTime, relTime, remainingLevel, remainingPercent, spoolCapacity, barClass, levelColorVar, statusPill, loadSlotMap, whereHtml, ICON, debounce, type SlotLocation } from '../../../../lib/v2'
+
+    await initI18n()
+    translatePage()
+    const currency = await initCurrency()
+
+    const id = Number(window.location.pathname.match(/\/v2\/spools\/(\d+)/)?.[1] || 0)
+    let spool: any = null
+    let statuses: any[] = []
+    let locations: any[] = []
+    let events: any[] = []
+    let slotMap = new Map<number, SlotLocation>()
+
+    /* tabs */
+    const showTab = (name: string) => {
+      document.querySelectorAll<HTMLButtonElement>('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name))
+      document.querySelectorAll<HTMLElement>('.v2-tabpanel').forEach(p => (p.hidden = p.dataset.panel !== name))
+      history.replaceState(null, '', `#${name}`)
+    }
+    document.querySelectorAll<HTMLButtonElement>('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab!)))
+    document.querySelectorAll<HTMLElement>('[data-goto]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showTab(a.dataset.goto!) }))
+    if (location.hash) showTab(location.hash.slice(1))
+
+    function statusOf(s: any) { return statuses.find(x => x.id === s.status_id) }
+    function locName(lid: number | null) { return locations.find(l => l.id === lid)?.name }
+
+    let activeDevices: any[] = []
+    const ctx = () => ({ spool, statuses, locations, onDone: reload })
+
+    function renderHero() {
+      const st = statusOf(spool)
+      const loc = slotMap.get(spool.id)
+      const tags = [spool.rfid_uid, spool.rfid_uid_2].filter(Boolean)
+      const hasTag = tags.length > 0
+      el('crumb-id').textContent = `#${spool.id}`
+      el('crumb-meta').textContent = `Created ${fmtDate(spool.created_at)} · last used ${relTime(spool.last_used_at)}`
+      el<HTMLAnchorElement>('classic-link').href = `/spools/${spool.id}`
+      document.title = `FilaMan - Spool #${spool.id}`
+      el('hero').innerHTML = `
+        <div class="v2-swatch lg" style="background: ${swatchBackground(spool.filament)};"></div>
+        <div style="flex: 1 1 0; min-width: 0;">
+          <div class="v2-row" style="gap: 10px; flex-wrap: wrap;">
+            <h1 class="v2-serif" style="margin: 0; font-size: 24px;">${esc(filamentName(spool.filament))}</h1>
+            ${statusPill(st?.key, st?.label || '—')}
+          </div>
+          <div class="v2-muted v2-row" style="font-size: 13px; margin-top: 4px; gap: 14px; flex-wrap: wrap;">
+            <span>Spool <span class="v2-mono">#${spool.id}</span></span>
+            <span>Filament <a href="/filaments/${spool.filament_id}" style="color: var(--accent-2); text-decoration: none;">#${spool.filament_id}</a></span>
+            <span>${esc(spool.filament?.manufacturer?.name || '—')} · ${esc(spool.filament?.material_type || '—')} · ${spool.filament?.diameter_mm ?? '—'} mm</span>
+            ${spool.lot_number ? `<span>Lot <span class="v2-mono">${esc(spool.lot_number)}</span></span>` : ''}
+          </div>
+          <div class="v2-row" style="gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+            ${whereHtml(loc, locName(spool.location_id))}
+            ${tags.map((u, i) => `<span class="v2-pill neutral">${ICON.rfid}Tag ${i + 1} · <span class="v2-mono">${esc(u)}</span><button type="button" class="v2-tag-remove" data-slot="${i + 1}" data-uid="${esc(u)}" title="${esc(t('rfid.removeTag') || 'Remove tag')}" style="border: 0; background: none; color: var(--text-dim); cursor: pointer; padding: 0 0 0 4px; font-size: 12px; line-height: 1;">✕</button></span>`).join('')}
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end; flex-shrink: 0;">
+          <div class="v2-row" style="flex-wrap: wrap; justify-content: flex-end;">
+            <button type="button" class="v2-btn" id="btn-rfid" title="${esc(t('rfid.writeTag'))}" style="${hasTag ? 'color: var(--success-text);' : ''}">${ICON.rfid}<span data-i18n="rfid.writeTag">${esc(t('rfid.writeTag'))}</span></button>
+            <a class="v2-btn" href="/spools/${spool.id}/edit">${esc(t('common.edit') || 'Edit')}</a>
+            <button type="button" class="v2-btn" id="btn-duplicate">${esc(t('common.duplicate'))}</button>
+            <button type="button" class="v2-btn danger" id="btn-delete">${esc(t('common.delete'))}</button>
+          </div>
+          <div class="v2-row" style="flex-wrap: wrap; justify-content: flex-end;">
+            <button type="button" class="v2-btn primary" id="btn-measurement">${esc(t('spools.recordWeight'))}</button>
+            <button type="button" class="v2-btn" id="btn-adjustment" style="color: var(--accent-2);">${esc(t('spools.adjust'))}</button>
+            <button type="button" class="v2-btn" id="btn-status" style="color: var(--accent-3);">${esc(t('spools.changeStatus'))}</button>
+            <button type="button" class="v2-btn" id="btn-move">${esc(t('spools.move'))}</button>
+            <a class="v2-btn" href="/spools/${spool.id}/print" style="color: var(--success-text);">${esc(t('spools.printLabel'))}</a>
+          </div>
+        </div>`
+      el('btn-measurement').addEventListener('click', () => openSpoolActionModal('measurement', ctx()))
+      el('btn-adjustment').addEventListener('click', () => openSpoolActionModal('adjustment', ctx()))
+      el('btn-status').addEventListener('click', () => openSpoolActionModal('status', ctx()))
+      el('btn-move').addEventListener('click', () => openSpoolActionModal('move', ctx()))
+      el('btn-rfid').addEventListener('click', () => openWriteTagModal(ctx(), activeDevices))
+      el('btn-duplicate').addEventListener('click', () => duplicateSpool(spool))
+      el('btn-delete').addEventListener('click', () => openDeleteModal(spool, '/spools'))
+      el('hero').querySelectorAll<HTMLButtonElement>('.v2-tag-remove').forEach(b => b.addEventListener('click', () => removeRfidTag(spool, Number(b.dataset.slot), b.dataset.uid || '', reload)))
+    }
+
+    function renderCards() {
+      el('cards').style.display = ''
+      const rem = spool.remaining_weight_g
+      const cap = spoolCapacity(spool)
+      const pct = remainingPercent(spool)
+      const level = remainingLevel(spool)
+      el('c-remaining').innerHTML = rem == null ? '—' : `<span style="color: ${levelColorVar(level)};">${fmtG(rem)}</span> <span class="v2-muted" style="font-size: 13px; font-weight: 500;">${cap ? `of ${fmtG(cap)}${pct != null ? ` · ${pct}%` : ''}` : ''}</span>`
+      const bar = el('c-bar'); bar.className = `v2-bar wide ${barClass(level)}`
+      bar.innerHTML = `<i style="width: ${pct ?? 0}%;"></i>` + (cap && spool.low_weight_threshold_g ? `<span class="v2-mark" style="left: ${Math.min(100, (spool.low_weight_threshold_g / cap) * 100)}%;"></span>` : '')
+      el('c-threshold').textContent = spool.low_weight_threshold_g ? `low at ${fmtG(spool.low_weight_threshold_g)}` : 'no low threshold'
+      const tare = (spool.empty_spool_weight_g || 0) + (spool.spool_core_weight_g || 0)
+      el('c-gross').textContent = rem != null && tare ? `gross ${fmtG(rem + tare)} · spool ${fmtG(tare)}` : (spool.initial_total_weight_g ? `initial ${fmtG(spool.initial_total_weight_g)}` : '')
+      // usage from event deltas (measurements, adjustments, consumptions)
+      const series = remainingSeries()
+      const cutoff = Date.now() - 30 * 86400000
+      const recent = series.filter(p => p.t >= cutoff)
+      const weighIns = events.filter(e => e.measured_weight_g != null)
+      if (recent.length >= 2) {
+        const used = recent[0].w - recent[recent.length - 1].w
+        el('c-usage').textContent = `${used >= 0 ? '−' : '+'}${fmtG(Math.abs(used))}`
+        el('c-usage-sub').textContent = `in 30 days · last weighed ${relTime(weighIns.slice().sort((a, b) => new Date(b.event_at).getTime() - new Date(a.event_at).getTime())[0]?.event_at)}`
+      } else if (weighIns.length) {
+        const last = weighIns.slice().sort((a, b) => new Date(b.event_at).getTime() - new Date(a.event_at).getTime())[0]
+        el('c-usage').textContent = 'last weighed'
+        el('c-usage-sub').textContent = `${relTime(last.event_at)} · ${weighIns.length} weigh-in${weighIns.length === 1 ? '' : 's'} total`
+      } else {
+        el('c-usage').textContent = '—'
+        el('c-usage-sub').textContent = 'never weighed'
+      }
+      // slicer profile summary from custom fields
+      const cf = spool.custom_fields || {}
+      const name = cf.bambu_slicer_filament_name || cf.bambu_profile_base_name || ''
+      const code = cf.bambu_slicer_filament || cf.bambu_idx || ''
+      el('c-profile').innerHTML = name ? `<span style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent);"></span><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${esc(name)}</span>` : '<span class="v2-dim" style="font-weight: 500;">not set</span>'
+      el('c-profile-sub').textContent = code ? String(code) : (name ? '' : 'pick one in the Slicer profile tab')
+      // purchase
+      el('c-price').textContent = spool.purchase_price != null ? formatPrice(spool.purchase_price, currency) : '—'
+      const perG = spool.purchase_price != null && cap ? formatPrice(spool.purchase_price / cap, currency) : ''
+      el('c-price-sub').textContent = [spool.purchase_date ? fmtDate(spool.purchase_date) : '', perG ? `${perG} / g` : ''].filter(Boolean).join(' · ')
+    }
+
+    let defaultCore = 0
+    /** Tare the backend subtracts from a scale reading: spool weight (or filament default) + core (or global default). */
+    function tare(): number | null {
+      const base = spool.empty_spool_weight_g != null ? Number(spool.empty_spool_weight_g) : (spool.filament?.default_spool_weight_g != null ? Number(spool.filament.default_spool_weight_g) : null)
+      if (base == null) return null
+      const core = spool.spool_core_weight_g != null ? Number(spool.spool_core_weight_g) : defaultCore
+      return base + (core || 0)
+    }
+    /** Remaining weight over time: scale readings minus tare, adjustments/consumptions applied as deltas. */
+    function remainingSeries(): { t: number; w: number }[] {
+      const tr = tare()
+      const sorted = events.slice().sort((a, b) => new Date(a.event_at).getTime() - new Date(b.event_at).getTime())
+      const pts: { t: number; w: number }[] = []
+      let w: number | null = null
+      for (const e of sorted) {
+        const t = new Date(e.event_at).getTime()
+        if (e.measured_weight_g != null) {
+          w = Math.max(0, Number(e.measured_weight_g) - (tr ?? 0))
+          pts.push({ t, w })
+        } else if (e.delta_weight_g != null && w != null) {
+          w = Math.max(0, w + Number(e.delta_weight_g))
+          pts.push({ t, w })
+        }
+      }
+      if (spool.remaining_weight_g != null) pts.push({ t: Date.now(), w: Number(spool.remaining_weight_g) })
+      return pts
+    }
+
+    function renderChart() {
+      const pts = remainingSeries().filter(p => Number.isFinite(p.w))
+      const box = el('chart')
+      const weighIns = events.filter(e => e.measured_weight_g != null).length
+      if (pts.length < 2) { box.innerHTML = `<div class="v2-empty">${weighIns ? 'The chart appears once there are two weigh-ins or adjustments.' : 'No weigh-ins recorded yet.'}</div>`; el('chart-range').textContent = ''; return }
+      const W = 560, H = 120, pad = 6
+      const t0 = pts[0].t, t1 = pts[pts.length - 1].t
+      const cap = spoolCapacity(spool) || 0
+      const maxW = Math.max(cap, ...pts.map(m => m.w), 1)
+      const x = (t: number) => t1 === t0 ? W : ((t - t0) / (t1 - t0)) * W
+      const y = (w: number) => H - pad - (Math.max(0, w) / maxW) * (H - 2 * pad)
+      const path = pts.map(m => `${x(m.t).toFixed(1)} ${y(m.w).toFixed(1)}`)
+      const thr = spool.low_weight_threshold_g
+      const marks = events.filter(e => e.measured_weight_g != null).map(e => ({ t: new Date(e.event_at).getTime(), label: `${fmtDateTime(e.event_at)} · reading ${fmtG(e.measured_weight_g)}` }))
+      const wAt = (t: number) => { let last = pts[0].w; for (const p of pts) { if (p.t <= t) last = p.w; else break } return last }
+      box.innerHTML = `<svg viewBox="0 0 ${W} ${H + 16}" style="width: 100%; height: 136px; display: block;">
+        <path d="M${path.join(' L')} L${W} ${H} L0 ${H} Z" fill="var(--group-header-bg)"></path>
+        <path d="M${path.join(' L')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"></path>
+        ${marks.map(m => `<circle cx="${x(m.t).toFixed(1)}" cy="${y(wAt(m.t)).toFixed(1)}" r="3" fill="var(--accent)"><title>${esc(m.label)}</title></circle>`).join('')}
+        ${thr ? `<line x1="0" y1="${y(thr).toFixed(1)}" x2="${W}" y2="${y(thr).toFixed(1)}" stroke="var(--accent-3)" stroke-dasharray="4 4" opacity="0.7"></line><text x="${W - 4}" y="${(y(thr) - 4).toFixed(1)}" text-anchor="end" fill="var(--accent-3)" font-size="10" font-family="var(--font-sans)">low ${fmtG(thr)}</text>` : ''}
+        <text x="0" y="${H + 12}" fill="var(--text-dim)" font-size="10" font-family="var(--font-sans)">${esc(fmtDate(new Date(t0).toISOString()))}</text>
+        <text x="${W}" y="${H + 12}" text-anchor="end" fill="var(--text-dim)" font-size="10" font-family="var(--font-sans)">today</text>
+      </svg>`
+      el('chart-range').textContent = `${weighIns} weigh-ins · remaining over time`
+    }
+
+    function eventRow(e: any, compact = false) {
+      const type = String(e.event_type || '')
+      const cls = type.includes('measure') || type === 'weigh' ? 'ok' : type.includes('move') ? 'info' : type.includes('status') || type === 'opened' || type === 'empty' ? 'warn' : 'neutral'
+      const label = type.replace(/_/g, ' ')
+      const note = e.note || (e.to_location_id ? `→ ${locName(e.to_location_id) || 'location ' + e.to_location_id}` : '') || (e.meta?.to ? `→ ${e.meta.to}` : '')
+      return `<tr>
+        <td class="v2-dim v2-num" style="width: 150px;">${esc(compact ? relTime(e.event_at) : fmtDateTime(e.event_at))}</td>
+        <td><span class="v2-pill ${cls}">${esc(label)}</span></td>
+        <td style="white-space: normal;">${esc(note)}</td>
+        <td class="r v2-num">${e.measured_weight_g != null ? fmtG(e.measured_weight_g) : '<span class="v2-dim">—</span>'}</td>
+        ${compact ? '' : `<td class="r v2-num v2-dim">${e.delta_weight_g != null ? `${e.delta_weight_g > 0 ? '+' : ''}${Math.round(e.delta_weight_g)} g` : '—'}</td>`}
+      </tr>`
+    }
+
+    function renderEvents() {
+      const sorted = events.slice().sort((a, b) => new Date(b.event_at).getTime() - new Date(a.event_at).getTime())
+      el('recent-events').innerHTML = sorted.slice(0, 5).map(e => eventRow(e, true)).join('') || '<tr><td class="v2-empty">No events yet.</td></tr>'
+      el('history-rows').innerHTML = sorted.map(e => eventRow(e)).join('') || '<tr><td colspan="5" class="v2-empty">No events yet.</td></tr>'
+      el('tab-history-count').textContent = String(events.length)
+    }
+
+    function renderDetails() {
+      const f = spool.filament || {}
+      const row = (label: string, value: string, mono = false) => `<div class="v2-field" style="padding: 8px 0; border-bottom: 1px solid var(--border);"><label>${esc(label)}</label><div class="v2-value ${mono ? 'v2-mono' : ''}" style="font-weight: 500;">${value}</div></div>`
+      el('details').innerHTML = [
+        row('Initial weight', fmtG(spool.initial_total_weight_g)),
+        row('Empty spool', spool.spool_core_weight_g ? `${fmtG(spool.empty_spool_weight_g)} + core ${fmtG(spool.spool_core_weight_g)}` : fmtG(spool.empty_spool_weight_g)),
+        row('Home location', esc(locName(spool.location_id) || 'none')),
+        row('Low threshold', fmtG(spool.low_weight_threshold_g)),
+        row('Spool', esc([spool.spool_material, spool.spool_outer_diameter_mm ? `Ø ${spool.spool_outer_diameter_mm} mm` : '', spool.spool_width_mm ? `${spool.spool_width_mm} mm wide` : ''].filter(Boolean).join(' · ') || '—')),
+        row('External ID', esc(spool.external_id || '—'), true),
+        row('Stocked in', fmtDate(spool.stocked_in_at)),
+        row('Last used', spool.last_used_at ? `${fmtDate(spool.last_used_at)} <span class="v2-dim">(${relTime(spool.last_used_at)})</span>` : '—'),
+      ].join('')
+      el<HTMLAnchorElement>('edit-link').href = `/spools/${spool.id}/edit`
+      el<HTMLAnchorElement>('filament-link').href = `/filaments/${spool.filament_id}`
+      const cfg = f.custom_fields || {}
+      const temps = [cfg.nozzle_temp_min ?? cfg.nozzle_min, cfg.nozzle_temp_max ?? cfg.nozzle_max].filter(v => v != null)
+      const line = (k: string, v: string) => `<div class="v2-row" style="justify-content: space-between; gap: 12px;"><span class="v2-muted">${k}</span><span class="v2-num" style="text-align: right;">${v}</span></div>`
+      el('filament-box').innerHTML = [
+        line('Designation', esc(f.designation || '—')),
+        line('Colour', `<span class="v2-row" style="gap: 6px; justify-content: flex-end;"><span class="v2-swatch" style="width: 12px; height: 12px; background: ${swatchBackground(f)};"></span>${esc(colorName(f) || '—')}${f.colors?.[0]?.color?.hex_code ? ` <span class="v2-mono v2-dim">${esc(f.colors[0].color.hex_code)}</span>` : ''}</span>`),
+        line('Density', f.density_g_cm3 ? `${f.density_g_cm3} g/cm³` : '—'),
+        temps.length ? line('Nozzle', `${temps.join('–')} °C`) : '',
+        line('Net weight (new)', fmtG(f.raw_material_weight_g)),
+        line('Other spools of this filament', String(Math.max(0, (f.spool_count ?? 1) - 1))),
+      ].join('')
+    }
+
+    function renderFields() {
+      const cf = spool.custom_fields || {}
+      const defs: any[] = spool.custom_field_definitions || []
+      const label = (k: string) => defs.find(d => d.key === k)?.label || k
+      const entries = Object.entries(cf).filter(([, v]) => v !== null && v !== '' && typeof v !== 'object')
+      el('tab-fields-count').textContent = entries.length ? String(entries.length) : ''
+      el('fields-rows').innerHTML = entries.map(([k, v]) => `<tr><td class="v2-mono v2-muted" style="width: 40%;">${esc(label(k))}</td><td style="white-space: normal;">${esc(String(v))}</td></tr>`).join('') || '<tr><td class="v2-empty">No extra fields set.</td></tr>'
+      el<HTMLAnchorElement>('fields-edit').href = `/spools/${spool.id}/edit`
+    }
+
+    let printers: any[] = []
+    async function setupParams() {
+      const d = await getJson<any>('/api/v1/printers?page=1&page_size=50')
+      printers = (d?.items || []).filter((p: any) => p.is_active !== false)
+      const sel = el<HTMLSelectElement>('params-printer')
+      sel.innerHTML = '<option value="">Printer</option>' + printers.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')
+      el<HTMLAnchorElement>('params-classic').href = `/spools/${spool.id}`
+      sel.addEventListener('change', async () => {
+        el('params-printer-label').textContent = sel.options[sel.selectedIndex]?.text || 'Printer'
+        if (!sel.value) return
+        const [sp, fp] = await Promise.all([
+          getJson<any[]>(`/api/v1/spools/${spool.id}/printer-params?printer_id=${sel.value}`),
+          getJson<any[]>(`/api/v1/filaments/${spool.filament_id}/printer-params?printer_id=${sel.value}`),
+        ])
+        const keys = new Set<string>([...(sp || []).map(p => p.param_key), ...(fp || []).map(p => p.param_key)])
+        const val = (list: any[] | null, k: string) => list?.find(p => p.param_key === k)?.param_value
+        el('params-rows').innerHTML = [...keys].sort().map(k => `<tr><td class="v2-mono">${esc(k)}</td><td>${esc(val(sp, k) ?? '')}${val(sp, k) == null ? '<span class="v2-dim">inherits</span>' : ''}</td><td class="v2-muted">${esc(val(fp, k) ?? '—')}</td></tr>`).join('') || '<tr><td colspan="3" class="v2-empty">No parameters stored for this printer.</td></tr>'
+      })
+      if (printers.length === 1) { sel.value = String(printers[0].id); sel.dispatchEvent(new Event('change')) }
+      // slicer picker (Bambu only)
+      const bambu = printers.some(p => p.driver_key === 'bambuddy')
+      if (bambu) {
+        el('slicer-none').hidden = true
+        initPerModelProfilePicker({ entityType: 'spool', entityId: spool.id, filamentId: spool.filament_id, filamentLabel: spool.filament?.designation || `#${spool.filament_id}`, t, getCsrfToken: csrf, getAbortSignal, isAbortError, onSaved: () => reload() })
+      } else {
+        el('slicer-none').hidden = false
+      }
+    }
+
+    async function reload() {
+      const [s, ev, sm] = await Promise.all([
+        getJson<any>(`/api/v1/spools/${id}`),
+        getJson<any>(`/api/v1/spools/${id}/events?page=1&page_size=200`),
+        loadSlotMap(),
+      ])
+      if (!s) { el('hero').innerHTML = '<div class="v2-empty">Spool not found. <a href="/v2/spools/">Back to spools</a></div>'; return }
+      spool = s; events = ev?.items || []; slotMap = sm
+      renderHero(); renderCards(); renderChart(); renderEvents(); renderDetails(); renderFields()
+    }
+
+    const [st, lo, pub] = await Promise.all([getJson<any[]>('/api/v1/spools/statuses'), getJson<any>('/api/v1/locations?page=1&page_size=200'), getJson<any>('/api/v1/app-settings/public-info')])
+    statuses = st || []; locations = lo?.items || []; defaultCore = Number(pub?.default_spool_core_weight_g) || 0
+    await reload()
+    if (spool) {
+      setupParams()
+      loadActiveDevices().then(d => { activeDevices = d })
+      const overviewBox = el('slot-overview')
+      const overview = initSlotOverview({ container: overviewBox, getSpool: () => spool, onParamsChanged: () => el<HTMLSelectElement>('params-printer').dispatchEvent(new Event('change')) })
+      const obs = new MutationObserver(() => { overviewBox.style.display = overviewBox.innerHTML.trim() ? 'flex' : 'none' })
+      obs.observe(overviewBox, { childList: true })
+      overview.reload()
+    }
+    const refresh = debounce(reload, 800)
+    window.addEventListener('filaman:data-changed', (e: Event) => { const ev = (e as CustomEvent).detail?.event; if (ev === 'spools_changed' || ev === 'slots_update') refresh() })
+  </script>
+</Layout>
