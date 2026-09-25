@@ -1274,8 +1274,25 @@ async def update_filament(
             detail={"code": "not_found", "message": "Filament not found"},
         )
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    old_type = filament.material_type
+    for key, value in updates.items():
         setattr(filament, key, value)
+    if "material_type" in updates and (updates["material_type"] or "").casefold() != (
+        old_type or ""
+    ).casefold():
+        from app.services.bambu_idx import clear_bambu_idx_for_filament
+
+        cleared = await clear_bambu_idx_for_filament(db, filament_id)
+        if cleared:
+            logger.info(
+                "Cleared %s bambu_idx row(s) after filament %s material "
+                "change %r → %r",
+                cleared,
+                filament_id,
+                old_type,
+                updates["material_type"],
+            )
 
     await db.commit()
     await db.refresh(filament)

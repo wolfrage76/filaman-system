@@ -1,6 +1,16 @@
 import pytest
 from app.core.event_bus import event_bus
-from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
+from app.models import (
+    Color,
+    Filament,
+    FilamentColor,
+    FilamentPrinterParam,
+    Manufacturer,
+    Printer,
+    Spool,
+    SpoolPrinterParam,
+    SpoolStatus,
+)
 from sqlalchemy import select
 
 
@@ -941,6 +951,78 @@ class TestFilamentCRUD:
         data = response.json()
         assert data["designation"] == "New Filament"
         assert data["price"] == 22.5
+
+    @pytest.mark.asyncio
+    async def test_update_filament_material_clears_bambu_idx(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(
+            db_session, manufacturer.id, designation="Galaxy", material_type="PLA"
+        )
+        printer = Printer(name="H2D", driver_key="bambuddy")
+        db_session.add(printer)
+        await db_session.commit()
+        await db_session.refresh(printer)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(db_session, filament.id, status.id)
+        db_session.add(
+            FilamentPrinterParam(
+                filament_id=filament.id,
+                printer_id=printer.id,
+                param_key="bambu_idx",
+                param_value="SUN20012",
+            )
+        )
+        db_session.add(
+            FilamentPrinterParam(
+                filament_id=filament.id,
+                printer_id=printer.id,
+                param_key="bambu_slicer_setting_id",
+                param_value="PFUSkeepme",
+            )
+        )
+        db_session.add(
+            SpoolPrinterParam(
+                spool_id=spool.id,
+                printer_id=printer.id,
+                param_key="bambu_idx",
+                param_value="SUN20012",
+            )
+        )
+        await db_session.commit()
+
+        response = await client.patch(
+            f"/api/v1/filaments/{filament.id}",
+            json={"material_type": "PETG"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        assert response.json()["material_type"] == "PETG"
+
+        leftover_idx = await db_session.execute(
+            select(FilamentPrinterParam).where(
+                FilamentPrinterParam.filament_id == filament.id,
+                FilamentPrinterParam.param_key == "bambu_idx",
+            )
+        )
+        assert leftover_idx.scalars().all() == []
+        setting = await db_session.execute(
+            select(FilamentPrinterParam).where(
+                FilamentPrinterParam.filament_id == filament.id,
+                FilamentPrinterParam.param_key == "bambu_slicer_setting_id",
+            )
+        )
+        assert setting.scalar_one().param_value == "PFUSkeepme"
+        leftover_spool = await db_session.execute(
+            select(SpoolPrinterParam).where(
+                SpoolPrinterParam.spool_id == spool.id,
+                SpoolPrinterParam.param_key == "bambu_idx",
+            )
+        )
+        assert leftover_spool.scalars().all() == []
 
     @pytest.mark.asyncio
     async def test_delete_filament_no_spools(self, auth_client, db_session):

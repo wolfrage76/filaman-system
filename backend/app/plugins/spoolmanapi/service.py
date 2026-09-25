@@ -295,7 +295,12 @@ class SpoolmanService:
         if "vendor_id" in payload:
             filament.manufacturer_id = payload["vendor_id"]
         if "material" in payload:
+            old_type = filament.material_type
             filament.material_type = payload["material"] or "PLA"
+            if (old_type or "").casefold() != filament.material_type.casefold():
+                from app.services.bambu_idx import clear_bambu_idx_for_filament
+
+                await clear_bambu_idx_for_filament(self.db, filament_id)
         if "density" in payload:
             filament.density_g_cm3 = payload["density"]
         if "diameter" in payload:

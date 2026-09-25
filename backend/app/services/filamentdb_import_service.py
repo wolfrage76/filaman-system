@@ -1280,7 +1280,21 @@ class FilamentDBImportService:
         existing.designation = (
             fil_data.get("designation") or existing.designation
         ).strip()
+        old_type = existing.material_type
         existing.material_type = material_key
+        if (old_type or "").casefold() != (material_key or "").casefold():
+            from app.services.bambu_idx import clear_bambu_idx_for_filament
+
+            cleared = await clear_bambu_idx_for_filament(self.db, existing.id)
+            if cleared:
+                logger.info(
+                    "Cleared %s bambu_idx row(s) after FilamentDB update of "
+                    "filament %s material %r → %r",
+                    cleared,
+                    existing.id,
+                    old_type,
+                    material_key,
+                )
         existing.material_subgroup = (
             fil_data.get("material_subtype") or existing.material_subgroup
         )
