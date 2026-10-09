@@ -163,6 +163,77 @@ class TestPerSlotSpoolAssignment:
         assert assignments["0-0"] is None
 
     @pytest.mark.asyncio
+    async def test_loaded_bay_without_spool_id_keeps_the_stored_link(
+        self, db_session, slots_env
+    ):
+        """A restart reports spool_id null while filament is still in the bay.
+
+        Bambuddy's sticky map lives in memory, so the first slots_update after
+        startup has no spool id. That must not unlink the spool AMS View uses
+        for brand and remaining weight.
+        """
+        printer, spools = slots_env
+        manager = PluginManager()
+
+        await manager._handle_slots_update(
+            printer.id,
+            [_tray("0-0", "AMS 1 - Slot 1", spool_id=spools[0].id, present=True)],
+        )
+        await manager._handle_slots_update(
+            printer.id,
+            [
+                _tray(
+                    "0-0",
+                    "AMS 1 - Slot 1",
+                    spool_id=None,
+                    present=True,
+                    tray_type="PLA",
+                    tray_color="FF0000FF",
+                )
+            ],
+        )
+
+        assignments = await _assignments_by_slot_index(db_session, printer.id)
+        assert assignments["0-0"] == spools[0].id
+
+    @pytest.mark.asyncio
+    async def test_loaded_bay_with_different_material_drops_the_stored_link(
+        self, db_session, slots_env
+    ):
+        """A swap has no spool id either, but the tray is no longer that spool."""
+        printer, spools = slots_env
+        manager = PluginManager()
+
+        await manager._handle_slots_update(
+            printer.id,
+            [_tray("0-0", "AMS 1 - Slot 1", spool_id=spools[0].id, present=True)],
+        )
+        await manager._handle_slots_update(
+            printer.id,
+            [_tray("0-0", "AMS 1 - Slot 1", spool_id=None, present=True, tray_type="PETG")],
+        )
+
+        assignments = await _assignments_by_slot_index(db_session, printer.id)
+        assert assignments["0-0"] is None
+
+    @pytest.mark.asyncio
+    async def test_empty_bay_still_clears_its_spool(self, db_session, slots_env):
+        printer, spools = slots_env
+        manager = PluginManager()
+
+        await manager._handle_slots_update(
+            printer.id,
+            [_tray("0-0", "AMS 1 - Slot 1", spool_id=spools[0].id, present=True)],
+        )
+        await manager._handle_slots_update(
+            printer.id,
+            [_tray("0-0", "AMS 1 - Slot 1", spool_id=None, present=False)],
+        )
+
+        assignments = await _assignments_by_slot_index(db_session, printer.id)
+        assert assignments["0-0"] is None
+
+    @pytest.mark.asyncio
     async def test_single_toolhead_driver_still_uses_active_spool_fallback(
         self, db_session, slots_env
     ):
@@ -264,3 +335,166 @@ class TestActiveSpoolFallbackOnMultiSlotPrinters:
         assignments = await _assignments_by_slot_index(db_session, printer.id)
         assert assignments["0-0"] is None
         assert assignments["0-1"] is None
+
+
+def test_tray_contradiction_ignores_alpha_and_material_suffix():
+    conflict = PluginManager._tray_contradicts_stored
+    assert conflict({"tray_type": "PLA", "tray_color": "FF0000FF"}, {"tray_type": "PLA", "tray_color": "FF0000"}) is False
+    assert conflict({"tray_type": "PLA-CF", "tray_color": "112233"}, {"tray_type": "PLA", "tray_color": "112233FF"}) is False
+    assert conflict({"tray_type": ""}, {"tray_type": "PLA", "tray_color": "FF0000"}) is False
+    assert conflict({"tray_type": "PETG"}, {"tray_type": "PLA"}) is True
+    assert conflict({"tray_type": "PLA", "tray_color": "00FF00"}, {"tray_type": "PLA", "tray_color": "FF0000"}) is True
+
+
+def _ams_info(*unit_ids: int) -> dict:
+    return {"ams_units": [{"ams_id": unit_id} for unit_id in unit_ids]}
+
+
+async def _active_by_slot_index(db_session, printer_id: int) -> dict[str, bool]:
+    result = await db_session.execute(
+        select(PrinterSlot).where(PrinterSlot.printer_id == printer_id)
+    )
+    return {
+        (slot.custom_fields or {}).get("slot_index"): bool(slot.is_active)
+        for slot in result.scalars().all()
+    }
+
+
+class TestDisappearedAmsUnits:
+    """An unplugged AMS-HT stays out of the Display API only if its row is inactive."""
+
+    async def _seed(self, manager, printer):
+        await manager._handle_slots_update(
+            printer.id,
+            [
+                _tray("0-0", "AMS 1 - Slot 1"),
+                _tray("0-1", "AMS 1 - Slot 2"),
+                _tray("128-0", "AMS 129 - Slot 1"),
+                _tray("255-0", "External 1"),
+            ],
+            _ams_info(0, 128),
+        )
+
+    @pytest.mark.asyncio
+    async def test_missing_ht_unit_is_deactivated(self, db_session, slots_env):
+        printer, _spools = slots_env
+        manager = PluginManager()
+        await self._seed(manager, printer)
+
+        await manager._handle_slots_update(
+            printer.id,
+            [
+                _tray("0-0", "AMS 1 - Slot 1"),
+                _tray("0-1", "AMS 1 - Slot 2"),
+                _tray("255-0", "External 1"),
+            ],
+            _ams_info(0),
+        )
+
+        active = await _active_by_slot_index(db_session, printer.id)
+        assert active["128-0"] is False
+        assert active["0-0"] is True
+        assert active["0-1"] is True
+        assert active["255-0"] is True
+
+    @pytest.mark.asyncio
+    async def test_empty_refresh_does_not_deactivate(self, db_session, slots_env):
+        printer, spools = slots_env
+        manager = PluginManager()
+        await self._seed(manager, printer)
+
+        await manager._handle_slots_update(printer.id, [], None, spools[0].id)
+
+        active = await _active_by_slot_index(db_session, printer.id)
+        assert active["128-0"] is True
+        assert active["0-0"] is True
+
+    @pytest.mark.asyncio
+    async def test_update_without_unit_list_leaves_bays_active(
+        self, db_session, slots_env
+    ):
+        """Moonraker-style updates do not carry ams_units and must not retire bays."""
+        printer, _spools = slots_env
+        manager = PluginManager()
+        await self._seed(manager, printer)
+
+        await manager._handle_slots_update(
+            printer.id,
+            [_tray("0-0", "AMS 1 - Slot 1")],
+        )
+
+        active = await _active_by_slot_index(db_session, printer.id)
+        assert active["128-0"] is True
+        assert active["0-1"] is True
+
+    @pytest.mark.asyncio
+    async def test_replugged_ht_is_reactivated(self, db_session, slots_env):
+        printer, _spools = slots_env
+        manager = PluginManager()
+        await self._seed(manager, printer)
+        await manager._handle_slots_update(
+            printer.id,
+            [_tray("0-0", "AMS 1 - Slot 1"), _tray("255-0", "External 1")],
+            _ams_info(0),
+        )
+
+        await manager._handle_slots_update(
+            printer.id,
+            [
+                _tray("0-0", "AMS 1 - Slot 1"),
+                _tray("128-0", "AMS 129 - Slot 1"),
+                _tray("255-0", "External 1"),
+            ],
+            _ams_info(0, 128),
+        )
+
+        active = await _active_by_slot_index(db_session, printer.id)
+        assert active["128-0"] is True
+
+    @pytest.mark.asyncio
+    async def test_last_ams_unplugged_while_external_remains(
+        self, db_session, slots_env
+    ):
+        printer, _spools = slots_env
+        manager = PluginManager()
+        await manager._handle_slots_update(
+            printer.id,
+            [_tray("128-0", "AMS 129 - Slot 1"), _tray("255-0", "External 1")],
+            _ams_info(128),
+        )
+
+        await manager._handle_slots_update(
+            printer.id,
+            [_tray("255-0", "External 1")],
+            _ams_info(),
+        )
+
+        active = await _active_by_slot_index(db_session, printer.id)
+        assert active["128-0"] is False
+        assert active["255-0"] is True
+
+    @pytest.mark.asyncio
+    async def test_legacy_external_key_is_still_retired(self, db_session, slots_env):
+        printer, _spools = slots_env
+        manager = PluginManager()
+        db_session.add(
+            PrinterSlot(
+                printer_id=printer.id,
+                slot_no=1254,
+                name="External legacy",
+                is_active=True,
+                custom_fields={"slot_index": "255-254"},
+            )
+        )
+        await db_session.commit()
+
+        await manager._handle_slots_update(
+            printer.id,
+            [_tray("0-0", "AMS 1 - Slot 1"), _tray("255-0", "External 1")],
+            _ams_info(0),
+        )
+
+        active = await _active_by_slot_index(db_session, printer.id)
+        assert active["255-254"] is False
+        assert active["255-0"] is True
+        assert active["0-0"] is True
