@@ -518,6 +518,94 @@ import Layout from '../layouts/Layout.astro'
       color: var(--text-muted);
     }
 
+    /* Overlays sit on the color and under the bay label. */
+    .ams-swatch > .ams-sparkle,
+    .ams-swatch > .ams-fiber {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+    /* CF / GF: chopped diagonal ticks, light and dark so black and white both read. */
+    .ams-fiber {
+      background: repeating-linear-gradient(
+        128deg,
+        transparent 0 9px,
+        rgba(255, 255, 255, 0.72) 9px 10.5px,
+        transparent 10.5px 18px,
+        rgba(0, 0, 0, 0.42) 18px 19.5px,
+        transparent 19.5px 28px
+      );
+      -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 12px);
+      mask-image: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 12px);
+    }
+    /* Galaxy, sparkle, and glitter: pinpoint glints. A dark ring keeps
+       each speck visible on pale filament; the white core reads on dark.
+       Glitter adds a second, tighter set. */
+    .ams-sparkle[data-density='glitter']::before {
+      box-shadow:
+        0 0 0 1px rgba(8, 10, 18, 0.55),
+        0 0 8px 2px rgba(255, 255, 255, 0.95),
+        42px -26px 0 -0.5px #fff,
+        42px -26px 0 1px rgba(8, 10, 18, 0.45),
+        42px -26px 7px 1px rgba(255, 255, 255, 0.75),
+        18px -34px 0 -1px #f7f9ff,
+        18px -34px 0 0.5px rgba(8, 10, 18, 0.4),
+        58px -6px 0 -1px rgba(255, 255, 255, 0.92),
+        8px -16px 0 -1px #fff,
+        8px -16px 0 0.5px rgba(8, 10, 18, 0.45),
+        28px 6px 0 -1px #fff,
+        28px 6px 0 0.5px rgba(8, 10, 18, 0.4),
+        -18px 12px 0 -0.5px rgba(255, 255, 255, 0.95),
+        -18px 12px 0 0.5px rgba(8, 10, 18, 0.4);
+    }
+    .ams-sparkle::before,
+    .ams-sparkle::after {
+      content: '';
+      position: absolute;
+      width: 3px;
+      height: 3px;
+      margin: -1.5px 0 0 -1.5px;
+      border-radius: 50%;
+      background: #fff;
+      pointer-events: none;
+    }
+    .ams-sparkle::before {
+      left: 24%;
+      top: 68%;
+      box-shadow:
+        0 0 0 1px rgba(8, 10, 18, 0.55),
+        0 0 8px 2px rgba(255, 255, 255, 0.95),
+        42px -26px 0 -0.5px #fff,
+        42px -26px 0 1px rgba(8, 10, 18, 0.45),
+        42px -26px 7px 1px rgba(255, 255, 255, 0.75),
+        18px -34px 0 -1px #f7f9ff,
+        18px -34px 0 0.5px rgba(8, 10, 18, 0.4),
+        58px -6px 0 -1px rgba(255, 255, 255, 0.92);
+      animation: ams-twinkle 2.8s ease-in-out infinite;
+    }
+    .ams-sparkle::after {
+      left: 72%;
+      top: 36%;
+      width: 2px;
+      height: 2px;
+      margin: -1px 0 0 -1px;
+      box-shadow:
+        0 0 0 1px rgba(8, 10, 18, 0.5),
+        0 0 6px 1px rgba(236, 244, 255, 0.95),
+        -34px 18px 0 0 #fff,
+        -34px 18px 0 1px rgba(8, 10, 18, 0.4),
+        -34px 18px 6px 1px rgba(255, 255, 255, 0.7),
+        16px 22px 0 -0.5px #fff,
+        16px 22px 0 0.5px rgba(8, 10, 18, 0.4),
+        -12px -8px 0 -0.5px rgba(255, 255, 255, 0.9);
+      animation: ams-twinkle 2.8s ease-in-out infinite 1.4s;
+    }
+    @keyframes ams-twinkle {
+      0%, 100% { opacity: 0.28; }
+      40% { opacity: 1; }
+    }
+
     /* ── Kiosk ─────────────────────────────────────────────────────── */
 
     body.ams-kiosk .fm-sidebar,
@@ -534,12 +622,31 @@ import Layout from '../layouts/Layout.astro'
       width: 100%;
       min-width: 0;
     }
-    body.ams-kiosk .ams-head { margin-bottom: 18px; }
-    body.ams-kiosk .ams-title,
-    body.ams-kiosk .ams-subtitle { display: none; }
-    body.ams-kiosk .ams-filter .fm-select {
-      min-width: 14rem;
+    body.ams-kiosk .ams-head { display: none; }
+    .ams-kiosk-exit {
+      display: none;
+    }
+    body.ams-kiosk .ams-kiosk-exit {
+      display: grid;
+      place-items: center;
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 80;
+      width: 44px;
       height: 44px;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg) 86%, transparent);
+      color: var(--text);
+      font-size: 1.45rem;
+      line-height: 1;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+    }
+    body.ams-kiosk .ams-printer:first-child .ams-printer-head {
+      padding-right: 52px;
     }
     body.ams-kiosk .ams-printer-name { font-size: 1.6rem; }
     body.ams-kiosk .ams-material { font-size: 1.25rem; }
@@ -550,13 +657,16 @@ import Layout from '../layouts/Layout.astro'
     /* ── Quality floor ────────────────────────────────────────────── */
 
     .ams-actions .fm-btn:focus-visible,
-    .ams-filter .fm-select:focus-visible {
+    .ams-filter .fm-select:focus-visible,
+    .ams-kiosk-exit:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
     @media (prefers-reduced-motion: reduce) {
       .ams-feeding::before { animation: none; }
       .ams-swatch[data-finish='glow']::after { animation: none; }
+      .ams-sparkle::before,
+      .ams-sparkle::after { animation: none; opacity: 1; }
       .ams-bay { transition: none; }
     }
     @media (max-width: 640px) {
@@ -565,6 +675,10 @@ import Layout from '../layouts/Layout.astro'
     }
   </style>
 
+  <script is:inline>
+    if (new URLSearchParams(location.search).get('kiosk') === '1') document.body.classList.add('ams-kiosk')
+  </script>
+  <button type="button" id="ams-kiosk-exit" class="ams-kiosk-exit" data-i18n-aria-label="display.exitKiosk" aria-label="Exit kiosk">×</button>
   <header class="ams-head">
     <div>
       <h1 class="ams-title" data-i18n="display.title">AMS View</h1>
@@ -588,7 +702,7 @@ import Layout from '../layouts/Layout.astro'
   <script>
     import { t, initI18n, translatePage } from '../lib/i18n'
     import { getAbortSignal, isAbortError } from '../lib/abort'
-    import { amsFinish, amsSwatchFill, amsSwatchHexes } from '../lib/ams-swatch'
+    import { amsFiber, amsSparkleKind, amsSwatchFill, amsSwatchFinish, amsSwatchHexes } from '../lib/ams-swatch'
 
     await initI18n()
     translatePage()
@@ -653,6 +767,19 @@ import Layout from '../layouts/Layout.astro'
       return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m} min`
     }
 
+    function fmtGrams(value: any): string {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return ''
+      const rounded = Math.round(n * 10) / 10
+      return Number.isInteger(rounded) ? `${rounded} g` : `${rounded.toFixed(1)} g`
+    }
+
+    function fmtClock(iso: any): string {
+      const date = new Date(String(iso ?? ''))
+      if (Number.isNaN(date.getTime())) return ''
+      return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    }
+
     function bayTitle(s: any): string {
       const parts = [s.filament, s.color_name].filter(Boolean)
       if (s.nozzle_min != null && s.nozzle_max != null) parts.push(`${s.nozzle_min}–${s.nozzle_max}°C`)
@@ -675,12 +802,18 @@ import Layout from '../layouts/Layout.astro'
       const hexes = amsSwatchHexes(s.colors, s.color)
       const fill = amsSwatchFill(hexes, s.color_style)
       const ink = inkFor(hexes.length > 1 ? averageHex(hexes) : (hexes[0] || safeColor(s.color)))
-      const finish = amsFinish(s.finish)
+      const finish = amsSwatchFinish(s.finish, s.material_subgroup)
       const pct = s.remaining_percent
       const level = pct == null ? '' : pct <= CRIT ? 'crit' : pct <= LOW ? 'low' : 'ok'
       const colorName = s.color_name || (!s.manufacturer ? s.filament : '') || ''
       const manufacturer = s.manufacturer || ''
       const amount = pct != null ? `${pct}%` : (s.remaining_grams != null ? `${s.remaining_grams} g` : '')
+      const fiber = amsFiber(s.material_subgroup, s.material)
+      const sparkleKind = amsSparkleKind(s.material_subgroup)
+      const overlay = [
+        fiber ? `<span class="ams-fiber" data-fiber="${fiber}" aria-hidden="true"></span>` : '',
+        sparkleKind ? `<span class="ams-sparkle" data-density="${sparkleKind}" aria-hidden="true"></span>` : '',
+      ].join('')
       const spoolId = Number.isFinite(Number(s.spool_id)) && Number(s.spool_id) > 0 ? Number(s.spool_id) : null
       const spoolLine = spoolId != null ? `<div class="ams-spool">#${spoolId}</div>` : ''
       const tag = spoolId != null ? 'a' : 'article'
@@ -691,6 +824,7 @@ import Layout from '../layouts/Layout.astro'
                  style="--ams-swatch: ${hexes[0] || safeColor(s.color)}; --ams-fill: ${fill}; --ams-ink: ${ink}"
                  title="${esc(bayTitle(s))}">
           <div class="ams-swatch" data-finish="${finish}" data-multi="${hexes.length > 1 ? '1' : '0'}">
+            ${overlay}
             <span class="ams-bay-label">${label}</span>
             ${s.rfid ? `<span class="ams-tag">RFID</span>` : ''}
           </div>
@@ -750,8 +884,17 @@ import Layout from '../layouts/Layout.astro'
       const meta: string[] = []
       if (job.name) meta.push(esc(job.name))
       if (job.remaining_seconds != null) meta.push(fmtRemaining(job.remaining_seconds))
-      if (temps.nozzle != null) meta.push(`${t('display.nozzle')} ${temps.nozzle}${temps.nozzle_target ? '/' + temps.nozzle_target : ''}°C`)
-      if (temps.bed != null) meta.push(`${t('display.bed')} ${temps.bed}${temps.bed_target ? '/' + temps.bed_target : ''}°C`)
+      if (job.eta) meta.push(`${t('display.eta')} ${esc(fmtClock(job.eta))}`)
+      if (job.elapsed_seconds != null) meta.push(`${t('display.elapsed')} ${fmtRemaining(job.elapsed_seconds)}`)
+      if (job.filament_grams != null) meta.push(`${t('display.filamentUsed')} ${fmtGrams(job.filament_grams)}`)
+      const queue = p.queue
+      if (queue && Number(queue.depth) > 0) {
+        meta.push(t('display.queue', { count: queue.depth }))
+        if (queue.next?.name) meta.push(t('display.nextJob', { name: esc(queue.next.name) }))
+      }
+      if (temps.nozzle != null) meta.push(`${t('display.nozzle')} ${temps.nozzle}${temps.nozzle_target != null ? '/' + temps.nozzle_target : ''}°C`)
+      if (temps.nozzle_2 != null) meta.push(`${t('display.nozzle2')} ${temps.nozzle_2}${temps.nozzle_2_target != null ? '/' + temps.nozzle_2_target : ''}°C`)
+      if (temps.bed != null) meta.push(`${t('display.bed')} ${temps.bed}${temps.bed_target != null ? '/' + temps.bed_target : ''}°C`)
 
       const state = offline
         ? t('display.offline')
@@ -884,11 +1027,17 @@ import Layout from '../layouts/Layout.astro'
       setPrinterParam(id != null && Number.isInteger(id) && id > 0 ? id : null)
       renderBoard(lastPrinters)
     })
+    function leaveKiosk() {
+      document.body.classList.remove('ams-kiosk')
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+    }
     document.getElementById('ams-kiosk')?.addEventListener('click', () => {
-      document.body.classList.toggle('ams-kiosk')
-      if (document.body.classList.contains('ams-kiosk')) document.documentElement.requestFullscreen?.().catch(() => {})
-      else document.exitFullscreen?.().catch(() => {})
+      const on = !document.body.classList.contains('ams-kiosk')
+      document.body.classList.toggle('ams-kiosk', on)
+      if (on) document.documentElement.requestFullscreen?.().catch(() => {})
+      else leaveKiosk()
     })
+    document.getElementById('ams-kiosk-exit')?.addEventListener('click', leaveKiosk)
     document.addEventListener('fullscreenchange', () => {
       if (!document.fullscreenElement) document.body.classList.remove('ams-kiosk')
     })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { amsFinish, amsSwatchFill, amsSwatchHexes } from './ams-swatch'
+import { amsFiber, amsFinish, amsGalaxy, amsSparkleKind, amsSwatchFill, amsSwatchFinish, amsSwatchHexes } from './ams-swatch'
 
 describe('ams swatch', () => {
   it('keeps valid hexes and falls back to one color', () => {
@@ -19,10 +19,45 @@ describe('ams swatch', () => {
     expect(amsSwatchFill(['#456DF1'], 'gradient')).toBe('#456DF1')
   })
 
+  it('sparks only an exact galaxy subgroup', () => {
+    expect(amsGalaxy('Galaxy')).toBe(true)
+    expect(amsGalaxy(' galaxy ')).toBe(true)
+    expect(amsGalaxy('GALAXY')).toBe(true)
+    expect(amsGalaxy('Galaxy Black')).toBe(false)
+    expect(amsGalaxy('')).toBe(false)
+    expect(amsGalaxy(null)).toBe(false)
+  })
+
   it('only paints glow and translucent finishes', () => {
     expect(amsFinish('Glow')).toBe('glow')
     expect(amsFinish('translucent')).toBe('translucent')
     expect(amsFinish('neon')).toBe('')
     expect(amsFinish('solid')).toBe('')
+  })
+
+  it('paints glow and translucent from the subgroup when finish is unset', () => {
+    expect(amsSwatchFinish('', 'glow')).toBe('glow')
+    expect(amsSwatchFinish(null, 'Translucent')).toBe('translucent')
+    expect(amsSwatchFinish('solid', 'glow')).toBe('glow')
+    expect(amsSwatchFinish('glow', 'translucent')).toBe('glow')
+    expect(amsSwatchFinish('', 'transparent')).toBe('')
+    expect(amsSwatchFinish('', 'silk')).toBe('')
+  })
+
+  it('specks galaxy, sparkle, and glitter, and densifies glitter', () => {
+    expect(amsSparkleKind('sparkle')).toBe('sparkle')
+    expect(amsSparkleKind('Glitter')).toBe('glitter')
+    expect(amsSparkleKind('galaxy')).toBe('galaxy')
+    expect(amsSparkleKind('galaxy black')).toBe('')
+    expect(amsSparkleKind('matte')).toBe('')
+  })
+
+  it('reads carbon and glass fill from the subgroup or the material type', () => {
+    expect(amsFiber('cf', 'PLA')).toBe('cf')
+    expect(amsFiber('gf', 'PETG')).toBe('gf')
+    expect(amsFiber(null, 'PA6-CF')).toBe('cf')
+    expect(amsFiber('', 'PA6-GF')).toBe('gf')
+    expect(amsFiber('basic', 'PETG')).toBe('')
+    expect(amsFiber('craft', 'PC')).toBe('')
   })
 })
