@@ -120,6 +120,11 @@ def test_spool_swatch_uses_manufacturer_color_name():
     assert out["colors"] == ["#456DF1"]
     assert out["color_style"] == ""
     assert out["finish"] == ""
+    assert out["material_subgroup"] == ""
+
+    filament.material_subgroup = "Galaxy"
+    assert _spool_swatch(spool, printer_id=1)["material_subgroup"] == "Galaxy"
+    filament.material_subgroup = None
 
     filament.manufacturer_color_name = "  "
     assert _spool_swatch(spool, printer_id=1)["color_name"] == ""
@@ -383,14 +388,79 @@ def test_normalize_bambuddy_status():
     live = normalize_driver_state(BAMBUDDY_STATUS)
     assert live["connected"] is True
     assert live["state"] == "RUNNING"
-    assert live["job"] == {"name": "benchy.3mf", "progress": 42, "layer": 57, "total_layers": 130, "remaining_seconds": 3720}
+    assert live["job"]["name"] == "benchy.3mf"
+    assert live["job"]["progress"] == 42
+    assert live["job"]["layer"] == 57 and live["job"]["total_layers"] == 130
+    assert live["job"]["remaining_seconds"] == 3720
+    assert live["job"]["elapsed_seconds"] is None and live["job"]["filament_grams"] is None
+    assert live["job"]["eta"]
     assert live["temperatures"]["nozzle"] == 220 and live["temperatures"]["bed"] == 60
+    assert live["temperatures"]["nozzle_2"] is None
+    assert live["queue"] is None
     assert live["active_tray"] == 1
     assert live["hms"] == [{"code": "0x0500", "message": "Nozzle clog"}]
     assert [u["ams_id"] for u in live["ams"]] == [0, 128, 255]
     assert [u["kind"] for u in live["ams"]] == ["ams", "ams_ht", "external"]
     tray0 = live["ams"][0]["slots"][0]
     assert tray0["color"] == "#0000FF" and tray0["rfid"] is True and tray0["remaining_percent"] == 80
+
+
+def test_second_nozzle_queue_elapsed_and_eta():
+    from datetime import datetime, timezone
+
+    live = normalize_driver_state(
+        {
+            "gcode_state": "RUNNING",
+            "subtask_name": "lid.3mf",
+            "mc_percent": 10,
+            "mc_remaining_time": 30,
+            "elapsed_seconds": 600,
+            "filament_used_grams": 18.2,
+            "temperatures": {"nozzle": 220, "nozzle_target": 220, "nozzle_2": 37.2, "nozzle_2_target": 0},
+            "queue": {
+                "depth": 2,
+                "next": {"name": "next-plate", "filament_grams": 9, "print_time_seconds": 1200},
+            },
+        }
+    )
+    assert live["temperatures"]["nozzle_2"] == 37
+    assert live["temperatures"]["nozzle_2_target"] == 0
+    assert live["job"]["elapsed_seconds"] == 600
+    assert live["job"]["filament_grams"] == 18.2
+    eta = datetime.fromisoformat(live["job"]["eta"])
+    assert abs((eta - datetime.now(timezone.utc)).total_seconds() - 1800) < 5
+    assert live["queue"]["depth"] == 2
+    assert live["queue"]["next"]["name"] == "next-plate"
+
+
+def test_remaining_cost_is_the_unused_share_of_the_purchase_price():
+    from types import SimpleNamespace
+
+    from app.services.display_service import _spool_swatch
+
+    filament = SimpleNamespace(
+        designation="PLA",
+        material_type="PLA",
+        manufacturer_color_name="Green",
+        manufacturer=None,
+        filament_colors=[],
+        printer_params=[],
+        raw_material_weight_g=1000,
+        price=None,
+    )
+    spool = SimpleNamespace(
+        id=138,
+        filament=filament,
+        remaining_weight_g=250,
+        initial_total_weight_g=1250,
+        empty_spool_weight_g=250,
+        purchase_price=20,
+        rfid_uid=None,
+        rfid_uid_2=None,
+        last_used_at=None,
+        printer_params=[],
+    )
+    assert _spool_swatch(spool, printer_id=13)["remaining_cost"] == 5.0
 
 
 def test_normalize_documented_shape():
