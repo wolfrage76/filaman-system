@@ -217,6 +217,45 @@ class TestPerSlotSpoolAssignment:
         assert assignments["0-0"] is None
 
     @pytest.mark.asyncio
+    async def test_loaded_unlinked_bay_keeps_the_printer_profile(
+        self, db_session, slots_env
+    ):
+        """A new printer has AMS profiles and no FilaMan spool links yet.
+
+        The tray code, material, and color still have to show. Marking the
+        bay empty because spool_id is null hides them on the printer page.
+        """
+        printer, _spools = slots_env
+        manager = PluginManager()
+
+        await manager._handle_slots_update(
+            printer.id,
+            [
+                _tray(
+                    "0-0",
+                    "AMS 1 - Slot 1",
+                    spool_id=None,
+                    present=True,
+                    tray_type="PLA",
+                    tray_color="46792AFF",
+                    tray_info_idx="SUN20007",
+                )
+            ],
+        )
+
+        result = await db_session.execute(
+            select(PrinterSlotAssignment)
+            .join(PrinterSlot, PrinterSlot.id == PrinterSlotAssignment.slot_id)
+            .where(PrinterSlot.printer_id == printer.id)
+        )
+        assignment = result.scalar_one()
+        assert assignment.spool_id is None
+        assert assignment.present is True
+        assert assignment.meta["tray_type"] == "PLA"
+        assert assignment.meta["tray_color"] == "46792AFF"
+        assert assignment.meta["tray_info_idx"] == "SUN20007"
+
+    @pytest.mark.asyncio
     async def test_empty_bay_still_clears_its_spool(self, db_session, slots_env):
         printer, spools = slots_env
         manager = PluginManager()

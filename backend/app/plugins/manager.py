@@ -390,6 +390,10 @@ class PluginManager:
                             # after a restart). Keep the stored link, and its
                             # meta, unless the live tray is a different filament.
                             # An empty bay (present false) still clears it.
+                            # A loaded bay that has no link still keeps the
+                            # printer's own profile (type, color, tray code).
+                            # Otherwise the slot looks empty and AMS View never
+                            # shows what the printer has configured.
                             if (
                                 incoming_spool_id is None
                                 and present
@@ -399,6 +403,11 @@ class PluginManager:
                                 )
                             ):
                                 pass
+                            elif incoming_spool_id is None and present:
+                                assignment.spool_id = None
+                                assignment.present = True
+                                assignment.updated_at = datetime.now(timezone.utc)
+                                assignment.meta = {**meta, "active_spool_id": None}
                             else:
                                 assignment.meta = await self._apply_spool_to_assignment(
                                     db,
