@@ -1924,22 +1924,24 @@ const { id } = Astro.params
         filamentParams.forEach((p: any) => { if (p.param_value) valMap[p.param_key] = p.param_value })
         spoolParams.forEach((p: any) => { if (p.param_value) valMap[p.param_key] = p.param_value })
 
+        const nozzleMin = parseInt(valMap['bambu_nozzle_temp_min'], 10)
+        const nozzleMax = parseInt(valMap['bambu_nozzle_temp_max'], 10)
         filamentData = {
           tray_info_idx: valMap['bambu_idx'] || valMap['bambu_tray_idx'] || 'GFL99',
           bambu_idx: valMap['bambu_idx'] || valMap['bambu_tray_idx'] || '',
-          nozzle_temp_min: parseInt(valMap['bambu_nozzle_temp_min']) || 190,
-          nozzle_temp_max: parseInt(valMap['bambu_nozzle_temp_max']) || 230,
           material_type: spool.filament?.material_type || 'PLA',
           color: (spool.filament?.colors?.[0]?.color?.hex_code || 'FFFFFF').replace('#', '').slice(0, 6),
         }
+        // Leave temps unset when the spool has none stored. The driver then
+        // keeps a same-material live tray range, or uses a material default.
+        if (Number.isFinite(nozzleMin)) filamentData.nozzle_temp_min = nozzleMin
+        if (Number.isFinite(nozzleMax)) filamentData.nozzle_temp_max = nozzleMax
       } catch (e) {
         if (isAbortError(e)) return
         console.error('Failed to fetch params for assign:', e)
         filamentData = {
           tray_info_idx: 'GFL99',
           bambu_idx: '',
-          nozzle_temp_min: 190,
-          nozzle_temp_max: 230,
           material_type: spool.filament?.material_type || 'PLA',
           color: (spool.filament?.colors?.[0]?.color?.hex_code || 'FFFFFF').replace('#', '').slice(0, 6),
         }

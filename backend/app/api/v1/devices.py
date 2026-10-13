@@ -630,10 +630,11 @@ async def weigh_spool(
             from app.plugins.manager import plugin_manager
             logger.debug(f"Auto-assign: plugin_manager has {len(plugin_manager.drivers)} active drivers: {list(plugin_manager.drivers.keys())}")
 
+            # Omit nozzle temps. A 190–230 placeholder is treated as a stored
+            # range and blocks both live AMS temps and material defaults.
+            # enrich_filament_data() adds bambu_nozzle_temp_* when they exist.
             base_filament_data = {
                 "tray_info_idx": "GFL99",
-                "nozzle_temp_min": 190,
-                "nozzle_temp_max": 230,
                 "material_type": filament_material_type,
                 "color": base_color,
             }
