@@ -810,6 +810,23 @@ def _params_for_printer(params: list[Any] | None, printer_id: int) -> dict[str, 
     return out
 
 
+def _profile_base_name(spool: Spool) -> str:
+    """Slicer profile base name stored from Bambuddy.
+
+    The spool extra field wins. A spool with no name of its own uses the
+    parent filament's ``bambu_profile_base_name``.
+    """
+    spool_fields = spool.custom_fields if isinstance(getattr(spool, "custom_fields", None), dict) else {}
+    spool_name = str(spool_fields.get("bambu_profile_base_name") or "").strip()
+    if spool_name:
+        return spool_name
+    filament = spool.filament
+    filament_fields = getattr(filament, "custom_fields", None) if filament is not None else None
+    if isinstance(filament_fields, dict):
+        return str(filament_fields.get("bambu_profile_base_name") or "").strip()
+    return ""
+
+
 def _nozzle_range(spool: Spool, printer_id: int) -> tuple[int | None, int | None]:
     """Bambu nozzle range lives on per-printer params, not on Filament.
 
@@ -899,6 +916,7 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
         "remaining_cost": remaining_cost,
         "nozzle_min": nozzle_min,
         "nozzle_max": nozzle_max,
+        "profile_base_name": _profile_base_name(spool),
         "rfid": bool(spool.rfid_uid or getattr(spool, "rfid_uid_2", None)),
         "last_used": spool.last_used_at.isoformat() if spool.last_used_at else None,
     }
@@ -1044,6 +1062,7 @@ def _merge_slot(
         "nozzle_min": fm.get("nozzle_min") if fm.get("nozzle_min") is not None else live.get("nozzle_min"),
         "nozzle_max": fm.get("nozzle_max") if fm.get("nozzle_max") is not None else live.get("nozzle_max"),
         "rfid": bool(fm.get("rfid") or live.get("rfid")),
+        "profile_base_name": "" if empty else str(fm.get("profile_base_name") or ""),
         "last_used": fm.get("last_used"),
         "backup_of": None,
     }

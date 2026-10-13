@@ -130,6 +130,56 @@ def test_spool_swatch_uses_manufacturer_color_name():
     assert _spool_swatch(spool, printer_id=1)["color_name"] == ""
 
 
+def test_spool_swatch_profile_base_name_prefers_the_spool():
+    """Bambuddy's profile base name is the spool extra field, else the filament's."""
+    from types import SimpleNamespace
+
+    from app.services.display_service import _merge_slot, _spool_swatch
+
+    filament = SimpleNamespace(
+        designation="PLA+",
+        material_type="PLA",
+        material_subgroup=None,
+        manufacturer_color_name="Blue",
+        manufacturer=None,
+        filament_colors=[],
+        printer_params=[],
+        raw_material_weight_g=None,
+        custom_fields={"bambu_profile_base_name": "Generic PLA"},
+        color_mode="single",
+        multi_color_style=None,
+        finish_type=None,
+    )
+    spool = SimpleNamespace(
+        id=12,
+        filament=filament,
+        remaining_weight_g=None,
+        initial_total_weight_g=None,
+        empty_spool_weight_g=None,
+        purchase_price=None,
+        rfid_uid=None,
+        rfid_uid_2=None,
+        last_used_at=None,
+        printer_params=[],
+        custom_fields={"bambu_profile_base_name": "eSun PLA+"},
+    )
+    assert _spool_swatch(spool, printer_id=1)["profile_base_name"] == "eSun PLA+"
+
+    spool.custom_fields = {}
+    assert _spool_swatch(spool, printer_id=1)["profile_base_name"] == "Generic PLA"
+
+    filament.custom_fields = None
+    assert _spool_swatch(spool, printer_id=1)["profile_base_name"] == ""
+
+    filled = _merge_slot(
+        0, 1, "ams", None,
+        {"spool_id": 12, "material": "PLA", "profile_base_name": "eSun PLA+"},
+    )
+    assert filled["empty"] is False
+    assert filled["profile_base_name"] == "eSun PLA+"
+    assert _merge_slot(0, 0, "ams", None, None)["profile_base_name"] == ""
+
+
 def test_spool_swatch_multi_color_and_finish():
     """Multi mode paints every color; finish is the filament finish type."""
     from types import SimpleNamespace
@@ -683,14 +733,17 @@ def test_extruder_slots_select_active_nozzle_over_slot_only_tray_now():
 def test_build_without_driver_state_uses_assignments_only():
     fm = {(0, 1): {"present": True, "spool_id": 5, "material": "PLA", "color": "#F8A813", "color_name": "Orange",
                    "manufacturer": "SUNLU", "filament": "PLA Plus", "remaining_percent": 50, "remaining_grams": 500,
-                   "nozzle_min": 190, "nozzle_max": 230, "rfid": True, "last_used": None}}
+                   "nozzle_min": 190, "nozzle_max": 230, "rfid": True, "last_used": None,
+                   "profile_base_name": "eSun PLA+"}}
     out = build_printer_display(_P(), fm, None)
     assert out["connected"] is None and out["job"] is None and out["state"] == "unknown"
     assert [u["label"] for u in out["ams"]] == ["AMS A"]
     slots = out["ams"][0]["slots"]
     assert [s["label"] for s in slots] == ["A1", "A2", "A3", "A4"]
     assert slots[1]["empty"] is False and slots[1]["spool_id"] == 5 and slots[1]["remaining_source"] == "filaman"
+    assert slots[1]["profile_base_name"] == "eSun PLA+"
     assert slots[0]["empty"] is True and slots[0]["color"] == "#202020"
+    assert slots[0]["profile_base_name"] == ""
     assert out["active"] is None
 
 

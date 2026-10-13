@@ -1137,6 +1137,7 @@
     "queue": "File {count}",
     "nextJob": "Suivant : {name}",
     "backupOf": "secours de {slot}",
+    "profile": "Profil",
     "upToDate": "mis à jour {time}",
     "error": "Impossible de charger le flux d'affichage",
     "noPrinters": "Aucune imprimante active."

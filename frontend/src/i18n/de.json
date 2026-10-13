@@ -1138,6 +1138,7 @@
     "queue": "Warteschlange {count}",
     "nextJob": "Nächster: {name}",
     "backupOf": "Ersatz für {slot}",
+    "profile": "Profil",
     "upToDate": "aktualisiert {time}",
     "error": "Anzeige-Feed konnte nicht geladen werden",
     "noPrinters": "Keine aktiven Drucker."

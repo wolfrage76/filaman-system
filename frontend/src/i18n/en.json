@@ -1137,6 +1137,7 @@
     "queue": "Queue {count}",
     "nextJob": "Next: {name}",
     "backupOf": "backup of {slot}",
+    "profile": "Profile",
     "upToDate": "updated {time}",
     "error": "Could not load the display feed",
     "noPrinters": "No active printers."

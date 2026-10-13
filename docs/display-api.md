@@ -119,6 +119,7 @@ Authorization: Device 12.34.abcdef…
               "remaining_source": "filaman",   // "filaman" | "printer" | null
               "nozzle_min": 190, "nozzle_max": 230,
               "rfid": true,
+              "profile_base_name": "eSun PLA+",  // slicer profile base name; "" when unset
               "last_used": "2026-09-03T21:10:00+00:00",
               "backup_of": "B2"       // another slot with the same material+colour, or null
             }
@@ -140,6 +141,11 @@ Rules you can rely on:
 - A regular AMS always lists slots 0–3, even when empty. An AMS-HT lists slot 0; the external holder lists as many trays as the printer reports (labels `Ext1`, `Ext2`, …).
 - `spool_id` is set only when FilaMan has a spool assigned to that slot; a slot
   can still be non-empty (the printer sees filament) with `spool_id: null`.
+- `profile_base_name` is the Bambuddy slicer profile base name, without the
+  printer or nozzle suffix. It is the assigned spool's extra field
+  `bambu_profile_base_name`, or the parent filament's field when the spool has
+  none. It is `""` when neither is set, and when the bay has no FilaMan spool.
+  `fields=slots` omits it.
 - Adding fields never bumps `schema_version`; changing a field's meaning does.
 
 ## What the feed is built from
