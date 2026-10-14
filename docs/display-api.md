@@ -118,6 +118,10 @@ Authorization: Device 12.34.abcdef…
               "remaining_cost": 12.75, // purchase price still on the spool; null without a price or weight
               "remaining_source": "filaman",   // "filaman" | "printer" | null
               "nozzle_min": 190, "nozzle_max": 230,
+              "bed_temp": 60,         // bambu_bed_temp for this printer; null when unset
+              "diameter_mm": 1.75,    // filament diameter; null without a FilaMan spool
+              "density_g_cm3": 1.24,  // filament density; null when unset
+              "low_weight_threshold_g": 100, // spool's own low threshold; null without a spool
               "rfid": true,
               "profile_base_name": "eSun PLA+",  // slicer profile base name; "" when unset
               "last_used": "2026-09-03T21:10:00+00:00",
@@ -146,6 +150,11 @@ Rules you can rely on:
   `bambu_profile_base_name`, or the parent filament's field when the spool has
   none. It is `""` when neither is set, and when the bay has no FilaMan spool.
   `fields=slots` omits it.
+- `bed_temp` is the spool's `bambu_bed_temp` for this printer, or the filament's
+  when the spool has none. `diameter_mm` and `density_g_cm3` come from the
+  filament. `low_weight_threshold_g` is the spool's own threshold, in grams.
+  All four are `null` on an empty bay and on a bay with no FilaMan spool.
+  `fields=slots` omits them. The feed still does not decide that a spool is low.
 - Adding fields never bumps `schema_version`; changing a field's meaning does.
 
 ## What the feed is built from

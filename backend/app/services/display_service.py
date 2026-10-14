@@ -36,6 +36,7 @@ from app.models import AppSettings, Filament, FilamentColor, Printer, PrinterSlo
 
 _NOZZLE_MIN_KEY = "bambu_nozzle_temp_min"
 _NOZZLE_MAX_KEY = "bambu_nozzle_temp_max"
+_BED_TEMP_KEY = "bambu_bed_temp"
 
 SCHEMA_VERSION = 3
 DEFAULT_EMPTY_COLOR = "#202020"
@@ -841,6 +842,16 @@ def _nozzle_range(spool: Spool, printer_id: int) -> tuple[int | None, int | None
     return _as_int(merged.get(_NOZZLE_MIN_KEY)), _as_int(merged.get(_NOZZLE_MAX_KEY))
 
 
+def _bed_temp(spool: Spool, printer_id: int) -> int | None:
+    """Bed temperature from printer params. Spool overrides filament."""
+    filament = spool.filament
+    merged = {
+        **_params_for_printer(getattr(filament, "printer_params", None) if filament else None, printer_id),
+        **_params_for_printer(getattr(spool, "printer_params", None), printer_id),
+    }
+    return _as_int(merged.get(_BED_TEMP_KEY))
+
+
 _FINISH_TYPES = frozenset({"solid", "translucent", "neon", "glow"})
 _COLOR_STYLES = frozenset({"striped", "gradient"})
 
@@ -916,6 +927,10 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
         "remaining_cost": remaining_cost,
         "nozzle_min": nozzle_min,
         "nozzle_max": nozzle_max,
+        "bed_temp": _bed_temp(spool, printer_id),
+        "diameter_mm": _as_float(getattr(filament, "diameter_mm", None)) if filament else None,
+        "density_g_cm3": _as_float(getattr(filament, "density_g_cm3", None)) if filament else None,
+        "low_weight_threshold_g": _as_int(getattr(spool, "low_weight_threshold_g", None)),
         "profile_base_name": _profile_base_name(spool),
         "rfid": bool(spool.rfid_uid or getattr(spool, "rfid_uid_2", None)),
         "last_used": spool.last_used_at.isoformat() if spool.last_used_at else None,
@@ -1061,6 +1076,10 @@ def _merge_slot(
         "remaining_source": remaining_source,
         "nozzle_min": fm.get("nozzle_min") if fm.get("nozzle_min") is not None else live.get("nozzle_min"),
         "nozzle_max": fm.get("nozzle_max") if fm.get("nozzle_max") is not None else live.get("nozzle_max"),
+        "bed_temp": None if empty else _as_int(fm.get("bed_temp")),
+        "diameter_mm": None if empty else _as_float(fm.get("diameter_mm")),
+        "density_g_cm3": None if empty else _as_float(fm.get("density_g_cm3")),
+        "low_weight_threshold_g": None if empty else _as_int(fm.get("low_weight_threshold_g")),
         "rfid": bool(fm.get("rfid") or live.get("rfid")),
         "profile_base_name": "" if empty else str(fm.get("profile_base_name") or ""),
         "last_used": fm.get("last_used"),

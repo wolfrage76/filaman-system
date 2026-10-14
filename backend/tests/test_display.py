@@ -180,6 +180,69 @@ def test_spool_swatch_profile_base_name_prefers_the_spool():
     assert _merge_slot(0, 0, "ams", None, None)["profile_base_name"] == ""
 
 
+def test_spool_swatch_includes_diameter_density_bed_and_threshold():
+    """These four are already on the loaded spool; the slot must pass them through."""
+    from types import SimpleNamespace
+
+    from app.services.display_service import _merge_slot, _spool_swatch
+
+    def param(key, value):
+        return SimpleNamespace(printer_id=1, param_key=key, param_value=value)
+
+    filament = SimpleNamespace(
+        designation="PLA",
+        material_type="PLA",
+        material_subgroup=None,
+        manufacturer_color_name="Blue",
+        manufacturer=None,
+        filament_colors=[],
+        printer_params=[param("bambu_bed_temp", "55")],
+        raw_material_weight_g=None,
+        custom_fields=None,
+        color_mode="single",
+        multi_color_style=None,
+        finish_type=None,
+        diameter_mm=1.75,
+        density_g_cm3=1.24,
+    )
+    spool = SimpleNamespace(
+        id=12,
+        filament=filament,
+        remaining_weight_g=None,
+        initial_total_weight_g=None,
+        empty_spool_weight_g=None,
+        purchase_price=None,
+        rfid_uid=None,
+        rfid_uid_2=None,
+        last_used_at=None,
+        printer_params=[param("bambu_bed_temp", "60")],
+        custom_fields=None,
+        low_weight_threshold_g=80,
+    )
+    out = _spool_swatch(spool, printer_id=1)
+    assert out["diameter_mm"] == 1.75
+    assert out["density_g_cm3"] == 1.24
+    assert out["bed_temp"] == 60
+    assert out["low_weight_threshold_g"] == 80
+
+    filled = _merge_slot(0, 1, "ams", None, out)
+    assert filled["diameter_mm"] == 1.75
+    assert filled["density_g_cm3"] == 1.24
+    assert filled["bed_temp"] == 60
+    assert filled["low_weight_threshold_g"] == 80
+
+    empty = _merge_slot(0, 0, "ams", None, None)
+    assert empty["diameter_mm"] is None
+    assert empty["density_g_cm3"] is None
+    assert empty["bed_temp"] is None
+    assert empty["low_weight_threshold_g"] is None
+
+    live_only = _merge_slot(0, 0, "ams", {"has_filament": True, "material": "PETG"}, None)
+    assert live_only["empty"] is False
+    assert live_only["diameter_mm"] is None
+    assert live_only["bed_temp"] is None
+
+
 def test_spool_swatch_multi_color_and_finish():
     """Multi mode paints every color; finish is the filament finish type."""
     from types import SimpleNamespace
