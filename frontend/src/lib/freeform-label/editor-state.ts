@@ -40,6 +40,7 @@ function createElement(
   design: LabelDesignV2,
   id: string,
   shape: LabelShape = 'rectangle',
+  text = 'Text',
 ): LabelDesignElement {
   const z = nextZ(design)
   const center = (w: number, h: number) => ({
@@ -55,7 +56,7 @@ function createElement(
         type,
         ...center(28, 8),
         z,
-        template: 'Text',
+        template: text,
         fontFamily: 'Space Grotesk',
         fontSizeMm: 3.2,
         fontWeight: 600,
@@ -204,7 +205,7 @@ export function createFreeformEditorController(
   }
 
   const addElement = (type: LabelElementType, shape: LabelShape = 'rectangle') => {
-    const element = createElement(type, design, createId(), shape)
+    const element = createElement(type, design, createId(), shape, translate('labelDesigner.defaultText', 'Text'))
     commitDesign({ ...design, elements: [...design.elements, element] }, element.id)
     return structuredClone(getSelectedElement()!)
   }
@@ -276,13 +277,15 @@ export function createFreeformEditorController(
     if (!selectedId) return false
     const elements = [...design.elements]
     const index = elements.findIndex(element => element.id === selectedId)
-    if (index < 0) return false
+    if (index < 0 || elements[index].type === 'qr') return false
+    const front = elements.findIndex(element => element.type === 'qr')
+    const lastMovable = front < 0 ? elements.length - 1 : front - 1
     const target = direction === 'front'
-      ? elements.length - 1
+      ? lastMovable
       : direction === 'backmost'
         ? 0
         : direction === 'forward'
-          ? Math.min(elements.length - 1, index + 1)
+          ? Math.min(lastMovable, index + 1)
           : Math.max(0, index - 1)
     if (target === index) return false
     const [element] = elements.splice(index, 1)

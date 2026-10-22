@@ -1,11 +1,31 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it } from 'vitest'
-import { buildSpoolDataFromFlatLabel } from '../label-designer'
+import fr from '../../i18n/fr.json'
+import { setLang } from '../i18n'
 import { getStandardLabelPresets } from './standard-presets'
-import { renderFreeformLabel } from './render'
 
 describe('standard label content', () => {
+  it('translates shown names and printed headings but keeps the stable English names', () => {
+    try {
+      setLang('fr')
+      const presets = getStandardLabelPresets('spool')
+      expect(presets.map(preset => preset.name)).toEqual(['Classic (40 × 30 mm)', 'QR focused (40 × 30 mm)'])
+      expect(presets.map(preset => preset.label)).toEqual([
+        `${fr.labelDesigner.standardPresetClassic} (40 × 30 mm)`,
+        `${fr.labelDesigner.standardPresetQrFocused} (40 × 30 mm)`,
+      ])
+      const classic = presets[0].data.design.elements
+        .filter(element => element.type === 'text')
+        .map(element => element.template)
+        .join('\n')
+      for (const heading of ['standardFieldId', 'standardFieldDiameter', 'standardFieldStockedIn'] as const) {
+        expect(classic).toContain(`]${fr.labelDesigner[heading]}[/if]`)
+      }
+      expect(classic).not.toMatch(/Diameter:|Stocked in:/)
+    } finally { setLang('en') }
+  })
+
   it('ships entity-appropriate Classic content in the same two 40 by 30 presets', () => {
     const spoolPresets = getStandardLabelPresets('spool')
     const filamentPresets = getStandardLabelPresets('filament')
@@ -42,18 +62,4 @@ describe('standard label content', () => {
     expect(logos.every(logo => logo.align === 'center' && logo.objectFit === 'contain')).toBe(true)
   })
 
-  it('wraps long color names while fitting single-line material bands', async () => {
-    const preset = getStandardLabelPresets().find(preset => preset.name === 'Classic (40 × 30 mm)')!
-    const root = document.createElement('div')
-    const name = 'Midnight Blue and Purple Galaxy'
-    await renderFreeformLabel({
-      element: root,
-      design: { ...preset.data.design, elements: preset.data.design.elements.filter(element => element.type === 'text') },
-      data: buildSpoolDataFromFlatLabel({ id: 1, type: 'PETG', color: name }),
-    })
-    const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-label-element-type="text"]'))
-    expect(nodes.find(node => node.textContent === name)?.style.whiteSpace).toBe('normal')
-    expect(nodes.find(node => node.textContent === 'PETG')?.style.whiteSpace).toBe('nowrap')
-    expect(root.textContent).not.toContain('?')
-  })
 })

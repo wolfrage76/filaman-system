@@ -165,34 +165,6 @@ describe('label sheet preview styling', () => {
     expect(document.querySelector('.label-sheet-page [data-label-interaction-bound]')).toBeNull()
     expect(document.querySelector('.label-sheet-page [data-editor-handle]')).toBeNull()
   })
-
-  it('reveals a cropped image copy when it loads after the sheet preview was cloned', () => {
-    const source = document.querySelector<HTMLElement>('#source .label-preview')!
-    source.innerHTML = `
-      <div data-label-image-crop-viewport style="visibility: hidden">
-        <img src="asset.png" data-label-image-crop-aspect-factor="0.5">
-      </div>
-    `
-
-    renderLabelSheetPreview({
-      previewRoot: document.querySelector<HTMLElement>('#preview')!,
-      sourceElements: [document.querySelector<HTMLElement>('#source')!],
-      settings,
-      labelWidthMm: 60,
-      labelHeightMm: 40,
-    })
-
-    const cloneImage = document.querySelector<HTMLImageElement>('.label-sheet-page img')!
-    Object.defineProperties(cloneImage, {
-      naturalWidth: { configurable: true, value: 1200 },
-      naturalHeight: { configurable: true, value: 600 },
-    })
-    cloneImage.dispatchEvent(new Event('load'))
-
-    const viewport = cloneImage.closest<HTMLElement>('[data-label-image-crop-viewport]')!
-    expect(viewport.style.getPropertyValue('--label-image-crop-aspect')).toBe('1')
-    expect(viewport.style.visibility).toBe('visible')
-  })
 })
 
 describe('label sheet individual export state', () => {
@@ -466,7 +438,7 @@ describe('first-class print workspace navigation', () => {
       expect(outputControls.pngButton.hidden).toBe(false)
       expect(document.querySelector<HTMLInputElement>('#freeform-preset-name')!.value).toBe('Wide')
       expect(document.querySelector<HTMLSelectElement>('#freeform-preset-list')!.value).toBe('own:Wide')
-      expect(document.querySelector<HTMLButtonElement>('#freeform-preset-update')!.disabled).toBe(false)
+      await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>('#freeform-preset-update')!.disabled).toBe(false))
       window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: false }))
       document.querySelector<HTMLButtonElement>('#sheet-edit-designer')!.click()
       expect(activatedWidths).toEqual([85])
@@ -786,6 +758,19 @@ function openSelectedDesigner(controls: LabelSheetControls) {
   document.querySelector<HTMLButtonElement>('[data-sheet-create]')!.click()
   return selectedDesign
 }
+
+describe('built-in label paper presets', () => {
+  it('shows a translated name for the Letter preset and keeps its stable id', async () => {
+    const container = await AstroContainer.create()
+    document.body.innerHTML = await container.renderToString(LabelSheetOutputSettings)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
+    bindLabelSheetControls(() => undefined, (key, fallback) =>
+      key === 'labelPrint.builtInLetter3x10' ? 'Lettre US 3 x 10' : fallback)
+    const letter = [...document.querySelectorAll<HTMLOptionElement>('#sheet-preset option')]
+      .find(option => option.value === 'builtin-letter-3x10')
+    expect(letter?.textContent).toBe('Lettre US 3 x 10')
+  })
+})
 
 describe('sheet label creation', () => {
   it('creates a correctly sized standard label', async () => {

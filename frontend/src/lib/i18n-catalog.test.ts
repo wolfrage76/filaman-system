@@ -57,6 +57,7 @@ describe('live page translation consumers', () => {
     for (const key of [
       'labelSheets', 'sheetSource', 'designedLabel', 'editDesignedLabel',
       'workspaceTabs', 'designedLabelPreset', 'paperLayout', 'paperGeometryGuide',
+      'pcPrintTitle',
     ]) {
       expect(resolveCatalogValue(en, `labelPrint.${key}`)).toEqual(expect.any(String))
       expect(resolveCatalogValue(de, `labelPrint.${key}`)).toEqual(expect.any(String))
@@ -73,6 +74,7 @@ describe('live page translation consumers', () => {
       '../components/freeform-label/ElementInspector.astro',
       '../components/freeform-label/FieldDock.astro',
       '../components/freeform-label/DesignerSidebar.astro',
+      '../components/freeform-label/CanvasTextToolbar.astro',
       '../components/PrintSidebar.astro',
       '../components/LabelSheetOutputSettings.astro',
     ].map(path => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'))

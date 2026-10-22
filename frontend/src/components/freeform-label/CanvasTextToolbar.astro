@@ -22,13 +22,13 @@ const verticalAlignmentOptions = [
   { value: 'bottom', label: 'Bottom', icon: 'alignBottom', i18n: 'labelDesigner.alignBottom' },
 ] as const
 ---
-<div id="freeform-text-toolbar" class="freeform-text-toolbar" data-label-editor-chrome aria-label="Selected element controls" hidden>
+<div id="freeform-text-toolbar" class="freeform-text-toolbar" data-label-editor-chrome aria-label="Selected element controls" data-i18n-aria-label="labelDesigner.selectedElementControls" hidden>
   <div class="freeform-text-controls" data-element-section="text" hidden>
     <div class="freeform-context-row" role="toolbar" aria-label="Text formatting" data-i18n-aria-label="labelDesigner.textFormatting">
       <span class="freeform-font-label" data-i18n="labelDesigner.font">Font</span>
       <details class="freeform-font-menu">
         <summary aria-label="Font" data-i18n-aria-label="labelDesigner.font"><span data-font-current>Space Grotesk</span></summary>
-        <div class="freeform-font-options" role="group" aria-label="Fonts">
+        <div class="freeform-font-options" role="group" aria-label="Fonts" data-i18n-aria-label="labelDesigner.fonts">
           {LABEL_FONT_FAMILIES.map(family => <button type="button" data-font-choice={family} data-no-designer-tooltip style={`font-family: '${family}'`}>{family}</button>)}
         </div>
       </details>
@@ -57,7 +57,7 @@ const verticalAlignmentOptions = [
         <details id="freeform-fit-settings" class="freeform-fit-settings"><summary data-designer-tooltip title="Set the smallest font size Scale font to fit may use." data-i18n-title="labelDesigner.minFontSizeHint" aria-label="Minimum size (mm)" data-i18n-aria-label="labelDesigner.minFontSizeMm" data-i18n="labelDesigner.minFontSizeShort">Min</summary><div class="freeform-fit-popover"><label><span data-i18n="labelDesigner.minFontSizeMm">Minimum size (mm)</span><span class="freeform-unit-input"><input type="number" min="0.265" max="20" step="any" data-element-prop="minFontSizeMm" aria-label="Minimum size (mm)" data-i18n-aria-label="labelDesigner.minFontSizeMm" /><span aria-hidden="true">mm</span></span></label></div></details>
         <button type="button" class="freeform-layout-toggle" data-element-toggle="fitToWidth" aria-pressed="false" title="Shrink all text in this element to fit its box." aria-label="Scale font to fit" data-i18n-title="labelDesigner.scaleFontToFitHint" data-i18n-aria-label="labelDesigner.scaleFontToFit"><Fragment set:html={designerIcon('fitText')} /></button>
       </div>
-      <button type="button" class="freeform-layout-toggle" data-element-toggle="wrap" aria-pressed="false" title="Wrap this text element within its width; Wrap alone doesn't shrink the font. With Scale font to fit, use at most two lines." aria-label="Word wrap" data-i18n-title="labelDesigner.wordWrapHint" data-i18n-aria-label="labelDesigner.wordWrap"><Fragment set:html={designerIcon('wordWrap')} /></button>
+      <button type="button" class="freeform-layout-toggle" data-element-toggle="wrap" aria-pressed="false" title="Wrap text within this box. Wrap alone doesn't shrink the font; Scale font to fit adjusts it to the box width and height, down to the minimum size." aria-label="Word wrap" data-i18n-title="labelDesigner.wordWrapHint" data-i18n-aria-label="labelDesigner.wordWrap"><Fragment set:html={designerIcon('wordWrap')} /></button>
       <div class="freeform-alignment-buttons" role="group" aria-label="Alignment" data-i18n-aria-label="labelDesigner.alignment">
         {alignmentOptions.map(option => <button type="button" data-element-align={option.value} aria-label={option.label} title={option.label} data-i18n-aria-label={option.i18n} data-i18n-title={option.i18n} aria-pressed="false" disabled><Fragment set:html={designerIcon(option.icon)} /></button>)}
       </div>
