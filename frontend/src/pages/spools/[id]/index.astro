@@ -1927,7 +1927,7 @@ const { id } = Astro.params
         const nozzleMin = parseInt(valMap['bambu_nozzle_temp_min'], 10)
         const nozzleMax = parseInt(valMap['bambu_nozzle_temp_max'], 10)
         filamentData = {
-          tray_info_idx: valMap['bambu_idx'] || valMap['bambu_tray_idx'] || 'GFL99',
+          tray_info_idx: valMap['bambu_tray_idx'] || valMap['bambu_idx'] || 'GFL99',
           bambu_idx: valMap['bambu_idx'] || valMap['bambu_tray_idx'] || '',
           material_type: spool.filament?.material_type || 'PLA',
           color: (spool.filament?.colors?.[0]?.color?.hex_code || 'FFFFFF').replace('#', '').slice(0, 6),

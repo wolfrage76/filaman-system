@@ -146,7 +146,8 @@
     "oidcFailed": "Échec de la connexion Single Sign-On. Veuillez réessayer.",
     "oidcExpired": "La session de connexion a expiré. Veuillez réessayer.",
     "oidcNoUser": "Aucun compte utilisateur correspondant. Contactez votre administrateur.",
-    "autoLogin": "Connexion automatique…"
+    "autoLogin": "Connexion automatique…",
+    "autoLoginLoop": "La connexion automatique échoue à répétition : le navigateur ne conserve pas le cookie de session. Si FilaMan est aussi accessible en HTTPS sur cet hôte, supprimez les cookies de cet hôte ou utilisez l'adresse HTTPS."
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -1664,10 +1665,17 @@
     "elementShape": "Élément forme"
   },
   "labelPrint": {
-    "pcPrintTitle": "Demande d’impression",
-    "pcPrintPrompt": "Imprimer l’étiquette de la bobine n° {id} sur ce PC ?",
-    "pcPrintFilamentPrompt": "Imprimer l’étiquette du filament n° {id} sur ce PC ?",
-    "openPcPrint": "Ouvrir la fenêtre d’impression",
+    "browserPrintBusy": "Une autre étiquette est en cours d’impression. Terminez ou fermez la boîte de dialogue, puis réessayez.",
+    "pcPrintTitle": "Étiquette API prête",
+    "pcPrintPrompt": "Bobine n° {id}",
+    "pcPrintFilamentPrompt": "Filament n° {id}",
+    "pcPrintWaiting": "Une autre étiquette attend",
+    "pcPrintLoading": "Préparation de l’étiquette API…",
+    "pcPrintUnavailable": "Aperçu indisponible",
+    "pcPrintPreview": "Étiquette à imprimer",
+    "pcPrintSettings": "Modèle + réglages d’impression enregistrés.",
+    "dismissRequest": "Ignorer la demande d’impression",
+    "requestAge": "Âge : {minutes} min",
     "pageTitle": "FilaMan - Impression d'étiquettes",
     "backToOverview": "Retour à la vue d'ensemble",
     "backToSpool": "Retour à la bobine",

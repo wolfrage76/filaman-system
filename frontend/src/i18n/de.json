@@ -147,7 +147,8 @@
     "oidcFailed": "Single Sign-On Anmeldung fehlgeschlagen. Bitte erneut versuchen.",
     "oidcExpired": "Die Anmeldesitzung ist abgelaufen. Bitte erneut versuchen.",
     "oidcNoUser": "Kein passender Benutzer gefunden. Kontaktieren Sie Ihren Administrator.",
-    "autoLogin": "Automatische Anmeldung..."
+    "autoLogin": "Automatische Anmeldung...",
+    "autoLoginLoop": "Die automatische Anmeldung schlägt wiederholt fehl: Der Browser behält das Sitzungs-Cookie nicht. Ist FilaMan auf diesem Host auch per HTTPS erreichbar, lösche die Cookies dieses Hosts oder nutze die HTTPS-Adresse."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -1665,10 +1666,17 @@
     "elementShape": "Formelement"
   },
   "labelPrint": {
-    "pcPrintTitle": "Druckanfrage",
-    "pcPrintPrompt": "Etikett für Spule #{id} auf diesem PC drucken?",
-    "pcPrintFilamentPrompt": "Etikett für Filament #{id} auf diesem PC drucken?",
-    "openPcPrint": "Druckfenster öffnen",
+    "browserPrintBusy": "Ein anderes Etikett wird gedruckt. Schließe den Druckdialog und versuche es erneut.",
+    "pcPrintTitle": "API-Etikett bereit",
+    "pcPrintPrompt": "Spule #{id}",
+    "pcPrintFilamentPrompt": "Filament #{id}",
+    "pcPrintWaiting": "Ein weiteres Etikett wartet",
+    "pcPrintLoading": "API-Etikett wird vorbereitet…",
+    "pcPrintUnavailable": "Etikettvorschau nicht verfügbar",
+    "pcPrintPreview": "Zu druckendes Etikett",
+    "pcPrintSettings": "Nutzt Vorlage + gespeicherte Druckeinstellungen.",
+    "dismissRequest": "Druckanfrage verwerfen",
+    "requestAge": "Alter: {minutes} Min.",
     "pageTitle": "FilaMan - Label-Druck",
     "backToOverview": "Zurück zur Übersicht",
     "backToSpool": "Zurück zur Spule",
