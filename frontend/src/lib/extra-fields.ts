@@ -29,28 +29,44 @@ export function escapeHtml(s: string | null | undefined): string {
     .replace(/'/g, '&#x27;')
 }
 
-const RESERVED_EXTRA_FIELD_PATH_SEGMENTS = new Set([
-  '__proto__',
-  'constructor',
-  'prototype',
-])
+const RESERVED_EXTRA_FIELD_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype'])
 
 export function isUnsafeExtraFieldPath(path: string): boolean {
   return path.split('.').some(segment => !segment || RESERVED_EXTRA_FIELD_PATH_SEGMENTS.has(segment))
 }
 
-export function hasOwnFieldValue(
-  record: Record<string, unknown>,
-  key: string,
-): boolean {
+// Exact roots keep unrelated user fields (including similarly named nested fields) visible.
+const INTEGRATION_EXTRA_FIELD_ROOTS = new Set([
+  'filamentdb_id',
+  'spoolman_id',
+  'spoolman_external_id',
+  'bambu_shop_source_url',
+  'bambu_shop_image_url',
+  'bambu_shop_image_checked_at',
+  'bambu_image_resolver_version',
+  'filament_image_url',
+  'filament_image_source_url',
+  'filament_image_provider',
+  'filament_image_checked_at',
+  'bambu_profile_base_name',
+  'bambu_profiles_by_model',
+  'bambu_slicer_filament',
+  'bambu_slicer_filament_name',
+  'bambu_color_name',
+  'bambu_rfid_tag_1',
+  'bambu_rfid_tag_2',
+])
+
+export function isIntegrationExtraFieldPath(path: string): boolean {
+  // Legacy Spoolman extras mix user fields with plugin metadata.
+  return INTEGRATION_EXTRA_FIELD_ROOTS.has(path.replace(/^spoolman_extra\./, '').split('.')[0])
+}
+
+export function hasOwnFieldValue(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key)
 }
 
-export function setOwnFieldValue(
-  record: Record<string, unknown>,
-  key: string,
-  value: unknown,
-): void {
+export function setOwnFieldValue(record: Record<string, unknown>, key: string, value: unknown): void {
   Object.defineProperty(record, key, {
     configurable: true,
     enumerable: true,
@@ -106,9 +122,7 @@ export function formatDateTimeDisplay(value: unknown): string {
 export function formatDateDisplay(value: unknown): string {
   const raw = String(value)
   const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  const parsed = dateOnly
-    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
-    : new Date(raw)
+  const parsed = dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])) : new Date(raw)
   if (Number.isNaN(parsed.getTime())) return raw
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'short' }).format(parsed)
 }
@@ -141,6 +155,28 @@ function parseRangeEndpoints(minValue: unknown, maxValue: unknown): Record<strin
     ...(min !== null ? { min } : {}),
     ...(max !== null ? { max } : {}),
   }
+}
+
+export function formatNumericRange(value: unknown, decimalPlaces: number | null = null): string {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    const scalar = finiteNumber(value)
+    return scalar === null ? '' : decimalPlaces === null ? String(scalar) : scalar.toFixed(decimalPlaces)
+  }
+  const range = value as Record<string, unknown>
+  const min = finiteNumber(range.min)
+  const max = finiteNumber(range.max)
+  const format = (number: number) => (decimalPlaces === null ? String(number) : number.toFixed(decimalPlaces))
+  if (min === null) return max === null ? '' : format(max)
+  if (max === null || min === max) return format(min)
+  return `${format(min)}–${format(max)}`
+}
+
+export function parseNumericRangeInputs(value: unknown, to: unknown): number | { min: number; max: number } | null {
+  const start = finiteNumber(value)
+  const end = finiteNumber(to)
+  if (start === null) return end
+  if (end === null) return start
+  return { min: start, max: end }
 }
 
 /**
@@ -183,18 +219,13 @@ export function parseExtraFieldDefaultValue(
     case 'checkbox':
       return raw === 'true'
     case 'date':
-      return raw.toUpperCase() === TODAY_EXTRA_FIELD_DEFAULT
-        ? localDateInputValue(now)
-        : raw
+      return raw.toUpperCase() === TODAY_EXTRA_FIELD_DEFAULT ? localDateInputValue(now) : raw
     default:
       return raw
   }
 }
 
-export function serializeExtraFieldDefaultValue(
-  fieldType: string,
-  value: unknown,
-): string | null {
+export function serializeExtraFieldDefaultValue(fieldType: string, value: unknown): string | null {
   if (fieldType === 'range') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null
     const range = value as Record<string, unknown>
@@ -215,20 +246,14 @@ export function serializeExtraFieldDefaultValue(
   return String(value)
 }
 
-export function formatExtraFieldDefaultValue(
-  field: Pick<SystemExtraFieldDef, 'field_type' | 'default_value'>,
-): string {
+export function formatExtraFieldDefaultValue(field: Pick<SystemExtraFieldDef, 'field_type' | 'default_value'>): string {
   if (!field.default_value) return '—'
-  if (
-    field.field_type === 'date' &&
-    field.default_value.toUpperCase() === TODAY_EXTRA_FIELD_DEFAULT
-  ) {
+  if (field.field_type === 'date' && field.default_value.toUpperCase() === TODAY_EXTRA_FIELD_DEFAULT) {
     return TODAY_EXTRA_FIELD_DEFAULT
   }
   const parsed = parseExtraFieldDefaultValue(field)
   if (field.field_type === 'range' && parsed && typeof parsed === 'object') {
-    const range = parsed as Record<string, unknown>
-    return `${range.min ?? ''}–${range.max ?? ''}`
+    return formatNumericRange(parsed)
   }
   if (field.field_type === 'multiselect' && Array.isArray(parsed)) return parsed.join(', ')
   if (field.field_type === 'checkbox') return parsed === true ? '✓' : '✗'
@@ -260,13 +285,8 @@ export interface CollectedSystemFieldValues {
   direct: Record<string, string[]>
 }
 
-export function readLosslessDateTimeInputValue(
-  input: Pick<HTMLInputElement, 'dataset' | 'value'>,
-): string {
-  return (
-    input.dataset.originalRaw !== undefined &&
-    input.value === input.dataset.originalDisplay
-  )
+export function readLosslessDateTimeInputValue(input: Pick<HTMLInputElement, 'dataset' | 'value'>): string {
+  return input.dataset.originalRaw !== undefined && input.value === input.dataset.originalDisplay
     ? input.dataset.originalRaw
     : input.value
 }
@@ -277,30 +297,32 @@ export function collectSystemFieldValues(root: ParentNode = document): Collected
   const direct: Record<string, string[]> = {}
   const ranges = new Map<string, Partial<Record<'min' | 'max', HTMLInputElement>>>()
 
-  root.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('.system-field-input').forEach(input => {
-    const key = input.dataset.key
-    if (!key) return
-    if (input.dataset.type === 'checkbox') {
-      flat[key] = (input as HTMLInputElement).checked ? 'true' : 'false'
-    } else if (input.dataset.type === 'number') {
-      const value = input.value.trim()
-      if (value) flat[key] = Number(value)
-    } else {
-      let value = input.value.trim()
-      if (input.dataset.type === 'datetime') {
-        value = readLosslessDateTimeInputValue(input).trim()
+  root
+    .querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('.system-field-input')
+    .forEach(input => {
+      const key = input.dataset.key
+      if (!key) return
+      if (input.dataset.type === 'checkbox') {
+        flat[key] = (input as HTMLInputElement).checked ? 'true' : 'false'
+      } else if (input.dataset.type === 'number') {
+        const value = input.value.trim()
+        if (value) flat[key] = Number(value)
+      } else {
+        let value = input.value.trim()
+        if (input.dataset.type === 'datetime') {
+          value = readLosslessDateTimeInputValue(input).trim()
+        }
+        if (value) flat[key] = value
       }
-      if (value) flat[key] = value
-    }
 
-    const rangeKey = input.dataset.rangeKey
-    const rangeEnd = input.dataset.rangeEnd as 'min' | 'max' | undefined
-    if (rangeKey && rangeEnd) {
-      const entries = ranges.get(rangeKey) ?? {}
-      entries[rangeEnd] = input as HTMLInputElement
-      ranges.set(rangeKey, entries)
-    }
-  })
+      const rangeKey = input.dataset.rangeKey
+      const rangeEnd = input.dataset.rangeEnd as 'min' | 'max' | undefined
+      if (rangeKey && rangeEnd) {
+        const entries = ranges.get(rangeKey) ?? {}
+        entries[rangeEnd] = input as HTMLInputElement
+        ranges.set(rangeKey, entries)
+      }
+    })
 
   for (const entries of ranges.values()) {
     const min = entries.min
@@ -315,8 +337,7 @@ export function collectSystemFieldValues(root: ParentNode = document): Collected
       return null
     }
     const key = min?.dataset.rangeKey ?? max?.dataset.rangeKey
-    const preserveEmpty =
-      min?.dataset.rangePresent === 'true' || max?.dataset.rangePresent === 'true'
+    const preserveEmpty = min?.dataset.rangePresent === 'true' || max?.dataset.rangePresent === 'true'
     if (key && (min?.value || max?.value || preserveEmpty)) {
       flat[`${key}.min`] = min?.value ? Number(min.value) : null
       flat[`${key}.max`] = max?.value ? Number(max.value) : null
@@ -367,7 +388,7 @@ export function unflattenFieldValues(flat: Record<string, unknown>): Record<stri
 export function renderFieldInput(
   field: SystemExtraFieldDef,
   rawValue: unknown,
-  flat: Record<string, unknown> = {}
+  flat: Record<string, unknown> = {},
 ): string {
   const key = escapeHtml(field.key)
   const cfg = field.config ?? {}
@@ -388,10 +409,7 @@ export function renderFieldInput(
         ? flat[field.key]
         : defaultValue
   const displayVal =
-    scalarVal !== null &&
-    scalarVal !== undefined &&
-    !Array.isArray(scalarVal) &&
-    typeof scalarVal !== 'object'
+    scalarVal !== null && scalarVal !== undefined && !Array.isArray(scalarVal) && typeof scalarVal !== 'object'
       ? escapeHtml(String(scalarVal))
       : ''
 
@@ -404,12 +422,8 @@ export function renderFieldInput(
       return numInput
     }
     case 'range': {
-      const hasRangeValue =
-        typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)
-      const rangeObj =
-        hasRangeValue
-          ? (rawValue as Record<string, unknown>)
-          : {}
+      const hasRangeValue = typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)
+      const rangeObj = hasRangeValue ? (rawValue as Record<string, unknown>) : {}
       const defaultRange =
         defaultValue && typeof defaultValue === 'object' && !Array.isArray(defaultValue)
           ? (defaultValue as Record<string, unknown>)
@@ -447,7 +461,7 @@ export function renderFieldInput(
           ? String(rawValue)
           : flat[field.key] != null
             ? String(flat[field.key])
-            : field.default_value ?? ''
+            : (field.default_value ?? '')
       const inputValue = formatDateTimeInputValue(storedValue)
       if (inputValue === null) {
         return `<input type="text" class="fm-input system-field-input" data-key="${key}" data-type="datetime" value="${escapeHtml(storedValue)}" />`
@@ -461,9 +475,9 @@ export function renderFieldInput(
         ? rawValue.map(String)
         : Array.isArray(flat[field.key])
           ? (flat[field.key] as unknown[]).map(String)
-        : Array.isArray(defaultValue)
-          ? defaultValue.map(String)
-          : []
+          : Array.isArray(defaultValue)
+            ? defaultValue.map(String)
+            : []
       const opts = (field.options ?? [])
         .map(opt => {
           const esc = escapeHtml(opt)
@@ -507,9 +521,7 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
   const cfg = field.config ?? {}
   const unit = cfg.unit ?? ''
   const dp = cfg.decimal_places ?? null
-  const unitSpan = unit
-    ? ` <span style="color:var(--text-muted);font-size:0.85rem">${escapeHtml(unit)}</span>`
-    : ''
+  const unitSpan = unit ? ` <span style="color:var(--text-muted);font-size:0.85rem">${escapeHtml(unit)}</span>` : ''
 
   switch (field.field_type) {
     case 'float': // legacy alias — falls through
@@ -520,14 +532,9 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
       return `<span>${escapeHtml(formatted)}${unitSpan}</span>`
     }
     case 'range': {
-      if (typeof value !== 'object' || value === null || Array.isArray(value))
-        return escapeHtml(String(value))
-      const rv = value as Record<string, unknown>
-      const minNum = finiteNumber(rv.min)
-      const maxNum = finiteNumber(rv.max)
-      const minStr = minNum != null && dp != null ? minNum.toFixed(dp) : String(rv.min ?? '?')
-      const maxStr = maxNum != null && dp != null ? maxNum.toFixed(dp) : String(rv.max ?? '?')
-      return `<span>${escapeHtml(minStr)}–${escapeHtml(maxStr)}${unitSpan}</span>`
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return escapeHtml(String(value))
+      const formatted = formatNumericRange(value, dp)
+      return formatted ? `<span>${escapeHtml(formatted)}${unitSpan}</span>` : '—'
     }
     case 'date':
       return `<span>${escapeHtml(String(value))}</span>`
@@ -573,12 +580,7 @@ export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown)
       if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         return renderUnknownFieldPlainText(value)
       }
-      const rv = value as Record<string, unknown>
-      const minNum = finiteNumber(rv.min)
-      const maxNum = finiteNumber(rv.max)
-      const minStr = minNum != null && dp != null ? minNum.toFixed(dp) : String(rv.min ?? '')
-      const maxStr = maxNum != null && dp != null ? maxNum.toFixed(dp) : String(rv.max ?? '')
-      return `${minStr}–${maxStr}${unit}`.trim()
+      return `${formatNumericRange(value, dp)}${unit}`.trim()
     }
     case 'multiselect':
       return Array.isArray(value) ? value.map(String).join(', ') : String(value)
@@ -595,7 +597,7 @@ export function renderUnknownFieldPlainText(value: unknown): string {
   if (typeof value === 'object') {
     const objectValue = value as Record<string, unknown>
     if ('min' in objectValue || 'max' in objectValue) {
-      return `${objectValue.min ?? ''}–${objectValue.max ?? ''}`.trim()
+      return formatNumericRange(objectValue)
     }
     return JSON.stringify(value)
   }
