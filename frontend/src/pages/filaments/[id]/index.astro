@@ -22,17 +22,17 @@ export function getStaticPaths() {
     <DetailScrollIdentity />
   </div>
   
-  <div id="filament-content">
+  <div id="filament-content" class="fm-detail-content">
     <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
   </div>
 
-  <div id="filament-editor" class="hidden">
+  <div id="filament-editor" class="fm-detail-content hidden">
     <FilamentForm mode="edit" />
   </div>
 
   <PrinterSetup />
 
-  <section class="spool-filament-panel filament-spool-panel">
+  <section class="spool-filament-panel filament-spool-panel fm-detail-content">
   <div id="spools-section" class="hidden">
     <div class="spools-heading"><h2 style="font-weight: 600; margin: 0;" data-i18n="filaments.spools">Spools</h2></div>
     <div class="fm-card" style="padding: 0;">
@@ -70,12 +70,13 @@ export function getStaticPaths() {
 
   <script is:inline src="/vendor/chart.min.js"></script>
   <script>
+    import type { AppDialogs } from '../../../lib/form-dialog'
     import { t, initI18n } from '../../../lib/i18n'
     import { escapeHtml as escapeExtraFieldHtml } from '../../../lib/extra-fields'
     import { prepareExtraFieldUpdate, renderDetailExtraFieldRows } from '../../../lib/entity-extra-fields'
     import { createEntityExtraFieldsDialog, loadEntitySystemFields } from '../../../lib/entity-extra-fields-dialog'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../../lib/cache'
-    import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage } from '../../../lib/filament-detail'
+    import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
     import { createFilamentFormController } from '../../../lib/filament-form'
     import { createDetailEditSession } from '../../../lib/detail-edit'
     import { captureDetailEditPosition } from '../../../lib/detail-edit-position'
@@ -326,27 +327,6 @@ export function getStaticPaths() {
       }
     }
 
-    function safeExternalUrl(value: unknown): string {
-      if (typeof value !== 'string') return ''
-      try {
-        const url = new URL(value, window.location.origin)
-        return url.protocol === 'http:' || url.protocol === 'https:'
-          ? escapeExtraFieldHtml(url.href)
-          : ''
-      } catch {
-        return ''
-      }
-    }
-
-    function renderSpecRow(row: { labelKey: string; value: string; href?: string }): string {
-      const href = safeExternalUrl(row.href)
-      const value = escapeExtraFieldHtml(row.value)
-      return `<div class="filament-spec-row">
-        <span class="filament-spec-label">${t(row.labelKey)}</span>
-        <span class="filament-spec-value">${href ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${value}</a>` : value}</span>
-      </div>`
-    }
-
     function renderFilament(f: any) {
       const sections = buildFilamentDetailSections(f, {
         translate: t,
@@ -354,7 +334,7 @@ export function getStaticPaths() {
       })
       const sectionsHtml = sections.map(section => `<section class="fm-card filament-spec-card">
         <h2 class="filament-spec-title">${t(section.titleKey)}</h2>
-        <div class="filament-spec-rows">${section.rows.map(renderSpecRow).join('')}${section.key === 'spool' ? renderFilamentSpoolImage(f.filamentdb_spool_image_file, t('filamentdbLookup.spoolImage')) : ''}</div>
+        <div class="filament-spec-rows">${section.rows.map(row => renderFilamentDetailRow(row, t)).join('')}${section.key === 'spool' ? renderFilamentSpoolImage(f.filamentdb_spool_image_file, t('filamentdbLookup.spoolImage')) : ''}</div>
       </section>`).join('')
 
       const extraFieldRows = renderDetailExtraFieldRows(
@@ -382,14 +362,14 @@ export function getStaticPaths() {
                 ${renderFilamentHeaderColors(f, t('filaments.soldAs'))}
                 <div class="detail-hero-stats">
                   <div class="detail-hero-stat"><span class="detail-stat-symbol" aria-hidden="true">⌀</span><div><span>${t('filaments.diameter')}</span><strong>${f.diameter_mm != null ? escapeExtraFieldHtml(`${f.diameter_mm} mm`) : '—'}</strong></div></div>
-                  <div class="detail-hero-stat"><svg aria-hidden="true"><use href="/icons.svg?v=detail3#icon-balance"></use></svg><div><span>${t('filaments.rawMaterialWeightLabel')}</span><strong>${f.raw_material_weight_g != null ? escapeExtraFieldHtml(`${f.raw_material_weight_g} g`) : '—'}</strong></div></div>
+                  <div class="detail-hero-stat"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-balance"></use></svg><div><span>${t('filaments.rawMaterialWeightLabel')}</span><strong>${f.raw_material_weight_g != null ? escapeExtraFieldHtml(`${f.raw_material_weight_g} g`) : '—'}</strong></div></div>
                 </div>
               </div>
             </div>
             <div class="detail-page-actions" role="group" aria-label="${t('common.actions')}">
-              <a id="btn-enter-filament-edit" href="/filaments/${f.id}?edit=1" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-edit"></use></svg></a>
-              <button id="btn-duplicate-filament" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-copy"></use></svg></button>
-              <button id="btn-delete-filament" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-trash"></use></svg></button>
+              <a id="btn-enter-filament-edit" href="/filaments/${f.id}?edit=1" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-edit"></use></svg></a>
+              <button id="btn-duplicate-filament" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-copy"></use></svg></button>
+              <button id="btn-delete-filament" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-trash"></use></svg></button>
             </div>
           </div>
         </header>
@@ -397,8 +377,8 @@ export function getStaticPaths() {
         <section class="detail-quick-actions">
           <h2>${t('spools.quickActions')}</h2>
           <div class="detail-quick-action-buttons">
-            <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary"><svg class="detail-spool-icon" aria-hidden="true"><use href="/icons.svg#icon-spools"></use></svg>${t('filaments.newSpool')}</a>
-            <a id="btn-print-label" href="/filaments/${f.id}/print" class="fm-btn fm-btn-outline"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-print"></use></svg>${t('filaments.printLabel') || 'Print Label'}</a>
+            <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary"><svg class="detail-spool-icon" aria-hidden="true"><use href="/icons.svg?v=2#icon-spools"></use></svg>${t('filaments.newSpool')}</a>
+            <a id="btn-print-label" href="/filaments/${f.id}/print" class="fm-btn fm-btn-outline"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-print"></use></svg>${t('filaments.printLabel') || 'Print Label'}</a>
           </div>
         </section>
 
@@ -433,7 +413,7 @@ export function getStaticPaths() {
 
 
       document.getElementById('btn-delete-filament')?.addEventListener('click', async () => {
-        if (!(await (window as any).__fmConfirm(t('filaments.confirmDelete')))) return
+        if (!(await (window as unknown as AppDialogs).__fmConfirm(t('filaments.confirmDelete')))) return
 
         function getCsrfToken(): string {
           const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -451,7 +431,7 @@ export function getStaticPaths() {
 
           // If conflict (409), prompt for cascade delete
           if (response.status === 409) {
-            const confirmCascade = await (window as any).__fmConfirm(
+            const confirmCascade = await (window as unknown as AppDialogs).__fmConfirm(
               t('filaments.confirmCascadeDelete'),
               { 
                 title: t('common.confirmTitle'), 
@@ -473,13 +453,13 @@ export function getStaticPaths() {
 
           if (!response.ok) {
             const data = await response.json().catch(() => ({}))
-            await (window as any).__fmAlert(data.detail?.message || data.message || t('filaments.failedDelete'))
+            await (window as unknown as AppDialogs).__fmAlert(data.detail?.message || data.message || t('filaments.failedDelete'))
             return
           }
 
           window.location.href = '/filaments'
         } catch {
-          await (window as any).__fmAlert(t('filaments.failedDelete'))
+          await (window as unknown as AppDialogs).__fmAlert(t('filaments.failedDelete'))
         }
       })
     }
