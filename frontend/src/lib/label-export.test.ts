@@ -1,0 +1,322 @@
+// @vitest-environment happy-dom
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { renderDesignerLabel, buildSpoolDataFromFlatLabel } from './label-designer'
+import { createDefaultLabelDesign } from './freeform-label/defaults'
+import { renderSvgElementOutput, pngDataUrl } from './label-svg/browser'
+
+vi.mock('./label-svg/runtime.mjs', async importOriginal => {
+  const module = await importOriginal<typeof import('./label-svg/runtime.mjs')>()
+  return { createSvgRuntime: (_readAsset: unknown, raster: boolean) => module.createSvgRuntime((path: string) => readFile(`node_modules/${path}`), raster) }
+})
+
+it('exports exact shared 600 DPI pixels without capturing DOM, zoom or editing handles', async () => {
+  const element = document.createElement('div')
+  document.body.append(element)
+  await renderDesignerLabel({ element, design: createDefaultLabelDesign('spool'),
+    data: buildSpoolDataFromFlatLabel({ id: 295, designation: 'Ä Ö Ü ß', type: 'PLA' }), interactive: true })
+  element.style.zoom = '5'
+  const expected = await renderSvgElementOutput(element, 1417, 945, false)
+  expect(await captureLabelElement(element)).toBe(pngDataUrl(expected.png))
+  expect(imageMock.toCanvas).not.toHaveBeenCalled()
+  const clone = element.cloneNode(true) as HTMLElement
+  await expect(captureLabelElement(clone)).rejects.toThrow(/context|changed/i)
+})
+
+const imageMock = vi.hoisted(() => ({
+  toCanvas: vi.fn(),
+}))
+
+const pdfMock = vi.hoisted(() => {
+  const addPage = vi.fn()
+  const addImage = vi.fn()
+  const save = vi.fn()
+  const output = vi.fn()
+  const document = { addPage, addImage, save, output }
+  const jsPDF = vi.fn(() => document)
+  return { addPage, addImage, save, output, document, jsPDF }
+})
+
+vi.mock('jspdf', () => ({ jsPDF: pdfMock.jsPDF }))
+vi.mock('html-to-image', () => ({ toCanvas: imageMock.toCanvas }))
+
+import {
+  assertLabelRasterBudget,
+  captureLabelElement,
+  createLabelPagesPdf,
+  type LabelPdfPage,
+} from './label-export'
+
+const pages: LabelPdfPage[] = [
+  {
+    dataUrl: 'data:image/png;base64,first',
+    widthMm: 60,
+    heightMm: 40,
+  },
+  {
+    dataUrl: 'data:image/png;base64,second',
+    widthMm: 40,
+    heightMm: 60,
+  },
+]
+
+function makeCaptureCanvas(dataUrl: string, content: 'blank' | 'noise' | 'visible') {
+  const width = 40
+  const height = 40
+  const pixels = new Uint8ClampedArray(width * height * 4)
+  for (let index = 0; index < pixels.length; index += 4) {
+    pixels[index] = 254
+    pixels[index + 1] = 254
+    pixels[index + 2] = 254
+    pixels[index + 3] = 255
+  }
+  const darkPixels = content === 'visible' ? 32 : content === 'noise' ? 1 : 0
+  for (let pixel = 0; pixel < darkPixels; pixel += 1) {
+    const index = pixel * 4
+    pixels[index] = 0
+    pixels[index + 1] = 0
+    pixels[index + 2] = 0
+  }
+  return {
+    width,
+    height,
+    getContext: vi.fn(() => ({
+      getImageData: vi.fn(() => ({ data: pixels })),
+    })),
+    toDataURL: vi.fn(() => dataUrl),
+  } as unknown as HTMLCanvasElement
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  pdfMock.output.mockReturnValue(
+    new Blob(['pdf'], { type: 'application/pdf' }),
+  )
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+describe('label raster budget', () => {
+  it('allows spool-sized batches and rejects oversized labels before capture', () => {
+    expect(() => assertLabelRasterBudget({ widthMm: 40, heightMm: 30 }, 100)).not.toThrow()
+    expect(() => assertLabelRasterBudget({ widthMm: 40, heightMm: 30 }, 120))
+      .toThrow(/batch is too large/i)
+    expect(() => assertLabelRasterBudget({ widthMm: 300, heightMm: 200 }, 1))
+      .toThrow(/too large/i)
+  })
+})
+
+describe('label capture scheduling', () => {
+  it('embeds web fonts in every capture, including a subsequent label with a different font', async () => {
+    const label = document.createElement('div')
+    label.textContent = 'IIII WWWW 12345'
+    document.body.appendChild(label)
+    imageMock.toCanvas.mockImplementation(async (_element, options) => {
+      expect(options.skipFonts).not.toBe(true)
+      return makeCaptureCanvas('data:image/png;base64,font-label', 'visible')
+    })
+
+    for (const family of ['Space Mono', 'Fraunces']) {
+      label.style.fontFamily = family
+      await expect(captureLabelElement(label)).resolves.toBe('data:image/png;base64,font-label')
+    }
+  })
+
+  it('blocks capture when an uploaded image is missing instead of exporting remaining text', async () => {
+    const label = document.createElement('div')
+    label.innerHTML = '<div data-label-output-error="Missing image asset-1">Image unavailable</div><p>Visible text</p>'
+    imageMock.toCanvas.mockResolvedValue(makeCaptureCanvas('data:image/png;base64,incomplete', 'visible'))
+    await expect(captureLabelElement(label)).rejects.toThrow(/asset-1/)
+    expect(imageMock.toCanvas).not.toHaveBeenCalled()
+  })
+
+  it('blocks capture when a required bundled font cannot load', async () => {
+    const label = document.createElement('div')
+    label.style.fontFamily = 'Fraunces'
+    label.textContent = 'Label text'
+    document.body.appendChild(label)
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'fonts')
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { ready: Promise.resolve(), load: async () => [] },
+    })
+    imageMock.toCanvas.mockResolvedValue(makeCaptureCanvas('data:image/png;base64,fallback', 'visible'))
+    try {
+      await expect(captureLabelElement(label)).rejects.toThrow(/Fraunces/)
+      expect(imageMock.toCanvas).not.toHaveBeenCalled()
+    } finally {
+      if (descriptor) Object.defineProperty(document, 'fonts', descriptor)
+      else Reflect.deleteProperty(document, 'fonts')
+    }
+  })
+
+  it('retries an apparently successful blank raster before returning the capture', async () => {
+    const label = document.createElement('div')
+    label.textContent = 'Visible label'
+    document.body.appendChild(label)
+    const captureSources: HTMLElement[] = []
+    imageMock.toCanvas
+      .mockImplementationOnce(async element => {
+        captureSources.push(element)
+        return makeCaptureCanvas('data:image/png;base64,noise', 'noise')
+      })
+      .mockImplementationOnce(async element => {
+        expect(captureSources[0].isConnected).toBe(false)
+        captureSources.push(element)
+        return makeCaptureCanvas('data:image/png;base64,visible', 'visible')
+      })
+
+    await expect(captureLabelElement(label)).resolves.toBe(
+      'data:image/png;base64,visible',
+    )
+    expect(imageMock.toCanvas).toHaveBeenCalledTimes(2)
+    expect(captureSources[1]).not.toBe(captureSources[0])
+    expect(captureSources.every(source => !source.isConnected)).toBe(true)
+  })
+
+  it('rejects instead of exporting when both raster attempts are blank', async () => {
+    const label = document.createElement('div')
+    label.textContent = 'Visible label'
+    document.body.appendChild(label)
+    imageMock.toCanvas.mockResolvedValue(
+      makeCaptureCanvas('data:image/png;base64,blank', 'blank'),
+    )
+
+    await expect(captureLabelElement(label)).rejects.toThrow(
+      'renderer returned a blank image twice',
+    )
+    expect(imageMock.toCanvas).toHaveBeenCalledTimes(2)
+    expect(document.querySelectorAll('[aria-hidden="true"]')).toHaveLength(0)
+  })
+
+  it('captures an off-screen clone without mutating the visible preview', async () => {
+    const label = document.createElement('div')
+    label.id = 'label-preview'
+    label.className = 'label-preview is-selected'
+    label.setAttribute('data-label-interactive', '')
+    label.style.transform = 'scale(1.25)'
+    label.style.transformOrigin = 'center center'
+    label.style.borderColor = 'red'
+    label.style.borderRadius = '12px'
+    label.style.boxShadow = '0 4px 12px black'
+    const child = document.createElement('span')
+    child.id = 'label-child'
+    child.className = 'is-selected'
+    child.setAttribute('data-label-interaction-bound', '')
+    child.textContent = 'Visible label'
+    label.appendChild(child)
+    const handle = document.createElement('button')
+    handle.setAttribute('data-editor-handle', '')
+    label.appendChild(handle)
+    document.body.appendChild(label)
+
+    let captureSource: HTMLElement | undefined
+    imageMock.toCanvas.mockImplementation(async element => {
+      captureSource = element
+      expect(element).not.toBe(label)
+      expect(element.isConnected).toBe(true)
+      expect(element.id).toBe('')
+      expect(element.querySelector('[id]')).toBeNull()
+      expect(element.querySelector('.is-selected')).toBeNull()
+      expect(element.querySelector('[data-label-interactive]')).toBeNull()
+      expect(element.querySelector('[data-label-interaction-bound]')).toBeNull()
+      expect(element.querySelector('[data-editor-handle]')).toBeNull()
+      expect(element.style.position).toBe('')
+      expect(element.style.left).toBe('')
+      expect(element.parentElement?.style.position).toBe('fixed')
+      expect(element.parentElement?.style.left).toBe('-100000px')
+      expect(element.style.transform).toBe('none')
+      expect(element.style.boxShadow).toBe('none')
+      expect(label.style.transform).toBe('scale(1.25)')
+      expect(label.style.boxShadow).toBe('0 4px 12px black')
+      return makeCaptureCanvas('data:image/png;base64,label', 'visible')
+    })
+
+    await expect(captureLabelElement(label, {
+      resetTransform: true,
+    })).resolves.toBe('data:image/png;base64,label')
+
+    expect(captureSource?.isConnected).toBe(false)
+    expect(label.style.transform).toBe('scale(1.25)')
+    expect(label.style.transformOrigin).toBe('center center')
+    expect(label.style.borderColor).toBe('red')
+    expect(label.style.borderRadius).toBe('12px')
+    expect(label.style.boxShadow).toBe('0 4px 12px black')
+    expect(label.classList.contains('is-selected')).toBe(true)
+    expect(label.querySelector('[data-editor-handle]')).toBe(handle)
+  })
+
+  it('completes when the PNG renderer needs a visual frame after Print backgrounds the source tab', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0)
+    vi.stubGlobal('requestAnimationFrame', () => 0)
+    imageMock.toCanvas.mockImplementation(() => new Promise(resolve => {
+      globalThis.requestAnimationFrame(() => {
+        resolve(makeCaptureCanvas('data:image/png;base64,label', 'visible'))
+      })
+    }))
+    const label = document.createElement('div')
+    document.body.appendChild(label)
+    let captured: string | undefined
+
+    void captureLabelElement(label).then(dataUrl => {
+      captured = dataUrl
+    })
+
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(250)
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(1)
+    await Promise.resolve()
+
+    expect(captured).toBe('data:image/png;base64,label')
+  })
+})
+
+describe('individual label PDF construction', () => {
+  it('builds exact millimeter pages without choosing an output destination', async () => {
+    const pdf = await createLabelPagesPdf(pages)
+
+    expect(pdf).toBe(pdfMock.document)
+    expect(pdfMock.jsPDF).toHaveBeenCalledWith({
+      orientation: 'l',
+      unit: 'mm',
+      format: [60, 40],
+    })
+    expect(pdfMock.addPage).toHaveBeenCalledWith([40, 60], 'p')
+    expect(pdfMock.addImage).toHaveBeenNthCalledWith(
+      1,
+      pages[0].dataUrl,
+      'PNG',
+      0,
+      0,
+      60,
+      40,
+      'label-page-0',
+      'FAST',
+    )
+    expect(pdfMock.addImage).toHaveBeenNthCalledWith(
+      2,
+      pages[1].dataUrl,
+      'PNG',
+      0,
+      0,
+      40,
+      60,
+      'label-page-1',
+      'FAST',
+    )
+    expect(pdfMock.save).not.toHaveBeenCalled()
+    expect(pdfMock.output).not.toHaveBeenCalled()
+  })
+
+  it('returns null and does not construct jsPDF for an empty page list', async () => {
+    await expect(createLabelPagesPdf([])).resolves.toBeNull()
+    expect(pdfMock.jsPDF).not.toHaveBeenCalled()
+  })
+})

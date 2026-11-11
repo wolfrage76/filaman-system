@@ -1,0 +1,279 @@
+---
+interface Props {
+  printLabel?: string
+  resetLabel?: string
+  printI18n?: string
+  resetI18n?: string
+  exportPngI18n?: string
+  exportPdfI18n?: string
+  printButtonId?: string
+}
+
+const {
+  printLabel = 'Print',
+  resetLabel = 'Reset',
+  printI18n,
+  resetI18n,
+  exportPngI18n = 'labelPrint.btnExportPng',
+  exportPdfI18n = 'labelPrint.btnExportPdf',
+  printButtonId,
+} = Astro.props
+
+const resolvedPrintButtonId = printButtonId ?? 'btn-print'
+---
+
+<div class="action-buttons">
+  <div class="export-heading" id="label-export-heading" data-i18n="labelPrint.exportHeading">Export</div>
+  <div class="export-buttons" role="group" aria-labelledby="label-export-heading">
+    <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button" data-i18n-aria-label={exportPngI18n} aria-label="Export PNG">PNG</button>
+    <button id="btn-export-aml" class="fm-btn fm-btn-outline" type="button" data-i18n-aria-label="labelPrint.btnExportAml" aria-label="Export AML">AML</button>
+    <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button" data-i18n-aria-label={exportPdfI18n} aria-label="Export PDF">PDF</button>
+  </div>
+  <button
+    id={resolvedPrintButtonId}
+    class="fm-btn fm-btn-primary"
+    type="button"
+    data-i18n={printI18n}
+  >
+    {printLabel}
+  </button>
+  <button id="btn-reset" class="fm-btn fm-btn-outline" type="button" data-i18n={resetI18n}>{resetLabel}</button>
+  <p id="label-output-status" class="label-output-status" role="status" aria-live="polite"></p>
+  <div id="freeform-output-warning" class="label-layout-warning" hidden>
+    <span id="freeform-output-reason" role="status"></span>
+    <button id="freeform-select-overflow" class="fm-btn fm-btn-outline" type="button" data-i18n="labelDesigner.selectTextBox">Select text box</button>
+  </div>
+
+  <div class="print-help-row">
+    <div class="print-help">
+      <button class="print-help-trigger" type="button" aria-describedby="print-help-content">
+        <span class="print-help-icon" aria-hidden="true">i</span>
+        <span data-i18n="labelPrint.printHelpTitle">Printing issues?</span>
+      </button>
+      <div
+        class="print-help-content"
+        id="print-help-content"
+        role="tooltip"
+      >
+        <div class="print-help-section">
+          <p data-i18n="labelPrint.printHelpIntro">
+            Normal browser printing is used by default. It does not create or save a PDF.
+          </p>
+          <ul>
+            <li data-i18n="labelPrint.printHelpScale">
+              Select the exact paper size and print at 100% or Actual size.
+            </li>
+            <li data-i18n="labelPrint.printHelpBrowserSystemDialog">
+              Use the OS or system print dialog to set printer-specific paper size,
+              orientation, rotation, and alignment.
+            </li>
+          </ul>
+        </div>
+        <div class="print-help-section">
+          <p>
+            <span data-i18n="labelPrint.printHelpPdfFallbackPrefix">For blank, clipped, offset, or wrong-size output, enable</span>{' '}
+            <em class="print-help-selection" data-i18n="labelPrint.createTemporaryPdf">Create temporary PDF for printing</em><span data-i18n="labelPrint.printHelpPdfFallbackSuffix">.</span>
+          </p>
+          <ul>
+            <li data-i18n="labelPrint.printHelpPdfOpenOnly">
+              FilaMan opens the temporary PDF only for printing and does not save it.
+            </li>
+            <li data-i18n="labelPrint.printHelpPdfSystemDialog">
+              Even in temporary-PDF mode, you may need the OS or system print dialog
+              for consistent, repeatable results.
+            </li>
+            <li data-i18n="labelPrint.printHelpPdfDownloadSetting">
+              Depending on your browser’s PDF-download setting, it may still download a copy.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <label class="print-pdf-option" for="check-print-pdf">
+      <input id="check-print-pdf" type="checkbox" />
+      <span data-i18n="labelPrint.createTemporaryPdf">Create temporary PDF for printing</span>
+    </label>
+  </div>
+</div>
+
+<style is:global>
+  .action-buttons {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 24px 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  .export-heading {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .export-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .action-buttons .fm-btn {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .label-output-status {
+    min-height: 1.25em;
+    margin: -4px 0 0;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
+  .label-layout-warning {
+    background: var(--bg-soft);
+    border: 1px solid var(--label-danger, #ff8a80);
+    border-radius: var(--radius-sm);
+    display: grid;
+    font-size: 0.75rem;
+    gap: 6px;
+    padding: 8px;
+  }
+  .label-layout-warning[hidden], .label-layout-warning [hidden] { display: none; }
+
+  .export-buttons .fm-btn {
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+  }
+
+  .print-help-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: nowrap;
+  }
+
+  .print-pdf-option {
+    display: inline-flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1.25;
+    cursor: pointer;
+  }
+
+  .print-pdf-option input {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  @media (max-width: 640px) {
+    .print-help-row { flex-wrap: wrap; }
+  }
+
+  @media (max-width: 900px) {
+    .action-buttons { padding: 16px; }
+  }
+
+  .print-help {
+    position: relative;
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .print-help-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .print-help-trigger:hover,
+  .print-help-trigger:focus-visible {
+    color: var(--text);
+  }
+
+  .print-help-trigger:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  .print-help-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    color: #dc2626;
+    font-size: 0.68rem;
+    line-height: 1;
+  }
+
+  .print-help-content {
+    position: absolute;
+    z-index: 20;
+    bottom: calc(100% + 8px);
+    left: 0;
+    display: none;
+    width: min(480px, calc(100vw - 32px));
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-md);
+    color: var(--text);
+  }
+
+  .print-help:hover .print-help-content,
+  .print-help:focus-within .print-help-content {
+    display: block;
+  }
+
+  .print-help-content p { margin: 0 0 6px; }
+
+  .print-help-content ul {
+    margin: 0 0 0 2px;
+    padding-left: 16px;
+  }
+
+  .print-help-content li + li { margin-top: 4px; }
+
+  .print-help-section + .print-help-section { margin-top: 10px; }
+
+  .print-help-selection { font-style: italic; }
+
+  @media (max-width: 640px) {
+    .print-help-content {
+      position: fixed;
+      z-index: 1000;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      width: auto;
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+    }
+  }
+</style>

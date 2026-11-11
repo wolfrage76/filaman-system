@@ -1,0 +1,87 @@
+<style is:global>
+  .print-page-single {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .print-page-single .print-sidebar { transition: width 0.2s ease; }
+  .print-page-single .print-sidebar.sidebar-wide { width: var(--designer-sidebar-width, 360px); }
+  .print-page-single .back-link { transition: opacity var(--transition); }
+
+  .print-page-single .fm-input {
+    font-family: var(--font-sans);
+    transition: border-color var(--transition), box-shadow var(--transition);
+  }
+
+  .print-page-single .fm-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
+  .print-page-single .fm-checkbox-group { transition: background var(--transition); }
+
+  .print-page-single .fm-checkbox-group input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .print-page-single .fm-btn {
+    letter-spacing: 0.2px;
+    transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+  }
+
+  .print-page-single .preview-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-soft);
+  }
+
+  .print-page-single .preview-zoom-bar {
+    padding: 8px 20px 6px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .print-page-single .preview-zoom-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background var(--transition), border-color var(--transition);
+  }
+
+  .print-page-single .preview-zoom-btn:hover {
+    background: var(--accent);
+    color: var(--btn-primary-text);
+  }
+
+  .print-page-single .preview-scroll-area {
+    flex: 1;
+    display: flex;
+    align-items: safe center;
+    justify-content: safe center;
+    padding: 40px;
+    overflow: auto;
+  }
+
+  .print-page-single .label-preview {
+    box-shadow: var(--shadow-lg);
+    border: 1px dashed #ccc;
+  }
+
+  @media (max-width: 900px) {
+    .print-page-single:not(:has(#freeform-designer-workspace.is-active)) { overflow: visible; }
+    .print-page-single:not(:has(#freeform-designer-workspace.is-active)) .preview-container { flex: 0 0 auto; overflow: visible; }
+    .print-page-single:not(:has(#freeform-designer-workspace.is-active)) .preview-scroll-area { min-height: 320px; overflow: auto; padding: 20px; }
+  }
+</style>

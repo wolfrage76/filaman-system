@@ -99,6 +99,8 @@ export interface LookupOptions<T = unknown> {
   minChars?: number
   /** Debounce delay in ms (default: 300) */
   debounceMs?: number
+  /** Number of results to request per search (default: 20) */
+  pageSize?: number
   /** Additional query params */
   extraParams?: Record<string, string | number>
   /** Initial search query — triggers a search immediately after creation */
@@ -119,6 +121,28 @@ export interface LookupInstance {
   search: (query: string) => void
 }
 
+export function bindFilamentDbLookupToManufacturer(
+  select: HTMLSelectElement,
+  searchAll: HTMLInputElement,
+  section: HTMLElement,
+  createLookup: (scopedToManufacturer: boolean) => LookupInstance,
+): void {
+  let lookup: LookupInstance | null = null
+  const refresh = (manufacturerChanged = false) => {
+    lookup?.destroy()
+    lookup = null
+    if (manufacturerChanged && select.value) searchAll.checked = false
+    searchAll.disabled = !!select.value
+    const scopedToManufacturer = !!select.value
+    const enabled = scopedToManufacturer || searchAll.checked
+    section.style.display = enabled ? '' : 'none'
+    if (enabled) lookup = createLookup(scopedToManufacturer)
+  }
+  select.addEventListener('change', () => refresh(true))
+  searchAll.addEventListener('change', () => refresh())
+  refresh()
+}
+
 export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): LookupInstance {
   const {
     container,
@@ -135,6 +159,7 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
     },
     minChars = 2,
     debounceMs = 300,
+    pageSize = 20,
     extraParams = {},
     initialQuery,
     fuzzyScore,
@@ -181,7 +206,7 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
     if (query) {
       params.set('search', query)
     }
-    params.set('page_size', '20')
+    params.set('page_size', String(pageSize))
     for (const [k, v] of Object.entries(extraParams)) {
       params.set(k, String(v))
     }
@@ -204,7 +229,7 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
         resultsEl.innerHTML = items
           .map((item: T, idx: number) => {
             const cls = idx === bestIdx ? 'fdb-lookup-item fdb-lookup-item--best-match' : 'fdb-lookup-item'
-            return `<div class="${cls}" data-index="${idx}">${renderItem(item)}</div>`
+            return `<button type="button" class="${cls}" data-index="${idx}">${renderItem(item)}</button>`
           })
           .join('')
       } else {
@@ -214,7 +239,7 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
           resultsEl.innerHTML = `<div class="fdb-lookup-empty">${t('filamentdbLookup.noResults')}</div>`
         } else {
           resultsEl.innerHTML = items
-            .map((item: T, idx: number) => `<div class="fdb-lookup-item" data-index="${idx}">${renderItem(item)}</div>`)
+            .map((item: T, idx: number) => `<button type="button" class="fdb-lookup-item" data-index="${idx}">${renderItem(item)}</button>`)
             .join('')
         }
       }
@@ -276,6 +301,7 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') e.preventDefault()
     if (e.key === 'Escape') {
       dropdown.style.display = 'none'
       input.blur()
@@ -296,6 +322,10 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
     input.value = initialQuery
     // Small delay to let the DOM settle
     setTimeout(() => doSearch(initialQuery), 50)
+  } else if (minChars === 0) {
+    // No minimum length: show the full list right away instead of waiting
+    // for the user to focus the input.
+    setTimeout(() => doSearch(''), 50)
   }
 
   // ── Public API ─────────────────────────────────────────────────

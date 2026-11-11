@@ -1,0 +1,2895 @@
+// @vitest-environment happy-dom
+
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
+import JSZip from 'jszip'
+import { LabelOutputAssetError } from './label-output-readiness'
+
+import {
+  LABEL_PRINT_PDF_MODE_KEY,
+  applyBatchLabelPreviewZoom,
+  applySingleLabelPreviewZoom,
+  appendLabelSettingsCheckbox,
+  bindLabelOutputPreview,
+  bindLabelOutputs,
+  bindLabelPreviewZoom,
+  bindLabelSettingsEvents,
+  bindPdfOutputActions,
+  bindPrintPageSidebarCollapse,
+  bindPrintPdfPreference,
+  bindPrintWorkspaceTabs,
+  captureLabelSettings,
+  createPrintWorkspaceCoordinator,
+  createPreviewRenderCoordinator,
+  getLabelOutputControls,
+  getLabelSettingsControls,
+  getStandardLabelSettings,
+  readVersionedLabelSettings,
+  readPrintWorkspaceMode,
+  resetLabelSettings,
+  restoreLabelSettings,
+  syncDesignerRepresentativeElements,
+  type LabelPdfFactoryOverride,
+} from './label-print-page'
+import type { LabelPdfDocument, LabelPdfPage } from './label-export'
+import * as labelPrintPage from './label-print-page'
+import { API_DEFAULT_LABEL_SETTINGS } from './label-standard'
+import {
+  bindTemporaryPdfPreview,
+  type TemporaryPdfPreviewController,
+} from './label-pdf-preview'
+import {
+  applyLabelSheetPreviewZoom,
+  bindLabelSheetControls,
+  LABEL_SHEET_PRESETS_KEY,
+  syncLabelSheetIndividualExportState,
+  type LabelSheetControls,
+  type LabelSheetSource,
+} from './label-sheet'
+import { api } from './api'
+import {
+  cleanupLabelBrowserPrint,
+  printLabelBrowserJob,
+} from './label-browser-print'
+
+vi.mock('./label-export', async importOriginal => {
+  const actual = await importOriginal<typeof import('./label-export')>()
+  return {
+    ...actual,
+    createLabelPagesPdf: vi.fn(async () => null),
+  }
+})
+
+vi.mock('./label-browser-print', () => ({
+  cleanupLabelBrowserPrint: vi.fn(),
+  createLabelBrowserPrintJob: vi.fn(source => ({
+    kind: source.outputMode,
+    widthMm: source.individualDimensions.widthMm,
+    heightMm: source.individualDimensions.heightMm,
+    pages: source.individualPages,
+    printGrid: false,
+  })),
+  printLabelBrowserJob: vi.fn(async () => window.print()),
+}))
+
+describe('createPreviewRenderCoordinator', () => {
+  it('settles the latest preview without starting another render', async () => {
+    const coordinator = createPreviewRenderCoordinator()
+    const render = vi.fn(async () => undefined)
+
+    await coordinator.run(render)
+    await coordinator.settle()
+
+    expect(render).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for a replacement render that starts while settling', async () => {
+    const coordinator = createPreviewRenderCoordinator()
+    let finishFirst!: () => void
+    let finishSecond!: () => void
+    const first = coordinator.run(() => new Promise<void>(resolve => {
+      finishFirst = resolve
+    }))
+    const settled = coordinator.settle()
+    const second = coordinator.run(() => new Promise<void>(resolve => {
+      finishSecond = resolve
+    }))
+    await Promise.resolve()
+
+    finishFirst()
+    await first
+    let didSettle = false
+    void settled.then(() => { didSettle = true })
+    await Promise.resolve()
+    expect(didSettle).toBe(false)
+
+    finishSecond()
+    await second
+    await settled
+  })
+})
+
+describe('print workspace modes', () => {
+  it('docks the existing zoom controls in the designer and restores them for other modes', () => {
+    document.body.innerHTML = `
+      <main class="preview-container">
+        <div class="preview-zoom-bar"><button>Zoom in</button></div>
+        <div id="workspace"><div class="freeform-command-bar"><div class="freeform-zoom-slot"></div></div></div>
+      </main>
+      <section id="standard"></section><section id="designer"></section><section id="sheets"></section>
+    `
+    const previewRoot = document.querySelector<HTMLElement>('.preview-container')!
+    const zoom = document.querySelector<HTMLElement>('.preview-zoom-bar')!
+    const clicked = vi.fn()
+    zoom.querySelector('button')!.addEventListener('click', clicked)
+    const binding = bindPrintWorkspaceTabs({
+      buttons: [],
+      panels: {
+        standard: document.querySelector('#standard')!,
+        designer: document.querySelector('#designer')!,
+        sheets: document.querySelector('#sheets')!,
+      },
+      designerWorkspace: document.querySelector<HTMLElement>('#workspace'),
+      storageKey: 'workspace-mode',
+      onChange: () => applyBatchLabelPreviewZoom(previewRoot, 100),
+    })
+    binding.activate('standard')
+    expect(zoom.style.position).toBe('fixed')
+    binding.activate('designer')
+    expect(zoom.parentElement?.className).toBe('freeform-zoom-slot')
+    expect(zoom.style.position).toBe('')
+    zoom.querySelector('button')!.click()
+    expect(clicked).toHaveBeenCalledOnce()
+    for (const mode of ['sheets', 'designer', 'standard'] as const) binding.activate(mode)
+    expect(previewRoot.firstElementChild).toBe(zoom)
+    expect(document.querySelectorAll('.preview-zoom-bar')).toHaveLength(1)
+    expect(zoom.style.position).toBe('fixed')
+  })
+
+  it('validates persisted modes and falls back to standard', () => {
+    localStorage.setItem('workspace-mode', 'sheets')
+    expect(readPrintWorkspaceMode('workspace-mode')).toBe('sheets')
+    localStorage.setItem('workspace-mode', 'unknown')
+    expect(readPrintWorkspaceMode('workspace-mode')).toBe('standard')
+  })
+
+  it('shows one of Standard, Designer, and Label Sheets and updates output availability', () => {
+    document.body.innerHTML = `
+      <aside class="print-sidebar"></aside>
+      <button data-workspace-mode="standard"></button>
+      <button data-workspace-mode="designer"></button>
+      <button data-workspace-mode="sheets"></button>
+      <section id="standard"></section>
+      <section id="designer"></section>
+      <section id="sheets"></section>
+      <button id="png"></button><button id="aml"></button><button id="pdf"></button><button id="print"></button>
+    `
+    const changes: string[] = []
+    const binding = bindPrintWorkspaceTabs({
+      buttons: document.querySelectorAll('[data-workspace-mode]'),
+      panels: {
+        standard: document.querySelector('#standard')!,
+        designer: document.querySelector('#designer')!,
+        sheets: document.querySelector('#sheets')!,
+      },
+      outputButtons: {
+        png: document.querySelector('#png')!,
+        aml: document.querySelector('#aml')!,
+        pdf: document.querySelector('#pdf')!,
+        print: document.querySelector('#print')!,
+      },
+      storageKey: 'workspace-mode',
+      sidebar: document.querySelector<HTMLElement>('.print-sidebar'),
+      onChange: mode => changes.push(mode),
+    })
+
+    localStorage.setItem('workspace-mode', 'designer')
+    binding.activate('sheets', false)
+    expect(localStorage.getItem('workspace-mode')).toBe('designer')
+    const sidebar = document.querySelector<HTMLElement>('.print-sidebar')!
+    expect(sidebar.classList.contains('sidebar-sheets-wide')).toBe(true)
+    expect(document.querySelector<HTMLElement>('#sheets')!.hidden).toBe(false)
+    expect(document.querySelector<HTMLElement>('#standard')!.hidden).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('#png')!.hidden).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('#aml')!.hidden).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('#pdf')!.hidden).toBe(false)
+
+    binding.activate('designer')
+    expect(sidebar.classList.contains('sidebar-sheets-wide')).toBe(false)
+    expect(sidebar.classList.contains('sidebar-wide')).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('#png')!.hidden).toBe(false)
+    expect(changes).toEqual(['sheets', 'designer'])
+    expect(binding.getActiveMode()).toBe('designer')
+    binding.activate('sheets')
+    document.querySelector<HTMLButtonElement>('[data-workspace-mode="standard"]')!.click()
+    expect(localStorage.getItem('workspace-mode')).toBe('standard')
+    expect(sidebar.classList.contains('sidebar-sheets-wide')).toBe(false)
+    expect(sidebar.classList.contains('sidebar-wide')).toBe(false)
+  })
+
+  it('uses arrow, Home, and End keys to focus and activate workspace tabs', () => {
+    document.body.innerHTML = `
+      <div role="tablist">
+        <button id="tab-btn-print" data-workspace-mode="standard"></button>
+        <button id="tab-btn-designer" data-workspace-mode="designer"></button>
+        <button id="tab-btn-sheets" data-workspace-mode="sheets"></button>
+      </div>
+      <section id="standard"></section><section id="designer"></section><section id="sheets"></section>
+    `
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-workspace-mode]'))
+    bindPrintWorkspaceTabs({
+      buttons,
+      panels: {
+        standard: document.querySelector('#standard')!,
+        designer: document.querySelector('#designer')!,
+        sheets: document.querySelector('#sheets')!,
+      },
+      storageKey: 'workspace-keyboard-mode',
+      initialMode: 'standard',
+      onChange: () => undefined,
+    })
+
+    buttons[0].focus()
+    buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    expect(document.activeElement).toBe(buttons[2])
+    expect(buttons[2].getAttribute('aria-selected')).toBe('true')
+    expect(document.querySelector<HTMLElement>('#sheets')!.hidden).toBe(false)
+
+    buttons[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    expect(document.activeElement).toBe(buttons[0])
+    buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    expect(document.activeElement).toBe(buttons[2])
+    buttons[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    expect(document.activeElement).toBe(buttons[0])
+    expect(buttons.map(button => button.tabIndex)).toEqual([0, -1, -1])
+  })
+
+  it.each([
+    { route: 'single label', entities: [11] },
+    { route: 'batch labels', entities: [11, 12, 13] },
+  ])('$route executes the shared mode, source, representative, output, and callback contract', ({ entities }) => {
+    let source: LabelSheetSource = { type: 'standard' }
+    const changes: string[] = []
+    const coordinator = createPrintWorkspaceCoordinator({
+      initialMode: 'standard',
+      getItems: () => entities,
+      getSheetSource: () => source,
+      onModeChange: state => changes.push(`${state.mode}:${state.source}`),
+    })
+
+    const designer = coordinator.activate('designer')
+    expect(designer.representativeItem).toBe(entities[0])
+    expect(designer.previewItems).toEqual([entities[0]])
+    expect(designer.outputItems).toEqual(entities)
+    expect(coordinator.getPreviewItems()).toEqual([entities[0]])
+    expect(coordinator.getOutputItems()).toEqual(entities)
+
+    const standardSheets = coordinator.activate('sheets')
+    expect(standardSheets.source).toBe('standard')
+    expect(coordinator.getPreviewItems()).toEqual(entities)
+
+    source = { type: 'designer', presetName: 'Saved' }
+    const sheets = coordinator.activate('sheets')
+    expect(sheets.source).toBe('designer')
+    expect(coordinator.getSource()).toBe('designer')
+    expect(coordinator.getOutputItems()).toEqual(entities)
+    expect(changes).toEqual([
+      'designer:designer',
+      'sheets:standard',
+      'sheets:designer',
+    ])
+  })
+
+  it('keeps only the representative batch label in the editable workspace', () => {
+    document.body.innerHTML = `
+      <div id="wrapper-1" class="label-wrapper"></div>
+      <div id="wrapper-2" class="label-wrapper"></div>
+      <div id="wrapper-3" class="label-wrapper"></div>
+    `
+    const wrappers = Array.from(document.querySelectorAll<HTMLElement>('.label-wrapper'))
+
+    syncDesignerRepresentativeElements('designer', wrappers)
+
+    expect(wrappers.map(wrapper => ({
+      representative: wrapper.classList.contains('is-designer-representative'),
+      outputOnly: wrapper.classList.contains('is-designer-output-only'),
+      ariaHidden: wrapper.getAttribute('aria-hidden'),
+    }))).toEqual([
+      { representative: true, outputOnly: false, ariaHidden: null },
+      { representative: false, outputOnly: true, ariaHidden: 'true' },
+      { representative: false, outputOnly: true, ariaHidden: 'true' },
+    ])
+
+    syncDesignerRepresentativeElements('sheets', wrappers)
+    expect(wrappers.every(wrapper => !wrapper.classList.contains('is-designer-output-only'))).toBe(true)
+    expect(wrappers.every(wrapper => !wrapper.hasAttribute('aria-hidden'))).toBe(true)
+  })
+
+  it('changes the batch preview while retaining the full output order and clamping the selection', () => {
+    let items = [11, 22, 33]
+    const workspace = createPrintWorkspaceCoordinator({
+      initialMode: 'designer', getItems: () => items,
+      getSheetSource: () => ({ type: 'standard' }), onModeChange: () => undefined,
+    })
+    workspace.selectPreview(1)
+    expect(workspace.getState()).toMatchObject({ previewIndex: 1, representativeItem: 22, previewItems: [22], outputItems: [11, 22, 33] })
+    workspace.selectPreview(99)
+    expect(workspace.getPreviewItems()).toEqual([33])
+    workspace.activate('sheets')
+    expect(workspace.getPreviewItems()).toEqual([11, 22, 33])
+    workspace.activate('designer')
+    expect(workspace.getRepresentativeItem()).toBe(33)
+    items = [11]
+    expect(workspace.getState()).toMatchObject({ previewIndex: 0, previewItems: [11] })
+    workspace.selectPreview(-1)
+    expect(workspace.getRepresentativeItem()).toBe(11)
+    items = []
+    expect(workspace.getPreviewItems()).toEqual([])
+  })
+
+  it('puts the selected preview first for editor interactions and restores normal DOM order', () => {
+    document.body.innerHTML = '<div id="canvas"><div id="first"></div><div id="second"></div><div id="third"></div></div>'
+    const canvas = document.querySelector('#canvas')!
+    const elements = Array.from(canvas.children) as HTMLElement[]
+    syncDesignerRepresentativeElements('designer', elements, 1)
+    expect(canvas.firstElementChild?.id).toBe('second')
+    expect(elements[1].classList.contains('is-designer-representative')).toBe(true)
+    expect(elements[0].getAttribute('aria-hidden')).toBe('true')
+    syncDesignerRepresentativeElements('designer', elements, 2)
+    expect(canvas.firstElementChild?.id).toBe('third')
+    syncDesignerRepresentativeElements('standard', elements)
+    expect(Array.from(canvas.children).map(el => el.id)).toEqual(['first', 'second', 'third'])
+  })
+
+  it('synchronizes the hidden sheet output mode before notifying a route', () => {
+    document.body.innerHTML = `
+      <button data-workspace-mode="standard"></button>
+      <button data-workspace-mode="designer"></button>
+      <button data-workspace-mode="sheets"></button>
+      <section id="standard"></section>
+      <section id="designer"></section>
+      <section id="sheets"></section>
+    `
+    const calls: string[] = []
+    const sheetControls = {
+      setOutputMode: (mode: 'individual' | 'sheet') => calls.push(`output:${mode}`),
+    }
+    const binding = bindPrintWorkspaceTabs({
+      buttons: document.querySelectorAll('[data-workspace-mode]'),
+      panels: {
+        standard: document.querySelector('#standard')!,
+        designer: document.querySelector('#designer')!,
+        sheets: document.querySelector('#sheets')!,
+      },
+      sheetControls,
+      storageKey: 'workspace-mode',
+      onChange: mode => calls.push(`change:${mode}`),
+    })
+
+    binding.activate('sheets')
+    binding.activate('designer')
+
+    expect(calls).toEqual([
+      'output:sheet',
+      'change:sheets',
+      'output:individual',
+      'change:designer',
+    ])
+  })
+
+  it('renders once when workspace activation changes the sheet output mode', () => {
+    document.body.innerHTML = `
+      <button data-workspace-mode="standard"></button>
+      <button data-workspace-mode="designer"></button>
+      <button data-workspace-mode="sheets"></button>
+      <section id="standard"></section>
+      <section id="designer"></section>
+      <section id="sheets"></section>
+      <select id="output-mode">
+        <option value="individual">Individual</option>
+        <option value="sheet">Sheet</option>
+      </select>
+    `
+    const render = vi.fn()
+    const sheetControls = bindLabelSheetControls(render)
+    const binding = bindPrintWorkspaceTabs({
+      buttons: document.querySelectorAll('[data-workspace-mode]'),
+      panels: {
+        standard: document.querySelector('#standard')!,
+        designer: document.querySelector('#designer')!,
+        sheets: document.querySelector('#sheets')!,
+      },
+      sheetControls,
+      storageKey: 'workspace-mode',
+      onChange: render,
+    })
+
+    binding.activate('sheets')
+
+    expect(sheetControls.getOutputMode()).toBe('sheet')
+    expect(render).toHaveBeenCalledOnce()
+  })
+})
+
+function makePdfDocument() {
+  return {
+    save: vi.fn(),
+    autoPrint: vi.fn(function(this: LabelPdfDocument) {
+      return this
+    }),
+    output: vi.fn(
+      () => new Blob(['pdf'], { type: 'application/pdf' }),
+    ),
+  } satisfies LabelPdfDocument & {
+    autoPrint: ReturnType<typeof vi.fn>
+  }
+}
+
+function makePdfPreview() {
+  return {
+    show: vi.fn(),
+    hide: vi.fn(),
+    dispose: vi.fn(),
+  } satisfies TemporaryPdfPreviewController
+}
+
+function temporaryPdfPreviewMarkup() {
+  return `
+    <main class="preview-container">
+      <div class="preview-scroll-area"><div class="label-preview">PETG</div></div>
+      <section id="temporary-pdf-preview" hidden tabindex="-1">
+        <button id="temporary-pdf-back">Back</button>
+        <button id="temporary-pdf-open">Open</button>
+        <a id="temporary-pdf-download">Download</a>
+        <div id="temporary-pdf-content"></div>
+        <div id="temporary-pdf-unsupported" hidden>Unsupported</div>
+      </section>
+    </main>
+  `
+}
+
+function makeBrowserPrintBinding(
+  page = document.querySelector<HTMLElement>('#label') ?? document.body,
+) {
+  const sheetControls = {
+    getOutputMode: () => 'individual',
+    getSettings: () => (
+      {} as ReturnType<LabelSheetControls['getSettings']>
+    ),
+    setOutputMode: () => undefined,
+    getSource: () => ({ type: 'standard' }),
+    setSource: () => undefined,
+    setDesignerPresets: () => undefined,
+  } as LabelSheetControls
+  return {
+    previewRoot: document.body,
+    sheetControls,
+    getIndividualPages: () => [page],
+  }
+}
+
+function bindSingleCollectionOutputs(options: {
+  printButton: HTMLButtonElement
+  printPdfCheckbox: HTMLInputElement
+  exportPngBtn: HTMLButtonElement
+  exportAmlBtn: HTMLButtonElement
+  exportPdfBtn: HTMLButtonElement
+  labelElement: HTMLElement
+  getTranslation(key: string, fallback: string): string
+  buildBaseName(): string
+  pdfName?(): string
+  getDimensions(): { widthMm: number; heightMm: number }
+  refreshPreview(): Promise<void>
+  captureLabel(): Promise<string>
+  browserPrint: ReturnType<typeof makeBrowserPrintBinding>
+  createPdf?: LabelPdfFactoryOverride
+  pdfPreview?: TemporaryPdfPreviewController
+}) {
+  bindLabelOutputs({
+    controls: {
+      printButton: options.printButton,
+      printPdfCheckbox: options.printPdfCheckbox,
+      pngButton: options.exportPngBtn,
+      amlButton: options.exportAmlBtn,
+      pdfButton: options.exportPdfBtn,
+    },
+    collection: {
+      getItems: () => [options.labelElement],
+      prepare: options.refreshPreview,
+      capture: options.captureLabel,
+      getDimensions: options.getDimensions,
+      browserPrint: {
+        ...options.browserPrint,
+        getIndividualPages: () => [options.labelElement],
+      },
+      pngName: () => `${options.buildBaseName()}.png`,
+      pngArchiveName: () => `${options.buildBaseName()}.zip`,
+      pdfName: options.pdfName ?? (() => `${options.buildBaseName()}.pdf`),
+      allowPartialPng: false,
+      allowPartialPdf: false,
+    },
+    getTranslation: options.getTranslation,
+    createPdf: options.createPdf,
+    pdfPreview: options.pdfPreview,
+  })
+}
+
+function bindBatchCollectionOutputs<T>(options: {
+  entities(): T[]
+  activeTab(): 'print' | 'designer'
+  printButton: HTMLButtonElement
+  printPdfCheckbox: HTMLInputElement
+  pngButton: HTMLButtonElement
+  amlButton: HTMLButtonElement
+  pdfButton: HTMLButtonElement
+  getTranslation(key: string, fallback: string): string
+  renderAll(tab: 'print' | 'designer'): Promise<void>
+  captureLabel(entity: T): Promise<string>
+  getPdfDimensions(): { widthMm: number; heightMm: number }
+  singlePngName(entity: T): string
+  zipName(): string
+  zipEntryName(entity: T): string
+  pdfName(): string
+  browserPrint: ReturnType<typeof makeBrowserPrintBinding>
+  createPdf?: LabelPdfFactoryOverride
+  pdfPreview?: TemporaryPdfPreviewController
+  skipCaptureErrorsInZip?: boolean
+  skipCaptureErrorsInPdf?: boolean
+}) {
+  bindLabelOutputs({
+    controls: {
+      printButton: options.printButton,
+      printPdfCheckbox: options.printPdfCheckbox,
+      pngButton: options.pngButton,
+      amlButton: options.amlButton,
+      pdfButton: options.pdfButton,
+    },
+    collection: {
+      getItems: options.entities,
+      prepare: () => options.renderAll(options.activeTab()),
+      capture: options.captureLabel,
+      getDimensions: options.getPdfDimensions,
+      browserPrint: options.browserPrint,
+      pngName: (entity, _index, total) => total === 1
+        ? options.singlePngName(entity)
+        : options.zipEntryName(entity),
+      pngArchiveName: options.zipName,
+      pdfName: options.pdfName,
+      allowPartialPng: options.skipCaptureErrorsInZip ?? false,
+      allowPartialPdf: options.skipCaptureErrorsInPdf ?? false,
+    },
+    getTranslation: options.getTranslation,
+    createPdf: options.createPdf,
+    pdfPreview: options.pdfPreview,
+  })
+}
+
+function renderPrintPageControls() {
+  document.body.innerHTML = `
+    <div id="fm-page"></div>
+    <main class="preview-container">
+      <button id="preview-zoom-out">Zoom out</button>
+      <input id="preview-zoom-input" type="number" min="50" max="500" step="5" value="100">
+      <button id="preview-zoom-in">Zoom in</button>
+      <div class="preview-scroll-area">
+        <div id="label-preview"></div>
+      </div>
+    </main>
+    <input id="input-width" type="number">
+    <input id="input-height" type="number">
+    <input id="input-font-size" type="range">
+    <input id="input-qr-size" type="number">
+    <input id="check-logo" type="checkbox">
+    <input id="check-qr" type="checkbox">
+    <input id="check-id" type="checkbox">
+    <input id="check-mfr" type="checkbox">
+    <input id="check-mat" type="checkbox">
+    <input id="check-color" type="checkbox">
+    <input id="check-color-swatch" type="checkbox">
+    <input id="check-color-hex" type="checkbox">
+    <button id="btn-print">Print</button>
+    <input id="check-print-pdf" type="checkbox">
+    <button id="btn-export-png">PNG</button>
+    <button id="btn-export-aml">AML</button>
+    <button id="btn-export-pdf">PDF</button>
+  `
+}
+
+it('restores API Default controls without inheriting or writing browser settings', () => {
+  renderPrintPageControls()
+  const controls = getLabelSettingsControls()
+  const saved = JSON.stringify({ width: 100, height: 50, showQR: false, extraFields: { secret: true } })
+  localStorage.setItem('filaman-label-settings', saved)
+  restoreLabelSettings(controls, JSON.parse(saved))
+  labelPrintPage.applyStandardLabelSettings(controls, API_DEFAULT_LABEL_SETTINGS)
+  expect(getStandardLabelSettings(controls)).toMatchObject({ widthMm: 60, heightMm: 40, showQR: true, qrSizeMm: 18, showColorHex: false })
+  expect(localStorage.getItem('filaman-label-settings')).toBe(saved)
+})
+
+function bindDeferredCapture(
+  kind: 'single-label' | 'batch',
+  captureLabel: () => Promise<string>,
+  options: {
+    createPdf?: LabelPdfFactoryOverride
+    pdfPreview?: TemporaryPdfPreviewController
+  } = {},
+) {
+  const printButton = document.querySelector<HTMLButtonElement>('#print')!
+  const pngButton = document.querySelector<HTMLButtonElement>('#png')!
+  const amlButton = document.querySelector<HTMLButtonElement>('#aml')!
+  const pdfButton = document.querySelector<HTMLButtonElement>('#pdf')!
+  const printPdfCheckbox =
+    document.querySelector<HTMLInputElement>('#pdf-mode')!
+  const labelElement = document.querySelector<HTMLElement>('#label')!
+
+  if (kind === 'single-label') {
+    bindSingleCollectionOutputs({
+      printButton,
+      printPdfCheckbox,
+      exportPngBtn: pngButton,
+      exportAmlBtn: amlButton,
+      exportPdfBtn: pdfButton,
+      labelElement,
+      getTranslation: (_key, fallback) => fallback,
+      buildBaseName: () => 'single-label',
+      getDimensions: () => ({ widthMm: 60, heightMm: 40 }),
+      refreshPreview: vi.fn(async () => undefined),
+      captureLabel,
+      browserPrint: makeBrowserPrintBinding(labelElement),
+      createPdf: options.createPdf,
+      pdfPreview: options.pdfPreview,
+    })
+  } else {
+    bindBatchCollectionOutputs({
+      entities: () => [{ id: 1 }],
+      activeTab: () => 'print',
+      printButton,
+      printPdfCheckbox,
+      pngButton,
+      amlButton,
+      pdfButton,
+      getTranslation: (_key, fallback) => fallback,
+      renderAll: vi.fn(async () => undefined),
+      captureLabel,
+      getPdfDimensions: () => ({ widthMm: 60, heightMm: 40 }),
+      singlePngName: entity => `label-${entity.id}.png`,
+      zipName: () => 'labels.zip',
+      zipEntryName: entity => `label-${entity.id}.png`,
+      pdfName: () => 'batch-labels.pdf',
+      browserPrint: makeBrowserPrintBinding(labelElement),
+      createPdf: options.createPdf,
+      pdfPreview: options.pdfPreview,
+    })
+  }
+
+  return {
+    printButton,
+    printPdfCheckbox,
+    pngButton,
+    amlButton,
+    pdfButton,
+  }
+}
+
+function bindCollectionOutputs(
+  items: number[],
+  options: {
+    allowPartialPng?: boolean
+    allowPartialPdf?: boolean
+    capture?: (item: number) => Promise<string>
+    createPdf?: (pages: LabelPdfPage[]) => Promise<LabelPdfDocument | null>
+    getIndividualPages?: () => HTMLElement[]
+    dimensions?: { widthMm: number; heightMm: number }
+    getTranslation?: (key: string, fallback: string) => string
+    pdfPreview?: TemporaryPdfPreviewController
+    prepare?: () => Promise<void>
+    pngName?: (item: number, index: number, total: number) => string
+    withPdfPreview?: boolean
+  } = {},
+) {
+  document.body.innerHTML = `
+    <button id="print">Print</button>
+    <button id="png">Export PNG</button>
+    <button id="aml">Export AML</button>
+    <button id="pdf">Export PDF</button>
+    <input id="pdf-mode" type="checkbox">
+    <p id="label-output-status" role="status"></p>
+    ${options.withPdfPreview ? temporaryPdfPreviewMarkup() : ''}
+  `
+  const controls = {
+    printButton: document.querySelector<HTMLButtonElement>('#print')!,
+    printPdfCheckbox:
+      document.querySelector<HTMLInputElement>('#pdf-mode')!,
+    pngButton: document.querySelector<HTMLButtonElement>('#png')!,
+    amlButton: document.querySelector<HTMLButtonElement>('#aml')!,
+    pdfButton: document.querySelector<HTMLButtonElement>('#pdf')!,
+  }
+  const sheetControls = {
+    getOutputMode: () => 'individual',
+    getSettings: () => (
+      {} as ReturnType<LabelSheetControls['getSettings']>
+    ),
+  } as LabelSheetControls
+  const capture = options.capture ?? vi.fn(async item =>
+    `data:image/png;base64,aXRlbS0${item}`,
+  )
+  const prepare = options.prepare ?? vi.fn(async () => undefined)
+  const pages = options.getIndividualPages ?? (() => [document.body])
+
+  bindLabelOutputs({
+    controls,
+    collection: {
+      getItems: () => items,
+      prepare,
+      capture,
+      getDimensions: () => options.dimensions ?? ({ widthMm: 48, heightMm: 30 }),
+      browserPrint: {
+        previewRoot: document.body,
+        sheetControls,
+        getIndividualPages: pages,
+      },
+      pngName: options.pngName ?? (item => `label-${item}.png`),
+      pngArchiveName: () => 'labels.zip',
+      pdfName: () => 'labels.pdf',
+      allowPartialPng: options.allowPartialPng ?? false,
+      allowPartialPdf: options.allowPartialPdf ?? false,
+    },
+    getTranslation: options.getTranslation ?? ((key, fallback) =>
+      key === 'labelPrint.pngExportFailed' ? 'Translated PNG failure.' : fallback),
+    createPdf: options.createPdf,
+    pdfPreview: options.pdfPreview,
+  })
+
+  return { controls, capture, prepare }
+}
+
+beforeEach(() => {
+  vi.mocked(printLabelBrowserJob)
+    .mockImplementation(async () => window.print())
+  vi.mocked(cleanupLabelBrowserPrint).mockClear()
+  localStorage.clear()
+  document.body.innerHTML = `
+    <button id="print">Print</button>
+    <button id="pdf">Export PDF</button>
+    <input id="pdf-mode" type="checkbox">
+    <div id="label"></div>
+  `
+  Object.defineProperty(window, 'print', {
+    configurable: true,
+    value: () => undefined,
+  })
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: vi.fn(() => 'blob:filaman-print-pdf'),
+  })
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: vi.fn(),
+  })
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+describe('shared print-page controls', () => {
+  it('returns the existing output and label-setting controls', () => {
+    renderPrintPageControls()
+
+    const output = getLabelOutputControls()
+    const settings = getLabelSettingsControls()
+
+    expect(output).toEqual({
+      printButton: document.querySelector('#btn-print'),
+      printPdfCheckbox: document.querySelector('#check-print-pdf'),
+      pngButton: document.querySelector('#btn-export-png'),
+      amlButton: document.querySelector('#btn-export-aml'),
+      pdfButton: document.querySelector('#btn-export-pdf'),
+    })
+    expect(settings).toEqual({
+      width: document.querySelector('#input-width'),
+      height: document.querySelector('#input-height'),
+      fontSize: document.querySelector('#input-font-size'),
+      qrSize: document.querySelector('#input-qr-size'),
+      showLogo: document.querySelector('#check-logo'),
+      showQr: document.querySelector('#check-qr'),
+      showId: document.querySelector('#check-id'),
+      showManufacturer: document.querySelector('#check-mfr'),
+      showMaterial: document.querySelector('#check-mat'),
+      showColor: document.querySelector('#check-color'),
+      showColorSwatch: document.querySelector('#check-color-swatch'),
+      showColorHex: document.querySelector('#check-color-hex'),
+    })
+  })
+
+  it('reports the id of a missing required control', () => {
+    renderPrintPageControls()
+    document.querySelector('#btn-export-aml')?.remove()
+
+    expect(() => getLabelOutputControls()).toThrow(
+      'Missing label print control: #btn-export-aml',
+    )
+  })
+
+  it('collapses the application sidebar before the designer workspace becomes too narrow', () => {
+    renderPrintPageControls()
+    document.documentElement.classList.remove('sidebar-collapsed')
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 1300,
+    })
+
+    const cleanup = bindPrintPageSidebarCollapse()
+    expect(document.documentElement.classList.contains('sidebar-collapsed')).toBe(false)
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1240 })
+    window.dispatchEvent(new Event('resize'))
+
+    expect(document.documentElement.classList.contains('sidebar-collapsed'))
+      .toBe(true)
+    expect(document.querySelector('#fm-page')?.classList.contains('collapsed'))
+      .toBe(true)
+    expect(localStorage.getItem('sidebar-collapsed')).toBe('true')
+
+    cleanup()
+  })
+})
+
+describe('shared single-label print-page behavior', () => {
+  it('keeps designer zoom below its toolbar while retaining centered standard preview zoom', () => {
+    document.body.innerHTML = '<div id="freeform-designer-workspace" class="is-active"><div class="freeform-canvas-host"><div class="label-preview"></div></div></div>'
+    const label = document.querySelector<HTMLElement>('.label-preview')!
+    const applySingle = (labelPrintPage as unknown as {
+      applySingleLabelPreviewZoom(label: HTMLElement, zoom: number): void
+    }).applySingleLabelPreviewZoom
+
+    expect(applySingle).toBeTypeOf('function')
+    applySingle(label, 270)
+    expect(label.style.transform).toBe('scale(2.7)')
+    expect(label.style.transformOrigin).toBe('top left')
+    document.querySelector('#freeform-designer-workspace')!.classList.remove('is-active')
+    applySingle(label, 270)
+    expect(label.style.transformOrigin).toBe('center center')
+  })
+
+  it('does not magnify hidden batch placeholders repeatedly when zoom changes', () => {
+    document.body.innerHTML = '<main><div class="freeform-canvas-host"><div class="label-wrapper"><div class="label-preview"></div></div><div class="label-wrapper"><div class="label-preview"></div></div></div></main>'
+    const root = document.querySelector<HTMLElement>('main')!
+    const wrappers = Array.from(root.querySelectorAll<HTMLElement>('.label-wrapper'))
+    wrappers.forEach((wrapper, index) => {
+      const label = wrapper.firstElementChild as HTMLElement
+      // Unrendered placeholders take their width from the wrapper being scaled.
+      Object.defineProperties(label, {
+        offsetWidth: { get: () => index === 0 ? 120 : Number.parseFloat(wrapper.style.width) || 120 },
+        offsetHeight: { get: () => 80 },
+      })
+    })
+    syncDesignerRepresentativeElements('designer', wrappers)
+    for (const zoom of [315, 385, 395, 405, 415, 425, 500]) applyBatchLabelPreviewZoom(root, zoom)
+    expect(wrappers[0].style.width).toBe('600px')
+    expect(wrappers[1].style.width).toBe('')
+    expect((wrappers[1].firstElementChild as HTMLElement).style.transform).toBe('')
+
+    syncDesignerRepresentativeElements('designer', wrappers, 1)
+    applyBatchLabelPreviewZoom(root, 500)
+    expect(wrappers[1].style.width).toBe('600px')
+    expect(wrappers[1].style.height).toBe('400px')
+    expect((wrappers[1].firstElementChild as HTMLElement).style.transform).toBe('scale(5)')
+  })
+
+  it.each([
+    { zoom: 138, scale: 'scale(1.38)', width: '331.2px', height: '220.8px' },
+    { zoom: 150, scale: 'scale(1.5)', width: '360px', height: '240px' },
+    { zoom: 500, scale: 'scale(5)', width: '1200px', height: '800px' },
+    { zoom: 600, scale: 'scale(5)', width: '1200px', height: '800px' },
+  ])('zooms batch label wrappers to $zoom% with a 500% ceiling', ({ zoom, scale, width, height }) => {
+    document.body.innerHTML = `
+      <main id="preview-root">
+        <div id="freeform-designer-workspace">
+          <div id="freeform-canvas-host" class="freeform-canvas-host">
+            <div class="label-wrapper" id="wrapper-101">
+              <div class="label-preview" id="label-101"></div>
+            </div>
+          </div>
+        </div>
+      </main>
+    `
+    const root = document.querySelector<HTMLElement>('#preview-root')!
+    const wrapper = document.querySelector<HTMLElement>('#wrapper-101')!
+    const label = document.querySelector<HTMLElement>('#label-101')!
+    Object.defineProperties(label, {
+      offsetWidth: { configurable: true, value: 240 },
+      offsetHeight: { configurable: true, value: 160 },
+    })
+
+    applyBatchLabelPreviewZoom(root, zoom)
+
+    expect(label.style.transform).toBe(scale)
+    expect(label.style.transformOrigin).toBe('top left')
+    expect(wrapper.style.width).toBe(width)
+    expect(wrapper.style.height).toBe(height)
+  })
+
+  it.each([500, 600])('zooms sheet pages and their scrollable frames up to 500% for %s input', zoom => {
+    document.body.innerHTML = `
+      <div class="label-sheet-page-frame"><div class="label-sheet-page"></div></div>
+    `
+    const page = document.querySelector<HTMLElement>('.label-sheet-page')!
+    const frame = page.parentElement!
+    Object.defineProperties(page, {
+      offsetWidth: { configurable: true, value: 800 },
+      offsetHeight: { configurable: true, value: 1100 },
+    })
+
+    applyLabelSheetPreviewZoom(document.body, zoom)
+
+    expect(page.style.transform).toBe('scale(5)')
+    expect(frame.style.width).toBe('4000px')
+    expect(frame.style.height).toBe('5500px')
+  })
+
+  it('centers a sheet while it fits and left-aligns it once zoom makes it overflow', () => {
+    document.body.innerHTML = `
+      <main id="preview-root" style="padding: 40px">
+        <div class="label-sheet-page-frame"><div class="label-sheet-page"></div></div>
+      </main>
+    `
+    const previewRoot = document.querySelector<HTMLElement>('#preview-root')!
+    const page = document.querySelector<HTMLElement>('.label-sheet-page')!
+    const frame = page.parentElement!
+    Object.defineProperties(previewRoot, {
+      clientWidth: { configurable: true, value: 1000 },
+    })
+    Object.defineProperties(page, {
+      offsetWidth: { configurable: true, value: 800 },
+      offsetHeight: { configurable: true, value: 1100 },
+    })
+
+    applyLabelSheetPreviewZoom(previewRoot, 110)
+    expect(frame.style.marginInline).toBe('auto')
+
+    applyLabelSheetPreviewZoom(previewRoot, 120)
+    expect(frame.style.marginInline).toBe('0')
+
+    applyLabelSheetPreviewZoom(previewRoot, 100)
+    expect(frame.style.marginInline).toBe('auto')
+  })
+
+  it.each(['plain', 'versioned', 'route-owned'] as const)(
+    'restores %s zoom above 300% and persists button and typed changes up to 500%',
+    storageMode => {
+      renderPrintPageControls()
+      const storageKey = 'large-preview-zoom'
+      localStorage.setItem(storageKey, storageMode === 'versioned'
+        ? JSON.stringify({ _v: 2, width: '60', zoom: '485' })
+        : '485')
+      const zoom = bindLabelPreviewZoom({
+        storageKey,
+        previewRoot: document.querySelector<HTMLElement>('.preview-scroll-area')!,
+        settingsVersion: storageMode === 'versioned' ? 2 : undefined,
+        ...(storageMode === 'route-owned' ? {
+          readStoredZoom: () => Number(localStorage.getItem(storageKey)),
+          writeStoredZoom: (value: number) => localStorage.setItem(storageKey, String(value)),
+        } : {}),
+        onChange: () => undefined,
+      })
+      expect(zoom.getZoom()).toBe(485)
+
+      const zoomIn = document.querySelector<HTMLButtonElement>('#preview-zoom-in')!
+      zoomIn.click()
+      expect(zoom.getZoom()).toBe(495)
+      zoomIn.click()
+      zoomIn.click()
+      expect(zoom.getZoom()).toBe(500)
+      expect(document.querySelector<HTMLInputElement>('#preview-zoom-input')?.value).toBe('500')
+      expect(localStorage.getItem(storageKey)).toBe(storageMode === 'versioned'
+        ? JSON.stringify({ _v: 2, width: '60', zoom: '500' })
+        : '500')
+
+      const input = document.querySelector<HTMLInputElement>('#preview-zoom-input')!
+      input.value = '450'
+      input.dispatchEvent(new Event('change'))
+      expect(zoom.getZoom()).toBe(450)
+      input.value = '100'
+      input.dispatchEvent(new Event('change'))
+      expect(zoom.getZoom()).toBe(100)
+    },
+  )
+
+  it('restores and persists preview zoom through the existing zoom controls', () => {
+    renderPrintPageControls()
+    localStorage.setItem('test-label-zoom', '135')
+    const onChange = vi.fn()
+    const previewRoot = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+
+    const zoom = bindLabelPreviewZoom({
+      storageKey: 'test-label-zoom',
+      previewRoot,
+      min: 50,
+      onChange,
+      getTranslation: (_key, fallback) => fallback,
+    })
+
+    expect(zoom.getZoom()).toBe(135)
+    expect(document.querySelector('#preview-zoom-input'))
+      .toHaveProperty('value', '135')
+    expect(onChange).toHaveBeenCalledOnce()
+
+    document.querySelector<HTMLButtonElement>('#preview-zoom-in')?.click()
+
+    expect(zoom.getZoom()).toBe(145)
+    expect(localStorage.getItem('test-label-zoom')).toBe('145')
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it('accepts a typed percentage in the inline zoom control', () => {
+    renderPrintPageControls()
+    const input = document.querySelector<HTMLInputElement>('#preview-zoom-input')!
+    const onChange = vi.fn()
+    const zoom = bindLabelPreviewZoom({
+      storageKey: 'typed-preview-zoom',
+      previewRoot: document.querySelector('.preview-scroll-area')!,
+      onChange,
+    })
+
+    input.value = '137'
+    input.dispatchEvent(new Event('change'))
+
+    expect(zoom.getZoom()).toBe(135)
+    expect(input.value).toBe('135')
+    expect(localStorage.getItem('typed-preview-zoom')).toBe('135')
+    expect(onChange).toHaveBeenCalledOnce()
+  })
+
+  it('zooms the label on Ctrl+wheel without zooming the page or normal scrolling', () => {
+    renderPrintPageControls()
+    const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+    const label = document.createElement('div')
+    label.className = 'label-preview'
+    previewRoot.append(label)
+    const frames: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      frames.push(callback)
+      return frames.length
+    })
+    const zoom = bindLabelPreviewZoom({ storageKey: 'gesture-preview-zoom', previewRoot, onChange: () => applySingleLabelPreviewZoom(label, zoom.getZoom()) })
+    const wheel = (target: Element, ctrlKey: boolean) => {
+      const event = Object.assign(new Event('wheel', { bubbles: true, cancelable: true }), { deltaY: -80, deltaMode: 0, ctrlKey })
+      target.dispatchEvent(event)
+      return event
+    }
+
+    const ordinaryScroll = wheel(label, false)
+    expect(ordinaryScroll.defaultPrevented).toBe(false)
+    expect(zoom.getZoom()).toBe(100)
+
+    const outsideLabel = wheel(previewRoot, true)
+    expect(outsideLabel.defaultPrevented).toBe(false)
+    expect(zoom.getZoom()).toBe(100)
+
+    window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: true }))
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
+    const labelGesture = wheel(label, true)
+    expect(labelGesture.defaultPrevented).toBe(true)
+    expect(frames).toHaveLength(1)
+    frames[0](0)
+    expect(zoom.getZoom()).toBe(138)
+    expect(label.style.transform).toBe('scale(1.38)')
+    expect(localStorage.getItem('gesture-preview-zoom')).toBe('138')
+  })
+
+  it('zooms on Ctrl+wheel while hovering the label sheet paper', () => {
+    renderPrintPageControls()
+    const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+    const sheet = document.createElement('section')
+    sheet.className = 'label-sheet-page'
+    previewRoot.append(sheet)
+    const frames: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      frames.push(callback)
+      return frames.length
+    })
+    const zoom = bindLabelPreviewZoom({ storageKey: 'sheet-gesture-preview-zoom', previewRoot, onChange: () => undefined })
+    const gesture = Object.assign(new Event('wheel', { bubbles: true, cancelable: true }), {
+      deltaY: -80,
+      deltaMode: 0,
+      ctrlKey: true,
+    })
+
+    sheet.dispatchEvent(gesture)
+
+    expect(gesture.defaultPrevented).toBe(true)
+    expect(frames).toHaveLength(1)
+    frames[0](0)
+    expect(zoom.getZoom()).toBe(138)
+  })
+
+  it('batches small pinch deltas into one smooth proportional zoom update', () => {
+    renderPrintPageControls()
+    const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+    const label = document.createElement('div')
+    label.className = 'label-preview'
+    previewRoot.append(label)
+    const frames: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      frames.push(callback)
+      return frames.length
+    })
+    const zoom = bindLabelPreviewZoom({ storageKey: 'smooth-gesture-zoom', previewRoot, onChange: () => undefined })
+
+    for (let index = 0; index < 3; index += 1) {
+      label.dispatchEvent(Object.assign(new Event('wheel', { bubbles: true, cancelable: true }), {
+        deltaY: -10,
+        deltaMode: 0,
+        ctrlKey: true,
+      }))
+    }
+
+    expect(frames).toHaveLength(1)
+    expect(zoom.getZoom()).toBe(100)
+    frames[0](0)
+    expect(zoom.getZoom()).toBe(113)
+  })
+
+  it('supports route-owned preview zoom storage without replacing its settings payload', () => {
+    renderPrintPageControls()
+    localStorage.setItem('batch-label-settings', JSON.stringify({
+      width: '60',
+      zoom: '135',
+    }))
+    const previewRoot = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+
+    const zoom = bindLabelPreviewZoom({
+      storageKey: 'batch-label-settings',
+      previewRoot,
+      min: 50,
+      readStoredZoom: () => Number(JSON.parse(
+        localStorage.getItem('batch-label-settings')!,
+      ).zoom),
+      writeStoredZoom: value => {
+        const settings = JSON.parse(
+          localStorage.getItem('batch-label-settings')!,
+        )
+        settings.zoom = String(value)
+        localStorage.setItem('batch-label-settings', JSON.stringify(settings))
+      },
+      onChange: () => undefined,
+    })
+
+    expect(zoom.getZoom()).toBe(135)
+    document.querySelector<HTMLButtonElement>('#preview-zoom-in')?.click()
+    expect(JSON.parse(localStorage.getItem('batch-label-settings')!))
+      .toEqual({ width: '60', zoom: '145' })
+  })
+
+  it('stores preview zoom inside an existing versioned settings payload', () => {
+    renderPrintPageControls()
+    const storageKey = 'batch-settings'
+    localStorage.setItem(storageKey, JSON.stringify({
+      _v: 2,
+      zoom: '135',
+      extraFields: { density: true },
+    }))
+    const previewRoot = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+    const bindNestedZoom = bindLabelPreviewZoom as unknown as (
+      options: Parameters<typeof bindLabelPreviewZoom>[0] & { settingsVersion: number },
+    ) => ReturnType<typeof bindLabelPreviewZoom>
+
+    const zoom = bindNestedZoom({
+      storageKey,
+      settingsVersion: 2,
+      previewRoot,
+      onChange: () => undefined,
+    })
+    expect(zoom.getZoom()).toBe(135)
+
+    const input = document.querySelector<HTMLInputElement>('#preview-zoom-input')!
+    input.value = '145'
+    input.dispatchEvent(new Event('change'))
+
+    expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual({
+      _v: 2,
+      zoom: '145',
+      extraFields: { density: true },
+    })
+  })
+
+  it('rejects stale versioned zoom before current settings can persist it', () => {
+    renderPrintPageControls()
+    const storageKey = 'versioned-batch-label-settings'
+    localStorage.setItem(storageKey, JSON.stringify({
+      _v: 1,
+      width: '72',
+      zoom: '135',
+    }))
+    const settings = readVersionedLabelSettings<{ zoom?: string }>(
+      storageKey,
+      2,
+    )
+    const previewRoot = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+
+    const zoom = bindLabelPreviewZoom({
+      storageKey,
+      previewRoot,
+      min: 50,
+      readStoredZoom: () => settings?.zoom === undefined
+        ? null
+        : Number(settings.zoom),
+      writeStoredZoom: () => undefined,
+      onChange: () => undefined,
+    })
+
+    expect(zoom.getZoom()).toBe(100)
+    expect(localStorage.getItem(storageKey)).toBe('')
+
+    localStorage.setItem(storageKey, JSON.stringify({
+      _v: 2,
+      zoom: String(zoom.getZoom()),
+    }))
+    expect(JSON.parse(localStorage.getItem(storageKey)!))
+      .toEqual({ _v: 2, zoom: '100' })
+  })
+
+  it.each([
+    JSON.stringify({ _v: 'invalid', zoom: '135' }),
+    JSON.stringify(['not', 'settings']),
+    JSON.stringify('not settings'),
+  ])('rejects malformed versioned settings payload %s', raw => {
+    localStorage.setItem('malformed-label-settings', raw)
+
+    expect(readVersionedLabelSettings('malformed-label-settings', 2)).toBeNull()
+    expect(localStorage.getItem('malformed-label-settings')).toBe('')
+  })
+
+  it('binds setting changes, live numeric input, reset, and cleanup', () => {
+    renderPrintPageControls()
+    const controls = getLabelSettingsControls()
+    const onChange = vi.fn()
+    const onReset = vi.fn()
+    const resetButton = document.createElement('button')
+    const cleanup = bindLabelSettingsEvents({
+      controls,
+      resetButton,
+      onChange,
+      onReset,
+    })
+
+    controls.showLogo.dispatchEvent(new Event('change'))
+    controls.width.dispatchEvent(new Event('input'))
+    resetButton.click()
+
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(onChange.mock.calls).toEqual([[], []])
+    expect(onReset).toHaveBeenCalledOnce()
+
+    cleanup()
+    controls.width.dispatchEvent(new Event('change'))
+    resetButton.click()
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(onReset).toHaveBeenCalledOnce()
+  })
+
+  it('captures and restores standard label control values', () => {
+    renderPrintPageControls()
+    const controls = getLabelSettingsControls()
+    controls.width.value = '72'
+    controls.height.value = '36'
+    controls.fontSize.value = '80'
+    controls.qrSize.value = '16.5'
+    controls.showLogo.checked = false
+    controls.showQr.checked = true
+    controls.showId.checked = false
+    controls.showManufacturer.checked = true
+    controls.showMaterial.checked = false
+    controls.showColor.checked = true
+    controls.showColorSwatch.checked = false
+    controls.showColorHex.checked = true
+    const density = document.createElement('input')
+    density.type = 'checkbox'
+    density.checked = true
+    const extraFields = { density }
+    const settings = captureLabelSettings(controls, extraFields)
+    controls.width.value = '20'
+    controls.showLogo.checked = true
+    density.checked = false
+    restoreLabelSettings(controls, settings, extraFields)
+
+    expect(settings).toEqual({
+      width: '72',
+      height: '36',
+      fontSize: '80',
+      qrSize: '16.5',
+      showLogo: false,
+      showQR: true,
+      showID: false,
+      showMfr: true,
+      showMat: false,
+      showColor: true,
+      showColorSwatch: false,
+      showColorHex: true,
+      extraFields: { density: true },
+    })
+    expect(controls.width.value).toBe('72')
+    expect(controls.showLogo.checked).toBe(false)
+    expect(density.checked).toBe(true)
+  })
+
+  it('keeps batch input defaults when a stored value is empty', () => {
+    renderPrintPageControls()
+    const controls = getLabelSettingsControls()
+    controls.width.value = '60'
+    restoreLabelSettings(
+      controls,
+      { width: '' },
+      undefined,
+      { requireInputValues: true },
+    )
+
+    expect(controls.width.value).toBe('60')
+  })
+
+  it('derives standard renderer settings and normalizes single-route inputs', () => {
+    renderPrintPageControls()
+    const controls = getLabelSettingsControls()
+    controls.width.value = '500'
+    controls.height.value = '36'
+    controls.fontSize.value = '80'
+    controls.qrSize.value = '16.5'
+    controls.showLogo.checked = false
+    controls.showQr.checked = true
+    controls.showId.checked = false
+    controls.showManufacturer.checked = true
+    controls.showMaterial.checked = false
+    controls.showColor.checked = true
+    controls.showColorSwatch.checked = false
+    controls.showColorHex.checked = true
+    expect(getStandardLabelSettings(controls, { normalizeInputs: true })).toEqual({
+      widthMm: 200,
+      heightMm: 36,
+      fontScale: 0.8,
+      qrSizeMm: 16.5,
+      showLogo: false,
+      showQR: true,
+      showID: false,
+      showManufacturer: true,
+      showMaterial: false,
+      showColor: true,
+      showColorSwatch: false,
+      showColorHex: true,
+    })
+    expect(controls.width.value).toBe('200')
+  })
+
+  it('resets all standard label controls to their shared defaults', () => {
+    renderPrintPageControls()
+    const controls = getLabelSettingsControls()
+    controls.width.value = '72'
+    controls.height.value = '36'
+    controls.fontSize.value = '80'
+    controls.qrSize.value = '16.5'
+    Object.values(controls).forEach(control => {
+      if (control.type === 'checkbox') control.checked = false
+    })
+    const density = document.createElement('input')
+    density.type = 'checkbox'
+    density.checked = true
+    resetLabelSettings(controls, { density })
+
+    expect({
+      width: controls.width.value,
+      height: controls.height.value,
+      fontSize: controls.fontSize.value,
+      qrSize: controls.qrSize.value,
+      extraFieldChecked: density.checked,
+      checked: Object.values(controls)
+        .filter(control => control.type === 'checkbox')
+        .every(control => control.checked),
+    }).toEqual({
+      width: '60',
+      height: '40',
+      fontSize: '100',
+      qrSize: '18',
+      extraFieldChecked: false,
+      checked: true,
+    })
+  })
+
+  it('appends a scoped settings checkbox and wires its change behavior', () => {
+    document.body.innerHTML = `
+      <label class="fm-checkbox-group" data-astro-cid-print></label>
+      <div id="extra-fields"></div>
+    `
+    const container = document.querySelector<HTMLElement>('#extra-fields')!
+    const onChange = vi.fn()
+    const checkbox = appendLabelSettingsCheckbox({
+      container,
+      id: 'check-density',
+      label: 'Density',
+      checked: true,
+      onChange,
+    })
+    checkbox.dispatchEvent(new Event('change'))
+
+    expect(container.innerHTML).toBe(
+      '<label class="fm-checkbox-group" data-astro-cid-print=""><input type="checkbox" id="check-density" data-astro-cid-print=""><span data-astro-cid-print="">Density</span></label>',
+    )
+    expect(checkbox.checked).toBe(true)
+    expect(onChange).toHaveBeenCalledOnce()
+  })
+
+  it('switches between individual zoom and label-paper preview behavior', () => {
+    renderPrintPageControls()
+    const previewRoot = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+    const label = document.querySelector<HTMLElement>('#label-preview')!
+    const outputControls = getLabelOutputControls()
+    let outputMode: 'individual' | 'sheet' = 'individual'
+    const sheetControls = {
+      getOutputMode: () => outputMode,
+      getSettings: () => ({
+        paperSize: 'a4',
+        customWidthMm: 210,
+        customHeightMm: 297,
+        rows: 1,
+        columns: 1,
+        marginTopMm: 0,
+        marginRightMm: 0,
+        marginBottomMm: 0,
+        marginLeftMm: 0,
+        gapHorizontalMm: 0,
+        gapVerticalMm: 0,
+        skipCells: 0,
+        copies: 1,
+        showGrid: false,
+        printGrid: false,
+        fitToCell: false,
+      }),
+      setOutputMode: mode => {
+        outputMode = mode
+      },
+      getSource: () => ({ type: 'standard' }),
+      setSource: () => undefined,
+      setDesignerPresets: () => undefined,
+    } satisfies LabelSheetControls
+    const applyIndividualZoom = vi.fn()
+    let zoom = 125
+    const sync = bindLabelOutputPreview({
+      previewRoot,
+      sheetControls,
+      outputControls,
+      getSourceElements: () => [label],
+      getDimensions: () => ({ widthMm: 60, heightMm: 40 }),
+      getZoom: () => zoom,
+      applyIndividualZoom,
+      onSheetCancelled: () => undefined,
+    })
+
+    sync()
+    expect(applyIndividualZoom).toHaveBeenCalledWith(125)
+    expect(outputControls.pngButton.disabled).toBe(false)
+
+    outputMode = 'sheet'
+    sync()
+    expect(previewRoot.classList.contains('is-label-sheet-mode')).toBe(true)
+    expect(previewRoot.querySelector<HTMLElement>('.label-sheet-page')?.style.transform)
+      .toBe('scale(1.25)')
+    expect(outputControls.pngButton.disabled).toBe(true)
+    expect(outputControls.amlButton.disabled).toBe(true)
+
+    const page = previewRoot.querySelector<HTMLElement>('.label-sheet-page')!
+    zoom = 150
+    sync(true)
+    expect(previewRoot.querySelector('.label-sheet-page')).toBe(page)
+    expect(page.style.transform).toBe('scale(1.5)')
+    sync()
+    expect(previewRoot.querySelector('.label-sheet-page')).not.toBe(page)
+  })
+
+  it('returns to individual output when a large sheet preview is declined', () => {
+    renderPrintPageControls()
+    const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+    const label = document.querySelector<HTMLElement>('#label-preview')!
+    const outputControls = getLabelOutputControls()
+    let outputMode: 'individual' | 'sheet' = 'sheet'
+    const setOutputMode = vi.fn((mode: 'individual' | 'sheet') => {
+      outputMode = mode
+    })
+    const onSheetCancelled = vi.fn(() => setOutputMode('individual'))
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const sheetControls = {
+      getOutputMode: () => outputMode,
+      getSettings: () => ({
+        paperSize: 'a4' as const,
+        customWidthMm: 210,
+        customHeightMm: 297,
+        rows: 1,
+        columns: 1,
+        marginTopMm: 0,
+        marginRightMm: 0,
+        marginBottomMm: 0,
+        marginLeftMm: 0,
+        gapHorizontalMm: 0,
+        gapVerticalMm: 0,
+        skipCells: 0,
+        copies: 501,
+        showGrid: false,
+        printGrid: false,
+        fitToCell: false,
+      }),
+      setOutputMode,
+      getSource: () => ({ type: 'standard' as const }),
+      setSource: () => undefined,
+      setDesignerPresets: () => undefined,
+    } satisfies LabelSheetControls
+    const sync = bindLabelOutputPreview({
+      previewRoot,
+      sheetControls,
+      outputControls,
+      getSourceElements: () => [label],
+      getDimensions: () => ({ widthMm: 60, heightMm: 40 }),
+      getZoom: () => 100,
+      applyIndividualZoom: vi.fn(),
+      onSheetCancelled,
+    })
+
+    sync()
+
+    expect(onSheetCancelled).toHaveBeenCalledOnce()
+    expect(outputMode).toBe('individual')
+    expect(previewRoot.querySelector('.label-sheet-page')).toBeNull()
+    expect(outputControls.pngButton.disabled).toBe(false)
+  })
+
+  it('persists a paper preset when its optional browser cache is unavailable', async () => {
+    document.body.innerHTML = `
+      <select id="sheet-preset"></select>
+      <input id="sheet-preset-name" value="Database preset">
+      <button id="sheet-save-preset"></button>
+    `
+    const put = vi.spyOn(api, 'put').mockResolvedValue({})
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    const setItem = localStorage.setItem
+    vi.spyOn(localStorage, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === LABEL_SHEET_PRESETS_KEY) throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      setItem.call(this, key, value)
+    })
+    bindLabelSheetControls(vi.fn())
+    document.querySelector<HTMLInputElement>('#sheet-preset-name')!.value = 'Database preset'
+
+    document.querySelector<HTMLButtonElement>('#sheet-save-preset')!.click()
+
+    await vi.waitFor(() => expect(put).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(document.querySelector<HTMLSelectElement>('#sheet-preset')!.textContent)
+      .toContain('Database preset'))
+    expect(alert).not.toHaveBeenCalled()
+
+    document.body.innerHTML = '<select id="sheet-preset"></select>'
+    bindLabelSheetControls(vi.fn())
+    expect(document.querySelector<HTMLSelectElement>('#sheet-preset')!.textContent)
+      .toContain('Database preset')
+  })
+})
+
+describe('print PDF preference', () => {
+  it('defaults to unchecked and persists changes', () => {
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+
+    const getPdfMode = bindPrintPdfPreference(checkbox)
+
+    expect(checkbox.checked).toBe(false)
+    expect(getPdfMode()).toBe(false)
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+    expect(localStorage.getItem(LABEL_PRINT_PDF_MODE_KEY)).toBe('true')
+    expect(getPdfMode()).toBe(true)
+  })
+
+  it('restores an enabled compatibility preference', () => {
+    localStorage.setItem(LABEL_PRINT_PDF_MODE_KEY, 'true')
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+
+    const getPdfMode = bindPrintPdfPreference(checkbox)
+
+    expect(checkbox.checked).toBe(true)
+    expect(getPdfMode()).toBe(true)
+  })
+})
+
+describe('PDF output destination routing', () => {
+  it('shows the PDF inline without embedding an unsupported auto-print action', async () => {
+    const pdf = makePdfDocument()
+    const pdfPreview = makePdfPreview()
+    const open = vi.spyOn(window, 'open')
+    const printButton = document.querySelector<HTMLButtonElement>('#print')!
+    const actions = bindPdfOutputActions({
+      pdfButton: document.querySelector('#pdf')!,
+      printButton,
+      createPdf: vi.fn(async () => pdf),
+      getFilename: () => 'label.pdf',
+      getTranslation: (_key, fallback) => fallback,
+      getPdfPreview: () => pdfPreview,
+    })
+
+    await actions.print()
+
+    expect(pdf.autoPrint).not.toHaveBeenCalled()
+    expect(pdf.output).toHaveBeenCalledWith('blob')
+    expect(pdfPreview.show).toHaveBeenCalledWith({
+      blob: expect.any(Blob),
+      filename: 'label.pdf',
+      returnFocus: printButton,
+    })
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('keeps Export PDF free of auto-print and preview side effects', async () => {
+    const pdf = makePdfDocument()
+    const pdfPreview = makePdfPreview()
+    const actions = bindPdfOutputActions({
+      pdfButton: document.querySelector('#pdf')!,
+      printButton: document.querySelector('#print')!,
+      createPdf: vi.fn(async () => pdf),
+      getFilename: () => 'label.pdf',
+      getTranslation: (_key, fallback) => fallback,
+      getPdfPreview: () => pdfPreview,
+    })
+
+    await actions.download()
+
+    expect(pdf.save).toHaveBeenCalledWith('label.pdf')
+    expect(pdf.autoPrint).not.toHaveBeenCalled()
+    expect(pdf.output).not.toHaveBeenCalled()
+    expect(pdfPreview.show).not.toHaveBeenCalled()
+  })
+
+  it('does not use either browser HTML print API', async () => {
+    const pdf = makePdfDocument()
+    const pdfPreview = makePdfPreview()
+    const windowPrint = vi
+      .spyOn(window, 'print')
+      .mockImplementation(() => undefined)
+    const execCommand = vi.fn()
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    })
+    const actions = bindPdfOutputActions({
+      pdfButton: document.querySelector('#pdf')!,
+      printButton: document.querySelector('#print')!,
+      createPdf: vi.fn(async () => pdf),
+      getFilename: () => 'label.pdf',
+      getTranslation: (_key, fallback) => fallback,
+      getPdfPreview: () => pdfPreview,
+    })
+
+    await actions.print()
+
+    expect(windowPrint).not.toHaveBeenCalled()
+    expect(execCommand).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when PDF creation returns null', async () => {
+    const pdfPreview = makePdfPreview()
+    const alert = vi
+      .spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    const actions = bindPdfOutputActions({
+      pdfButton: document.querySelector('#pdf')!,
+      printButton: document.querySelector('#print')!,
+      createPdf: vi.fn(async () => null),
+      getFilename: () => 'label.pdf',
+      getTranslation: (_key, fallback) => fallback,
+      getPdfPreview: () => pdfPreview,
+    })
+
+    await actions.print()
+
+    expect(pdfPreview.show).not.toHaveBeenCalled()
+    expect(alert).not.toHaveBeenCalled()
+  })
+
+  it.each(['capture', 'output', 'show'] as const)(
+    'keeps the live surface intact when %s fails',
+    async failure => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="pdf">Export PDF</button>
+        ${temporaryPdfPreviewMarkup()}
+      `
+      const pdf = makePdfDocument()
+      const pdfPreview = bindTemporaryPdfPreview({
+        root: document,
+        getTranslation: (_key, fallback) => fallback,
+        inlinePdfSupport: 'supported',
+      })
+      const liveSurface = document.querySelector<HTMLElement>(
+        '.preview-scroll-area',
+      )!
+      const previewSurface = document.querySelector<HTMLElement>(
+        '#temporary-pdf-preview',
+      )!
+      const alert = vi
+        .spyOn(window, 'alert')
+        .mockImplementation(() => undefined)
+      vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      if (failure === 'output') {
+        pdf.output.mockImplementation(() => {
+          throw new Error('output failed')
+        })
+      }
+      if (failure === 'show') {
+        vi.mocked(URL.createObjectURL).mockImplementationOnce(() => {
+          throw new Error('show failed')
+        })
+      }
+      const actions = bindPdfOutputActions({
+        pdfButton: document.querySelector('#pdf')!,
+        printButton: document.querySelector('#print')!,
+        createPdf: vi.fn(async () => {
+          if (failure === 'capture') throw new Error('capture failed')
+          return pdf
+        }),
+        getFilename: () => 'label.pdf',
+        getTranslation: (_key, fallback) => fallback,
+        getPdfPreview: () => pdfPreview,
+      })
+
+      await actions.print()
+
+      expect(alert).toHaveBeenCalledWith(
+        'Print PDF generation failed.',
+      )
+      expect(liveSurface.textContent).toContain('PETG')
+      expect(liveSurface.inert).toBe(false)
+      expect(liveSurface.hasAttribute('aria-hidden')).toBe(false)
+      expect(previewSurface.hidden).toBe(true)
+    },
+  )
+})
+
+describe('single and batch PDF factory reuse', () => {
+  it.each(['single-label', 'batch'] as const)(
+    'uses normal browser printing by default for %s output',
+    async kind => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+        <div id="label"></div>
+      `
+      const windowPrint = vi.spyOn(window, 'print')
+        .mockImplementation(() => undefined)
+      const open = vi.spyOn(window, 'open')
+      const captureLabel = vi.fn(
+        async () => 'data:image/png;base64,bGFiZWw=',
+      )
+      const pdf = makePdfDocument()
+      const pdfPreview = makePdfPreview()
+
+      const { printButton } = bindDeferredCapture(kind, captureLabel, {
+        createPdf: async () => pdf,
+        pdfPreview,
+      })
+      printButton.click()
+
+      await vi.waitFor(() => expect(windowPrint).toHaveBeenCalledOnce())
+      expect(printLabelBrowserJob).toHaveBeenCalledOnce()
+      expect(captureLabel).not.toHaveBeenCalled()
+      expect(pdf.autoPrint).not.toHaveBeenCalled()
+      expect(pdfPreview.show).not.toHaveBeenCalled()
+      expect(open).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['single-label', 'batch'] as const)(
+    'routes checked %s Print through its injected PDF preview once',
+    async kind => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+        <div id="label"></div>
+      `
+      const pdf = makePdfDocument()
+      const pdfPreview = makePdfPreview()
+      const { printButton, printPdfCheckbox } = bindDeferredCapture(
+        kind,
+        vi.fn(async () => 'data:image/png;base64,bGFiZWw='),
+        {
+          createPdf: async () => pdf,
+          pdfPreview,
+        },
+      )
+      printPdfCheckbox.checked = true
+
+      printButton.click()
+
+      await vi.waitFor(() => expect(pdfPreview.show).toHaveBeenCalledOnce())
+      expect(printLabelBrowserJob).not.toHaveBeenCalled()
+    },
+  )
+
+  it('locks preview mutations and visibly marks output controls busy', async () => {
+    let finishPrepare!: () => void
+    const pendingPrepare = new Promise<void>(resolve => {
+      finishPrepare = resolve
+    })
+    const { controls, capture } = bindCollectionOutputs([1], {
+      prepare: vi.fn(() => pendingPrepare),
+    })
+    document.body.insertAdjacentHTML('beforeend', `
+      <aside class="print-sidebar">
+        <button id="tab-designer">Designer</button>
+        <select id="output-mode"><option>Individual</option></select>
+        <textarea id="designer-template"></textarea>
+      </aside>
+      <div id="freeform-designer-workspace" contenteditable="true"></div>
+      <div class="preview-zoom-bar">
+        <button id="zoom-in">Zoom in</button>
+        <input id="zoom-slider" type="range">
+      </div>
+    `)
+    const mutationControls = [
+      '#tab-designer',
+      '#output-mode',
+      '#designer-template',
+      '#zoom-in',
+      '#zoom-slider',
+      '#freeform-designer-workspace',
+    ].map(selector => document.querySelector<HTMLElement & { disabled: boolean }>(selector)!)
+
+    controls.pngButton.click()
+    await Promise.resolve()
+
+    expect(mutationControls.every(control => !control.disabled)).toBe(true)
+    expect(mutationControls.every(control => control.hasAttribute('inert'))).toBe(true)
+    expect([
+      controls.printButton, controls.pngButton, controls.amlButton, controls.pdfButton,
+    ].every(control => control.disabled && control.getAttribute('aria-busy') === 'true')).toBe(true)
+    expect(document.querySelector('#label-output-status')?.textContent).toBe('Preparing label output…')
+    expect(capture).not.toHaveBeenCalled()
+
+    finishPrepare()
+    await vi.waitFor(() => expect(capture).toHaveBeenCalledOnce())
+    await vi.waitFor(() => {
+      expect(mutationControls.every(control => !control.disabled)).toBe(true)
+      expect(mutationControls.every(control => !control.hasAttribute('inert'))).toBe(true)
+      expect(controls.pngButton.disabled).toBe(false)
+      expect(controls.pngButton.hasAttribute('aria-busy')).toBe(false)
+      expect(document.querySelector('#label-output-status')?.textContent).toBe('')
+    })
+  })
+
+  it('reports browser-print preparation failure without falling back to PDF', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
+      <div id="label"></div>
+    `
+    const alert = vi.spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.mocked(printLabelBrowserJob).mockRejectedValueOnce(
+      new Error('print failed'),
+    )
+    const open = vi.spyOn(window, 'open')
+    const { printButton, pngButton, amlButton, pdfButton } =
+      bindDeferredCapture(
+        'single-label',
+        vi.fn(async () => 'data:image/png;base64,bGFiZWw='),
+      )
+
+    printButton.click()
+
+    await vi.waitFor(() => {
+      expect(alert).toHaveBeenCalledWith('Browser printing failed.')
+    })
+    expect(cleanupLabelBrowserPrint).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+    expect([printButton, pngButton, amlButton, pdfButton]
+      .every(button => !button.disabled)).toBe(true)
+  })
+
+  it.each(['single-label', 'batch'] as const)(
+    'prevents a competing %s action from starting a second capture',
+    async kind => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+        <div id="label"></div>
+      `
+      let resolveCapture!: (value: string) => void
+      const pendingCapture = new Promise<string>(resolve => {
+        resolveCapture = resolve
+      })
+      const captureLabel = vi.fn(() => pendingCapture)
+      vi.spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => undefined)
+
+      const { printButton, pngButton, amlButton, pdfButton } =
+        bindDeferredCapture(kind, captureLabel)
+      const buttons = [printButton, pngButton, amlButton, pdfButton]
+      pngButton.click()
+      await vi.waitFor(() => {
+        expect(captureLabel).toHaveBeenCalledOnce()
+      })
+
+      printButton.dispatchEvent(new MouseEvent('click'))
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(captureLabel).toHaveBeenCalledOnce()
+      expect(buttons.every(button => button.disabled && button.getAttribute('aria-busy') === 'true')).toBe(true)
+
+      resolveCapture(`data:image/png;base64,${kind}`)
+      await vi.waitFor(() => {
+        expect(buttons.every(button => !button.disabled)).toBe(true)
+      })
+      expect(buttons.map(button => button.textContent)).toEqual([
+        'Print',
+        'Export PNG',
+        'Export AML',
+        'Export PDF',
+      ])
+    },
+  )
+
+  it.each(['png', 'aml', 'pdf'] as const)(
+    'keeps output button labels stable during %s export',
+    async action => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+        <div id="label"></div>
+      `
+      let resolveCapture!: (value: string) => void
+      const pendingCapture = new Promise<string>(resolve => {
+        resolveCapture = resolve
+      })
+      const captureLabel = vi.fn(() => pendingCapture)
+      vi.spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => undefined)
+
+      const { printButton, pngButton, amlButton, pdfButton } =
+        bindDeferredCapture('single-label', captureLabel)
+      const buttons = [printButton, pngButton, amlButton, pdfButton]
+      const actionButton = { png: pngButton, aml: amlButton, pdf: pdfButton }[
+        action
+      ]
+
+      actionButton.click()
+      await vi.waitFor(() => {
+        expect(captureLabel).toHaveBeenCalledOnce()
+      })
+
+      expect(buttons.map(button => button.textContent)).toEqual([
+        'Print',
+        'Export PNG',
+        'Export AML',
+        'Export PDF',
+      ])
+
+      resolveCapture(`data:image/png;base64,${action}`)
+      await vi.waitFor(() => {
+        expect(buttons.every(button => !button.disabled)).toBe(true)
+      })
+    },
+  )
+
+  it.each([
+    {
+      initialMode: 'individual',
+      finalMode: 'sheet',
+      actionButtonId: 'png',
+    },
+    {
+      initialMode: 'sheet',
+      finalMode: 'individual',
+      actionButtonId: 'pdf',
+    },
+  ] as const)(
+    'preserves $finalMode export state when output mode changes from $initialMode during an operation',
+    async ({ initialMode, finalMode, actionButtonId }) => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+        <div id="label"></div>
+      `
+      let mode: 'individual' | 'sheet' = initialMode
+      const sheetControls = {
+        getOutputMode: () => mode,
+      } as LabelSheetControls
+      const pngButton = document.querySelector<HTMLButtonElement>('#png')!
+      const amlButton = document.querySelector<HTMLButtonElement>('#aml')!
+      const syncExportState = () => syncLabelSheetIndividualExportState(
+        sheetControls,
+        [pngButton, amlButton],
+        (_key, fallback) => fallback,
+      )
+      syncExportState()
+
+      let resolveCapture!: (value: string) => void
+      const captureLabel = vi.fn(() => new Promise<string>(resolve => {
+        resolveCapture = resolve
+      }))
+      vi.spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => undefined)
+      const { printButton, pdfButton } = bindDeferredCapture(
+        'single-label',
+        captureLabel,
+      )
+
+      document.querySelector<HTMLButtonElement>(`#${actionButtonId}`)!.click()
+      await vi.waitFor(() => expect(captureLabel).toHaveBeenCalledOnce())
+
+      mode = finalMode
+      syncExportState()
+      resolveCapture('data:image/png;base64,bGFiZWw=')
+
+      await vi.waitFor(() => {
+        expect(printButton.disabled).toBe(false)
+        expect(pdfButton.disabled).toBe(false)
+      })
+      const finalSheetMode = finalMode === 'sheet'
+      expect(pngButton.disabled).toBe(finalSheetMode)
+      expect(amlButton.disabled).toBe(finalSheetMode)
+      expect(printButton.disabled).toBe(false)
+      expect(pdfButton.disabled).toBe(false)
+    },
+  )
+
+  it('runs batch PNG export from the supplied button', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
+    `
+    const downloads: Array<{ filename: string; href: string }> = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        downloads.push({
+          filename: this.download,
+          href: this.href,
+        })
+      })
+
+    bindBatchCollectionOutputs({
+      entities: () => [{ id: 1 }],
+      activeTab: () => 'print',
+      printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
+      pngButton: document.querySelector('#png')!,
+      amlButton: document.querySelector('#aml')!,
+      pdfButton: document.querySelector('#pdf')!,
+      getTranslation: (_key, fallback) => fallback,
+      renderAll: vi.fn(async () => undefined),
+      captureLabel: vi.fn(
+        async () => 'data:image/png;base64,label-1',
+      ),
+      getPdfDimensions: () => ({ widthMm: 60, heightMm: 40 }),
+      singlePngName: entity => `label-${entity.id}.png`,
+      zipName: () => 'labels.zip',
+      zipEntryName: entity => `label-${entity.id}.png`,
+      pdfName: () => 'batch-labels.pdf',
+      browserPrint: makeBrowserPrintBinding(),
+    })
+
+    document.querySelector<HTMLButtonElement>('#png')!.click()
+
+    await vi.waitFor(() => {
+      expect(downloads).toEqual([{
+        filename: 'label-1.png',
+        href: 'data:image/png;base64,label-1',
+      }])
+    })
+  })
+
+  it('downloads one batch AML file built from the captured PNG', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
+    `
+    let amlBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      amlBlob = value as Blob
+      return 'blob:label-aml'
+    })
+    const downloads: Array<{ filename: string; href: string }> = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        downloads.push({ filename: this.download, href: this.href })
+      })
+    const captureLabel = vi.fn(
+      async () => 'data:image/png;base64,bGFiZWw=',
+    )
+
+    bindBatchCollectionOutputs({
+      entities: () => [{ id: 1 }],
+      activeTab: () => 'print',
+      printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
+      pngButton: document.querySelector('#png')!,
+      amlButton: document.querySelector('#aml')!,
+      pdfButton: document.querySelector('#pdf')!,
+      getTranslation: (_key, fallback) => fallback,
+      renderAll: vi.fn(async () => undefined),
+      captureLabel,
+      getPdfDimensions: () => ({ widthMm: 48, heightMm: 30 }),
+      singlePngName: entity => `label-${entity.id}.png`,
+      zipName: () => 'labels.zip',
+      zipEntryName: entity => `label-${entity.id}.png`,
+      pdfName: () => 'batch-labels.pdf',
+      browserPrint: makeBrowserPrintBinding(),
+    })
+
+    document.querySelector<HTMLButtonElement>('#aml')!.click()
+
+    await vi.waitFor(() => {
+      expect(downloads).toEqual([{
+        filename: 'label-1.aml',
+        href: 'blob:label-aml',
+      }])
+    })
+    const aml = await amlBlob!.text()
+    expect(aml).toContain('<labelWidth>48.000</labelWidth>')
+    expect(aml).toContain('<labelHeight>30.000</labelHeight>')
+    expect(aml).toContain('<content>bGFiZWw=</content>')
+    expect(captureLabel).toHaveBeenCalledOnce()
+  })
+
+  it('packages multiple batch AML labels using PNG-equivalent names', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
+    `
+    let archiveBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      archiveBlob = value as Blob
+      return 'blob:label-aml-zip'
+    })
+    const downloads: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        downloads.push(this.download)
+      })
+
+    bindBatchCollectionOutputs({
+      entities: () => [{ id: 1 }, { id: 2 }],
+      activeTab: () => 'print',
+      printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
+      pngButton: document.querySelector('#png')!,
+      amlButton: document.querySelector('#aml')!,
+      pdfButton: document.querySelector('#pdf')!,
+      getTranslation: (_key, fallback) => fallback,
+      renderAll: vi.fn(async () => undefined),
+      captureLabel: vi.fn(async entity =>
+        `data:image/png;base64,${entity.id === 1 ? 'b25l' : 'dHdv'}`,
+      ),
+      getPdfDimensions: () => ({ widthMm: 48, heightMm: 30 }),
+      singlePngName: entity => `label-${entity.id}.png`,
+      zipName: () => 'labels.zip',
+      zipEntryName: entity => `label-${entity.id}.png`,
+      pdfName: () => 'batch-labels.pdf',
+      browserPrint: makeBrowserPrintBinding(),
+    })
+
+    document.querySelector<HTMLButtonElement>('#aml')!.click()
+
+    await vi.waitFor(() => {
+      expect(downloads).toEqual(['labels-aml.zip'])
+    })
+    const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+    expect(Object.keys(zip.files)).toEqual(['label-1.aml', 'label-2.aml'])
+    expect(await zip.file('label-2.aml')!.async('text'))
+      .toContain('<content>dHdv</content>')
+  })
+
+  it('downloads one AML file from the shared single-label capture', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
+      <div id="label"></div>
+    `
+    let amlBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      amlBlob = value as Blob
+      return 'blob:single-label-aml'
+    })
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+    const refreshPreview = vi.fn(async () => undefined)
+    const captureLabel = vi.fn(
+      async () => 'data:image/png;base64,c2luZ2xl',
+    )
+
+    bindSingleCollectionOutputs({
+      printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
+      exportPngBtn: document.querySelector('#png')!,
+      exportAmlBtn: document.querySelector('#aml')!,
+      exportPdfBtn: document.querySelector('#pdf')!,
+      labelElement: document.querySelector('#label')!,
+      getTranslation: (_key, fallback) => fallback,
+      buildBaseName: () => 'single-label',
+      getDimensions: () => ({ widthMm: 60, heightMm: 40 }),
+      refreshPreview,
+      captureLabel,
+      browserPrint: makeBrowserPrintBinding(),
+    })
+
+    document.querySelector<HTMLButtonElement>('#aml')!.click()
+
+    await vi.waitFor(() => expect(download).toHaveBeenCalledOnce())
+    expect(refreshPreview).toHaveBeenCalledOnce()
+    expect(captureLabel).toHaveBeenCalledOnce()
+    expect(await amlBlob!.text()).toContain(
+      '<content>c2luZ2xl</content>',
+    )
+  })
+
+  it('reports AML capture failures and restores every output control', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
+      <div id="label"></div>
+    `
+    const alert = vi.spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    bindDeferredCapture(
+      'single-label',
+      vi.fn(async () => {
+        throw new Error('capture failed')
+      }),
+    )
+
+    document.querySelector<HTMLButtonElement>('#aml')!.click()
+
+    await vi.waitFor(() => {
+      expect(alert).toHaveBeenCalledWith('AML export failed.')
+    })
+    expect([
+      ...document.querySelectorAll<HTMLButtonElement>('button'),
+    ].every(button => !button.disabled)).toBe(true)
+  })
+
+  it.each([
+    { format: 'PNG', buttonId: 'png', entities: [{ id: 1 }] },
+    { format: 'PNG', buttonId: 'png', entities: [{ id: 1 }, { id: 2 }] },
+    { format: 'AML', buttonId: 'aml', entities: [{ id: 1 }] },
+    { format: 'AML', buttonId: 'aml', entities: [{ id: 1 }, { id: 2 }] },
+  ])(
+    'reports $format export failure when every one of $entities.length batch capture(s) fails',
+    async ({ format, buttonId, entities }) => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+      `
+      const alert = vi.spyOn(window, 'alert')
+        .mockImplementation(() => undefined)
+      vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => undefined)
+
+      bindBatchCollectionOutputs({
+        entities: () => entities,
+        activeTab: () => 'print',
+        printButton: document.querySelector('#print')!,
+        printPdfCheckbox: document.querySelector('#pdf-mode')!,
+        pngButton: document.querySelector('#png')!,
+        amlButton: document.querySelector('#aml')!,
+        pdfButton: document.querySelector('#pdf')!,
+        getTranslation: (_key, fallback) => fallback,
+        renderAll: vi.fn(async () => undefined),
+        captureLabel: vi.fn(async () => {
+          throw new Error('capture failed')
+        }),
+        getPdfDimensions: () => ({ widthMm: 48, heightMm: 30 }),
+        singlePngName: entity => `label-${entity.id}.png`,
+        zipName: () => 'labels.zip',
+        zipEntryName: entity => `label-${entity.id}.png`,
+        pdfName: () => 'batch-labels.pdf',
+        browserPrint: makeBrowserPrintBinding(),
+        skipCaptureErrorsInZip: true,
+      })
+
+      document.querySelector<HTMLButtonElement>(`#${buttonId}`)!.click()
+
+      await vi.waitFor(() => {
+        expect(alert).toHaveBeenCalledWith(`${format} export failed.`)
+      })
+      expect(download).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    { format: 'PNG', buttonId: 'png', archiveName: 'labels.zip', entryName: 'label-2.png' },
+    { format: 'AML', buttonId: 'aml', archiveName: 'labels-aml.zip', entryName: 'label-2.aml' },
+  ])(
+    'keeps a partial $format batch export in its ZIP',
+    async ({ buttonId, archiveName, entryName }) => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+      `
+      let archiveBlob: Blob | undefined
+      vi.mocked(URL.createObjectURL).mockImplementation(value => {
+        archiveBlob = value as Blob
+        return 'blob:partial-label-zip'
+      })
+      const downloads: string[] = []
+      vi.spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(function(this: HTMLAnchorElement) {
+          downloads.push(this.download)
+        })
+
+      bindBatchCollectionOutputs({
+        entities: () => [{ id: 1 }, { id: 2 }],
+        activeTab: () => 'print',
+        printButton: document.querySelector('#print')!,
+        printPdfCheckbox: document.querySelector('#pdf-mode')!,
+        pngButton: document.querySelector('#png')!,
+        amlButton: document.querySelector('#aml')!,
+        pdfButton: document.querySelector('#pdf')!,
+        getTranslation: (_key, fallback) => fallback,
+        renderAll: vi.fn(async () => undefined),
+        captureLabel: vi.fn(async entity => {
+          if (entity.id === 1) throw new Error('capture failed')
+          return 'data:image/png;base64,c3Vydml2b3I='
+        }),
+        getPdfDimensions: () => ({ widthMm: 48, heightMm: 30 }),
+        singlePngName: entity => `label-${entity.id}.png`,
+        zipName: () => 'labels.zip',
+        zipEntryName: entity => `label-${entity.id}.png`,
+        pdfName: () => 'batch-labels.pdf',
+        browserPrint: makeBrowserPrintBinding(),
+        skipCaptureErrorsInZip: true,
+      })
+
+      document.querySelector<HTMLButtonElement>(`#${buttonId}`)!.click()
+
+      await vi.waitFor(() => expect(downloads).toEqual([archiveName]))
+      const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+      expect(Object.keys(zip.files)).toEqual([entryName])
+    },
+  )
+
+  it('passes the same single-label pages to Export PDF and Print', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
+      <div id="label"></div>
+    `
+    const firstPdf = makePdfDocument()
+    const secondPdf = makePdfDocument()
+    const createPdf = vi
+      .fn()
+      .mockResolvedValueOnce(firstPdf)
+      .mockResolvedValueOnce(secondPdf)
+    const label = document.querySelector('#label') as HTMLElement
+    const pdfPreview = makePdfPreview()
+
+    bindSingleCollectionOutputs({
+      printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
+      exportPngBtn: document.querySelector('#png')!,
+      exportAmlBtn: document.querySelector('#aml')!,
+      exportPdfBtn: document.querySelector('#pdf')!,
+      labelElement: label,
+      getTranslation: (_key, fallback) => fallback,
+      buildBaseName: () => 'single-label',
+      pdfName: () => 'single-label.pdf',
+      getDimensions: () => ({ widthMm: 60, heightMm: 40 }),
+      refreshPreview: vi.fn(async () => undefined),
+      captureLabel: vi.fn(
+        async () => 'data:image/png;base64,single',
+      ),
+      browserPrint: makeBrowserPrintBinding(label),
+      pdfPreview,
+      createPdf: async (pages, defaultCreate) => {
+        expect(pages).toEqual([
+          {
+            dataUrl: 'data:image/png;base64,single',
+            widthMm: 60,
+            heightMm: 40,
+          },
+        ])
+        await defaultCreate()
+        return createPdf()
+      },
+    })
+
+    document.querySelector<HTMLButtonElement>('#pdf')!.click()
+    await vi.waitFor(() => {
+      expect(firstPdf.save).toHaveBeenCalledWith(
+        'single-label.pdf',
+      )
+    })
+
+    document.querySelector<HTMLInputElement>('#pdf-mode')!.checked = true
+    document.querySelector<HTMLButtonElement>('#print')!.click()
+    await vi.waitFor(() => {
+      expect(secondPdf.output).toHaveBeenCalledWith('blob')
+    })
+
+    expect(createPdf).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes identical deterministic batch pages to both destinations', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
+    `
+    const firstPdf = makePdfDocument()
+    const secondPdf = makePdfDocument()
+    const builtPages: unknown[] = []
+    const pdfPreview = makePdfPreview()
+
+    bindBatchCollectionOutputs({
+      entities: () => [{ id: 1 }, { id: 2 }],
+      activeTab: () => 'print',
+      printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
+      pngButton: document.querySelector('#png')!,
+      amlButton: document.querySelector('#aml')!,
+      pdfButton: document.querySelector('#pdf')!,
+      getTranslation: (_key, fallback) => fallback,
+      renderAll: vi.fn(async () => undefined),
+      captureLabel: vi.fn(async entity =>
+        `data:image/png;base64,label-${entity.id}`,
+      ),
+      getPdfDimensions: () => ({
+        widthMm: 60,
+        heightMm: 40,
+      }),
+      singlePngName: entity => `label-${entity.id}.png`,
+      zipName: () => 'labels.zip',
+      zipEntryName: entity => `label-${entity.id}.png`,
+      pdfName: () => 'batch-labels.pdf',
+      browserPrint: makeBrowserPrintBinding(),
+      pdfPreview,
+      createPdf: async (pages, defaultCreate) => {
+        builtPages.push(structuredClone(pages))
+        await defaultCreate()
+        return builtPages.length === 1 ? firstPdf : secondPdf
+      },
+    })
+
+    document.querySelector<HTMLButtonElement>('#pdf')!.click()
+    await vi.waitFor(() => {
+      expect(firstPdf.save).toHaveBeenCalledWith(
+        'batch-labels.pdf',
+      )
+    })
+
+    document.querySelector<HTMLInputElement>('#pdf-mode')!.checked = true
+    document.querySelector<HTMLButtonElement>('#print')!.click()
+    await vi.waitFor(() => {
+      expect(secondPdf.output).toHaveBeenCalledWith('blob')
+    })
+
+    expect(builtPages).toHaveLength(2)
+    expect(builtPages[0]).toEqual(builtPages[1])
+  })
+})
+
+describe('collection output binding', () => {
+  it('rejects an oversized raster export before preparing or capturing labels', async () => {
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { controls, capture, prepare } = bindCollectionOutputs([1], {
+      dimensions: { widthMm: 300, heightMm: 200 },
+      getTranslation: (key, fallback) => key === 'labelPrint.rasterLabelTooLarge'
+        ? 'Localized raster limit.'
+        : fallback,
+    })
+
+    controls.pngButton.click()
+
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith(
+      expect.stringContaining('Localized raster limit.'),
+    ))
+    expect(prepare).not.toHaveBeenCalled()
+    expect(capture).not.toHaveBeenCalled()
+  })
+
+  it('downloads one PNG and AML directly', async () => {
+    const clicks: Array<{ name: string; href: string }> = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        clicks.push({ name: this.download, href: this.href })
+      })
+    vi.mocked(URL.createObjectURL).mockReturnValue('blob:label-aml')
+    const { controls } = bindCollectionOutputs([1])
+
+    controls.pngButton.click()
+    await vi.waitFor(() => {
+      expect(clicks).toEqual([{
+        name: 'label-1.png',
+        href: 'data:image/png;base64,aXRlbS01',
+      }])
+    })
+
+    controls.amlButton.click()
+    await vi.waitFor(() => {
+      expect(clicks).toEqual([
+        {
+          name: 'label-1.png',
+          href: 'data:image/png;base64,aXRlbS01',
+        },
+        { name: 'label-1.aml', href: 'blob:label-aml' },
+      ])
+    })
+  })
+
+  it.each([
+    { action: 'pngButton', archiveName: 'labels.zip' },
+    { action: 'amlButton', archiveName: 'labels-aml.zip' },
+  ] as const)('archives two $action outputs', async ({ action, archiveName }) => {
+    let archiveBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      archiveBlob = value as Blob
+      return 'blob:label-archive'
+    })
+    const downloads: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        downloads.push(this.download)
+      })
+    const { controls } = bindCollectionOutputs([1, 2])
+
+    controls[action].click()
+
+    await vi.waitFor(() => expect(downloads).toEqual([archiveName]))
+    const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+    const extension = action === 'pngButton' ? 'png' : 'aml'
+    expect(Object.keys(zip.files)).toEqual([
+      `label-1.${extension}`,
+      `label-2.${extension}`,
+    ])
+  })
+
+  it('uses collection indexes for duplicate item archive names', async () => {
+    let archiveBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      archiveBlob = value as Blob
+      return 'blob:duplicate-item-archive'
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+    const { controls } = bindCollectionOutputs([1, 1], {
+      pngName: (_item, index) => `label-${index + 1}.png`,
+    })
+
+    controls.pngButton.click()
+
+    await vi.waitFor(() => expect(archiveBlob).toBeDefined())
+    const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+    expect(Object.keys(zip.files)).toEqual(['label-1.png', 'label-2.png'])
+  })
+
+  it('archives a surviving PNG when partial collection capture is allowed', async () => {
+    let archiveBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      archiveBlob = value as Blob
+      return 'blob:partial-label-archive'
+    })
+    const downloads: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        downloads.push(this.download)
+      })
+    const { controls } = bindCollectionOutputs([1, 2], {
+      allowPartialPng: true,
+      capture: async item => {
+        if (item === 1) throw new Error('capture failed')
+        return 'data:image/png;base64,c3Vydml2b3I='
+      },
+    })
+
+    controls.pngButton.click()
+
+    await vi.waitFor(() => expect(downloads).toEqual(['labels.zip']))
+    const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+    expect(Object.keys(zip.files)).toEqual(['label-2.png'])
+  })
+
+  it('reports the translated PNG failure when every capture fails', async () => {
+    const alert = vi.spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+    const { controls } = bindCollectionOutputs([1, 2], {
+      allowPartialPng: true,
+      capture: async () => {
+        throw new Error('capture failed')
+      },
+    })
+
+    controls.pngButton.click()
+
+    await vi.waitFor(() => {
+      expect(alert).toHaveBeenCalledWith('Translated PNG failure.')
+    })
+    expect(download).not.toHaveBeenCalled()
+  })
+
+  it('reports missing assets and blocks a misleading partial batch download', async () => {
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const { controls } = bindCollectionOutputs([1, 2], {
+      allowPartialPng: true,
+      capture: async item => {
+        if (item === 1) throw new LabelOutputAssetError('Label image asset-1 unavailable')
+        return 'data:image/png;base64,c3Vydml2b3I='
+      },
+    })
+    controls.pngButton.click()
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringContaining('asset-1')))
+    expect(download).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [new LabelOutputAssetError('Label image (standard-3) could not load. Decode failed', 'image'), 'Image non chargée.'],
+    [new LabelOutputAssetError(
+      'Label font "Fraunces" could not load. Reload the page before printing or exporting.', 'font', 'Fraunces',
+    ), 'Police « Fraunces » non chargée.'],
+  ])('translates the %# image or font load failure in the output alert', async (error, expected) => {
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const translations: Record<string, string> = {
+      'labelPrint.outputImageLoadFailed': 'Image non chargée.',
+      'labelPrint.outputFontLoadFailed': 'Police « {family} » non chargée.',
+    }
+    const { controls } = bindCollectionOutputs([1], {
+      capture: async () => { throw error },
+      getTranslation: (key, fallback) => translations[key] ?? fallback,
+    })
+    controls.pngButton.click()
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringContaining(expected)))
+    expect(alert).not.toHaveBeenCalledWith(expect.stringContaining(error.message))
+  })
+
+  it('creates PDF pages in collection order', async () => {
+    const pdf = makePdfDocument()
+    const capturedPages: LabelPdfPage[][] = []
+    const { controls } = bindCollectionOutputs([2, 1], {
+      createPdf: async pages => {
+        capturedPages.push(pages)
+        return pdf
+      },
+    })
+
+    controls.pdfButton.click()
+
+    await vi.waitFor(() => expect(pdf.save).toHaveBeenCalledWith('labels.pdf'))
+    expect(capturedPages).toEqual([[
+      {
+        dataUrl: 'data:image/png;base64,aXRlbS02',
+        widthMm: 48,
+        heightMm: 30,
+      },
+      {
+        dataUrl: 'data:image/png;base64,aXRlbS01',
+        widthMm: 48,
+        heightMm: 30,
+      },
+    ]])
+  })
+
+  it('reports a translated PDF export failure when every partial batch capture fails', async () => {
+    const alert = vi.spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+    const open = vi.spyOn(window, 'open')
+    const { controls } = bindCollectionOutputs([1, 2], {
+      allowPartialPdf: true,
+      capture: async () => {
+        throw new Error('capture failed')
+      },
+      getTranslation: (key, fallback) =>
+        key === 'labelPrint.pdfExportFailed'
+          ? 'Translated PDF export failure.'
+          : fallback,
+    })
+
+    controls.pdfButton.click()
+
+    await vi.waitFor(() => {
+      expect(alert).toHaveBeenCalledWith('Translated PDF export failure.')
+    })
+    expect(download).not.toHaveBeenCalled()
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('reports a translated temporary-PDF failure without replacing the live surface when every partial batch capture fails', async () => {
+    const pdfPreview = makePdfPreview()
+    const alert = vi.spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+    const { controls } = bindCollectionOutputs([1, 2], {
+      allowPartialPdf: true,
+      capture: async () => {
+        throw new Error('capture failed')
+      },
+      getTranslation: (key, fallback) =>
+        key === 'labelPrint.printPdfFailed'
+          ? 'Translated temporary-PDF failure.'
+          : fallback,
+      pdfPreview,
+    })
+    controls.printPdfCheckbox.checked = true
+
+    controls.printButton.click()
+
+    await vi.waitFor(() => {
+      expect(alert).toHaveBeenCalledWith('Translated temporary-PDF failure.')
+    })
+    expect(pdfPreview.show).not.toHaveBeenCalled()
+    expect(download).not.toHaveBeenCalled()
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('gets individual browser-print pages after preparing the collection', async () => {
+    const calls: string[] = []
+    const page = document.createElement('article')
+    const { controls } = bindCollectionOutputs([1], {
+      prepare: async () => {
+        calls.push('prepare')
+      },
+      getIndividualPages: () => {
+        calls.push('pages')
+        return [page]
+      },
+    })
+
+    controls.printButton.click()
+
+    await vi.waitFor(() => expect(printLabelBrowserJob).toHaveBeenCalledOnce())
+    expect(calls).toEqual(['prepare', 'pages'])
+    expect(vi.mocked(printLabelBrowserJob).mock.calls[0]?.[0].pages)
+      .toEqual([page])
+  })
+
+  it('shows checked Print in the real inline preview while preserving the live label', async () => {
+    const pdf = makePdfDocument()
+    const open = vi.spyOn(window, 'open')
+    const { controls } = bindCollectionOutputs([1], {
+      createPdf: async () => pdf,
+      withPdfPreview: true,
+    })
+    controls.printPdfCheckbox.checked = true
+
+    controls.printButton.click()
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>('#temporary-pdf-preview')!.hidden)
+        .toBe(false)
+    })
+
+    const object = document.querySelector<HTMLObjectElement>(
+      '#temporary-pdf-content object',
+    )!
+    const liveSurface = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+    expect(pdf.autoPrint).not.toHaveBeenCalled()
+    expect(object.type).toBe('application/pdf')
+    expect(object.data).toBe('blob:filaman-print-pdf')
+    expect(liveSurface.textContent).toContain('PETG')
+    expect(liveSurface.inert).toBe(true)
+    expect(liveSurface.getAttribute('aria-hidden')).toBe('true')
+    expect(document.querySelector('.preview-container')?.classList)
+      .toContain('is-temporary-pdf-preview-active')
+    expect(open).not.toHaveBeenCalled()
+    expect(printLabelBrowserJob).not.toHaveBeenCalled()
+  })
+
+  it('restores designer interaction after repeated print-preview returns', async () => {
+    const { controls } = bindCollectionOutputs([1], {
+      createPdf: async () => makePdfDocument(),
+      withPdfPreview: true,
+    })
+    const workspace = document.querySelector<HTMLElement>('.preview-scroll-area')!
+    workspace.id = 'freeform-designer-workspace'
+    controls.printPdfCheckbox.checked = true
+    const surface = document.querySelector<HTMLElement>('#temporary-pdf-preview')!
+    const back = document.querySelector<HTMLButtonElement>('#temporary-pdf-back')!
+
+    for (let cycle = 0; cycle < 2; cycle++) {
+      controls.printButton.click()
+      await vi.waitFor(() => expect(surface.hidden).toBe(false))
+      expect(workspace.inert).toBe(true)
+      back.click()
+      expect(workspace.inert).toBe(false)
+      expect(workspace.hasAttribute('aria-hidden')).toBe(false)
+      expect(surface.hidden).toBe(true)
+    }
+  })
+
+  it('preserves a live aria-disabled change when the coordinator releases controls', async () => {
+    let resolveCapture!: (value: string) => void
+    const { controls } = bindCollectionOutputs([1], {
+      capture: () => new Promise(resolve => {
+        resolveCapture = resolve
+      }),
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+
+    controls.pngButton.click()
+    await vi.waitFor(() => expect(resolveCapture).toBeTypeOf('function'))
+    controls.pngButton.setAttribute('aria-disabled', 'true')
+    controls.pngButton.disabled = true
+    resolveCapture('data:image/png;base64,aXRlbS01')
+
+    await vi.waitFor(() => expect(controls.pngButton.disabled).toBe(true))
+  })
+})

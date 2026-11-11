@@ -1,0 +1,507 @@
+import { createLabelAssetClient } from './assets'
+import { getStandardLabelPresets } from './standard-presets'
+import { bindFreeformEditorDom } from './editor-dom'
+import { createFreeformEditorController } from './editor-state'
+import { formatDesignerNumber } from './number-format'
+import {
+  type FreeformLabelDesignerEditorController,
+  type FreeformLabelDesignerEditorOptions,
+} from './editor-types'
+import {
+  activeEditors,
+  getFreeformLabelPresetNames,
+  loadFreeformLabelDesign,
+  loadStoredFreeformLabelDesign,
+  persistFreeformLabelDesign,
+  readStoredPresets,
+  persistStoredPresetMutation,
+  type StoredPreset,
+} from './editor-storage'
+import { deleteLabelPreset, saveLabelPreset, selectLabelPreset } from '../label-preset-storage'
+import { appendLabelExtraFieldCatalogGroup, buildLabelExtraFieldCatalogGroups } from '../label-extra-fields'
+import type { LabelDesignerPresetData, LabelDesignV2 } from './types'
+
+export const FREEFORM_EDITOR_BREAKPOINT_PX = 600
+
+/** Standard presets show a translated label; their stable `name` stays in option values. */
+function presetLabel(preset: { name: string; label?: string }) {
+  return preset.label ?? preset.name
+}
+
+function formatLabelSize({ widthMm, heightMm }: LabelDesignV2['label']) {
+  return `${formatDesignerNumber(widthMm, 3)} × ${formatDesignerNumber(heightMm, 3)} mm`
+}
+
+export async function initFreeformLabelDesignerEditor(
+  options: FreeformLabelDesignerEditorOptions,
+): Promise<FreeformLabelDesignerEditorController> {
+  const entityType = options.entityType ?? 'spool'
+  const initialDesign = loadFreeformLabelDesign({
+    settingsKey: options.settingsKey,
+    presetsKey: options.presetsKey,
+    kind: entityType,
+  })
+  let lastPersisted = JSON.stringify(initialDesign)
+  let persistWorkingDesign = true
+  let lastLabel = JSON.stringify(initialDesign.label)
+  let extraFields = options.extraFields ?? []
+  let domBinding: ReturnType<typeof bindFreeformEditorDom> | null = null
+  const controller = createFreeformEditorController({
+    initialDesign,
+    kind: entityType,
+    assets: createLabelAssetClient(),
+    translate: options.translate,
+    onChange: state => {
+      const label = JSON.stringify(state.design.label)
+      if (label !== lastLabel) {
+        lastLabel = label
+        syncGeometry()
+      }
+      const serialized = JSON.stringify(state.design)
+      if (serialized !== lastPersisted) {
+        lastPersisted = serialized
+        if (persistWorkingDesign) persistFreeformLabelDesign(options.settingsKey, state.design)
+      }
+    },
+    render: options.onChange,
+  })
+  activeEditors.set(options.settingsKey, controller)
+
+  const width = document.getElementById('freeform-label-width') as HTMLInputElement | null
+  const height = document.getElementById('freeform-label-height') as HTMLInputElement | null
+  const currentSize = document.getElementById('freeform-current-label-size')
+  const margin = document.getElementById('freeform-label-margin') as HTMLInputElement | null
+  const border = document.getElementById('freeform-label-border') as HTMLInputElement | null
+  const presetSelect = document.getElementById('freeform-preset-list') as HTMLSelectElement | null
+  const presetName = document.getElementById('freeform-preset-name') as HTMLInputElement | null
+  const presetLoad = document.getElementById('freeform-preset-load') as HTMLButtonElement | null
+  const presetSave = document.getElementById('freeform-preset-save') as HTMLButtonElement | null
+  const presetUpdate = document.getElementById('freeform-preset-update') as HTMLButtonElement | null
+  const presetDelete = document.getElementById('freeform-preset-delete') as HTMLButtonElement | null
+  const presetStatus = document.getElementById('freeform-preset-status')
+  const mobileNotice = document.getElementById('freeform-mobile-notice')
+  const workspace = document.getElementById('freeform-designer-workspace')
+  const editorContainer = workspace?.parentElement ?? workspace
+  const cleanups: Array<() => void> = []
+  const measuredWorkspaceWidth = () => {
+    const workspaceWidth = workspace?.getBoundingClientRect().width ?? 0
+    const measured = workspaceWidth > 0
+      ? workspaceWidth
+      : (editorContainer?.getBoundingClientRect().width ?? 0)
+    return measured > 0 ? measured : window.innerWidth
+  }
+  let editorEditable = measuredWorkspaceWidth() > FREEFORM_EDITOR_BREAKPOINT_PX
+  let resizeObserver: ResizeObserver | null = null
+  let destroyed = false
+  let pendingPresetMutations = 0
+  let loadedOwnPreset: string | null = null
+  let cleanDesign = lastPersisted
+  let cleanPresetName: string | null = null
+  let presetMutationTail: Promise<void> = Promise.resolve()
+  let latestPresetAction = 0
+
+  const destroy = () => {
+    if (destroyed) return
+    destroyed = true
+    resizeObserver?.disconnect()
+    domBinding?.destroy()
+    cleanups.splice(0).forEach(cleanup => cleanup())
+    if (activeEditors.get(options.settingsKey) === controller) activeEditors.delete(options.settingsKey)
+  }
+
+  const listen = <T extends Event>(target: EventTarget | null, event: string, listener: (event: T) => void) => {
+    if (!target) return
+    const handler = listener as EventListener
+    target.addEventListener(event, handler)
+    cleanups.push(() => target.removeEventListener(event, handler))
+  }
+  const setStatus = (message: string) => {
+    if (presetStatus) presetStatus.textContent = message
+  }
+  const confirmAction = (message: string) => {
+    const dialog = (window as typeof window & {
+      __fmConfirm?: (message: string, options?: { isDanger?: boolean }) => Promise<boolean>
+    }).__fmConfirm
+    return dialog ? dialog(message, { isDanger: true }) : Promise.resolve(window.confirm(message))
+  }
+  const builtInPresetHint = options.translate?.(
+    'labelDesigner.builtInPresetHint',
+    'Built-in presets cannot be modified.',
+  ) ?? 'Built-in presets cannot be modified.'
+  const canUpdatePreset = () => loadedOwnPreset !== null
+    && presetSelect?.value === `own:${loadedOwnPreset}`
+    && presetName?.value.trim() === loadedOwnPreset
+    && readStoredPresets(options.presetsKey).some(preset => preset.name === loadedOwnPreset)
+  const syncSidebarMutationControls = () => {
+    for (const control of [width, height, margin, border, presetName, presetLoad]) {
+      if (control) control.disabled = !editorEditable
+    }
+    if (presetSave) presetSave.disabled = !editorEditable || pendingPresetMutations > 0
+    if (presetUpdate) {
+      presetUpdate.disabled = !editorEditable || pendingPresetMutations > 0 || !canUpdatePreset()
+      presetUpdate.title = presetSelect?.value.startsWith('builtin:') ? builtInPresetHint : ''
+    }
+    if (presetDelete) presetDelete.disabled = !editorEditable || pendingPresetMutations > 0 || !presetSelect?.value.startsWith('own:')
+  }
+  const enqueuePresetMutation = async <T>(operation: () => Promise<T>): Promise<T> => {
+    pendingPresetMutations += 1
+    syncSidebarMutationControls()
+    const queued = presetMutationTail.then(operation)
+    presetMutationTail = queued.then(() => undefined, () => undefined)
+    try {
+      return await queued
+    } finally {
+      pendingPresetMutations -= 1
+      syncSidebarMutationControls()
+    }
+  }
+  const syncGeometry = () => {
+    const label = controller.getLabel()
+    const size = formatLabelSize(label)
+    if (currentSize && currentSize.textContent !== size) currentSize.textContent = size
+    if (width) width.value = formatDesignerNumber(label.widthMm, 3)
+    if (height) height.value = formatDesignerNumber(label.heightMm, 3)
+    if (margin) margin.value = formatDesignerNumber(label.marginMm)
+    if (border) border.checked = label.border
+  }
+  const renderExtraFields = () => {
+    const containers = {
+      filament: document.querySelector<HTMLElement>('[data-extra-field-source="filament"]'),
+      spool: document.querySelector<HTMLElement>('[data-extra-field-source="spool"]'),
+    }
+    const batchMode = options.batchMode ?? false
+    for (const container of Object.values(containers)) container?.replaceChildren()
+    for (const group of buildLabelExtraFieldCatalogGroups(extraFields, { entityType, batchMode })) {
+      const container = containers[group.source]
+      if (!container) continue
+      appendLabelExtraFieldCatalogGroup(container, group, {
+        batchMode,
+        translate: options.translate ?? ((_key, fallback) => fallback),
+        makeChip: (token, label) => {
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.className = 'freeform-token-chip'
+          button.dataset.fieldToken = token
+          button.textContent = label
+          button.disabled = !editorEditable
+          return button
+        },
+      })
+    }
+  }
+  const refreshPresetList = (selectName?: string) => {
+    if (!presetSelect) return
+    const previous = presetSelect.value
+    const own = readStoredPresets(options.presetsKey)
+    const cross = options.crossPresetsKey ? readStoredPresets(options.crossPresetsKey) : []
+    const groups: HTMLOptGroupElement[] = []
+    const appendGroup = (label: string, prefix: string, presets: Array<StoredPreset & { label?: string }>) => {
+      if (presets.length === 0) return
+      const group = document.createElement('optgroup')
+      group.label = label
+      for (const preset of presets) {
+        const item = document.createElement('option')
+        item.value = `${prefix}:${preset.name}`
+        const label = presetLabel(preset)
+        const size = ` (${formatLabelSize(preset.data.design.label)})`
+        const name = document.createElement('span')
+        name.className = 'freeform-preset-option-name'
+        name.textContent = label.endsWith(size) ? label.slice(0, -size.length) : label
+        const dimensions = document.createElement('span')
+        dimensions.className = 'freeform-preset-option-size'
+        dimensions.textContent = size
+        item.append(name, dimensions)
+        group.append(item)
+      }
+      groups.push(group)
+    }
+    const ownFallback = `${options.entityLabel ?? 'Label'} presets`
+    const ownLabel = options.ownPresetsLabel
+      ?? (options.translate?.('labelDesigner.ownPresets', '{entity} presets') ?? '{entity} presets')
+        .replace('{entity}', options.entityLabel ?? 'Label')
+    appendGroup(ownLabel || ownFallback, 'own', own)
+    appendGroup(
+      options.crossPresetsLabel
+        ?? (options.translate?.('labelDesigner.otherPresets', 'Other presets') ?? 'Other presets'),
+      'cross',
+      cross,
+    )
+    appendGroup(options.translate?.('labelDesigner.standardPresets', 'Standard presets') ?? 'Standard presets', 'builtin', getStandardLabelPresets(entityType))
+    const display = presetSelect.querySelector(':scope > button')
+    presetSelect.replaceChildren(...(display ? [display, ...groups] : groups))
+    const preferred = selectName ? `own:${selectName}`
+      : Array.from(presetSelect.options).some(option => option.value === previous) ? previous : presetSelect.options[0]?.value
+    if (preferred) presetSelect.value = preferred
+    syncSidebarMutationControls()
+    const names = getFreeformLabelPresetNames(options.presetsKey)
+    document.dispatchEvent(new CustomEvent('freeform-label-presets-changed', {
+      detail: { presets: names },
+    }))
+  }
+  const selectedPreset = (value: string) => {
+    const [source, ...nameParts] = value.split(':')
+    const name = nameParts.join(':')
+    if (source === 'builtin') return getStandardLabelPresets(entityType).find(preset => preset.name === name) ?? null
+    const storageKey = source === 'cross' ? options.crossPresetsKey : options.presetsKey
+    return storageKey
+      ? readStoredPresets(storageKey).find(preset => preset.name === name) ?? null
+      : null
+  }
+  const loadSettings = (design = loadStoredFreeformLabelDesign({
+      settingsKey: options.settingsKey,
+      presetsKey: options.presetsKey,
+      kind: entityType,
+    })) => {
+    if (!controller.reset(design)) return false
+    loadedOwnPreset = null
+    cleanDesign = JSON.stringify(controller.getDesign())
+    cleanPresetName = null
+    syncSidebarMutationControls()
+    syncGeometry()
+    domBinding?.sync()
+    void domBinding?.refresh()
+    return true
+  }
+  const updateGeometry = (patch: Partial<LabelDesignV2['label']>) => {
+    if (!editorEditable) {
+      syncGeometry()
+      return
+    }
+    controller.updateLabel(patch)
+    syncGeometry()
+    domBinding?.sync()
+    void domBinding?.refresh()
+  }
+
+  for (const [control, property] of [[width, 'widthMm'], [height, 'heightMm'], [margin, 'marginMm']] as const) {
+    if (control) listen(control, 'change', () => updateGeometry({ [property]: Number(control.value) }))
+  }
+  if (border) listen(border, 'change', () => updateGeometry({ border: border.checked }))
+  const loadPreset = (name?: string, sourceOrSync?: 'own' | 'cross' | 'builtin' | boolean) => {
+    const source = typeof sourceOrSync === 'string' ? sourceOrSync : undefined
+    const syncSelection = sourceOrSync !== false
+    const value = name === undefined
+      ? presetSelect?.value ?? ''
+      : `${source ?? (readStoredPresets(options.presetsKey).some(preset => preset.name === name) ? 'own' : 'builtin')}:${name}`
+    const selectedSource = value.split(':', 1)[0]
+    const preset = selectedPreset(value)
+    if (!preset) return false
+    const previouslyPersistent = persistWorkingDesign
+    // One-off API labels must not overwrite the browser's working draft, including later edits.
+    persistWorkingDesign = syncSelection
+    if (!controller.reset(preset.data.design)) {
+      persistWorkingDesign = previouslyPersistent
+      return false
+    }
+    const action = ++latestPresetAction
+    if (presetSelect) presetSelect.value = value
+    loadedOwnPreset = value.startsWith('own:') ? preset.name : null
+    cleanDesign = JSON.stringify(controller.getDesign())
+    cleanPresetName = presetLabel(preset)
+    if (persistWorkingDesign) persistFreeformLabelDesign(options.settingsKey, preset.data.design)
+    lastPersisted = JSON.stringify(preset.data.design)
+    if (presetName) presetName.value = presetLabel(preset)
+    syncSidebarMutationControls()
+    syncGeometry()
+    domBinding?.sync()
+    void domBinding?.refresh()
+    setStatus(options.translate?.('labelDesigner.presetLoaded', 'Preset loaded.') ?? 'Preset loaded.')
+    if (!syncSelection || !['own', 'builtin', 'cross'].includes(selectedSource)) return true
+    const showSelectionFailure = () => {
+      if (action === latestPresetAction) {
+        setStatus(options.translate?.(
+          'labelDesigner.presetSelectionFailed',
+          'Preset loaded, but selection synchronization failed. Load it again to retry.',
+        ) ?? 'Preset loaded, but selection synchronization failed. Load it again to retry.')
+      }
+    }
+    void enqueuePresetMutation(async () => {
+      if (selectedSource !== 'own') return selectLabelPreset(null, entityType)
+      const databaseId = readStoredPresets(options.presetsKey)
+        .find(candidate => candidate.name === preset.name)?.databaseId
+      return databaseId ? selectLabelPreset(databaseId, entityType) : false
+    }).then(synced => {
+      if (!synced) showSelectionFailure()
+    }, showSelectionFailure)
+    return true
+  }
+  listen<MouseEvent>(presetLoad, 'click', async () => {
+    const preset = selectedPreset(presetSelect?.value ?? '')
+    if (!preset) return
+    if (JSON.stringify(controller.getDesign()) !== cleanDesign) {
+      const message = cleanPresetName
+        ? (options.translate?.(
+            'labelDesigner.confirmReplaceChangedPreset',
+            'You have unsaved changes to "{current}". Load "{name}" and discard those changes?',
+          ) ?? 'You have unsaved changes to "{current}". Load "{name}" and discard those changes?')
+            .replace('{current}', cleanPresetName)
+            .replace('{name}', presetLabel(preset))
+        : (options.translate?.(
+            'labelDesigner.confirmReplaceChangedLabel',
+            'You have unsaved changes to the current label. Load "{name}" and discard those changes?',
+          ) ?? 'You have unsaved changes to the current label. Load "{name}" and discard those changes?')
+            .replace('{name}', presetLabel(preset))
+      if (!await confirmAction(message)) return
+    }
+    loadPreset()
+  })
+  listen(presetSelect, 'change', syncSidebarMutationControls)
+  listen(presetName, 'input', syncSidebarMutationControls)
+  const savePreset = async (asNew = false): Promise<string | null> => {
+    if (!editorEditable) return null
+    const name = presetName?.value.trim() ?? ''
+    if (!name) {
+      setStatus(options.translate?.('labelDesigner.presetNameRequired', 'Enter a preset name.') ?? 'Enter a preset name.')
+      presetName?.focus()
+      return null
+    }
+    if (asNew && readStoredPresets(options.presetsKey).some(preset => preset.name === name)) {
+      setStatus(options.translate?.('labelDesigner.presetNameExists', 'That name is already in use. Choose a new name.') ?? 'That name is already in use. Choose a new name.')
+      presetName?.focus()
+      return null
+    }
+    const design = controller.getDesign()
+    const replacementVersion = controller.getReplacementVersion()
+    const action = ++latestPresetAction
+    let selectionSynced = true
+    return enqueuePresetMutation(async () => {
+      const presets = readStoredPresets(options.presetsKey)
+      const index = presets.findIndex(candidate => candidate.name === name)
+      const existing = index >= 0 ? presets[index] : null
+      const data: LabelDesignerPresetData = { version: 2, design }
+      if (existing && 'legacy_v1' in existing.data) data.legacy_v1 = structuredClone(existing.data.legacy_v1)
+      const preset: StoredPreset = { name, data }
+      if (index >= 0) presets[index] = preset
+      else presets.push(preset)
+      const saved = await persistStoredPresetMutation(
+        options.presetsKey,
+        presets,
+        () => asNew
+          ? saveLabelPreset(options.presetsKey, preset, undefined, true)
+          : saveLabelPreset(options.presetsKey, preset),
+      )
+      if (saved) {
+        selectionSynced = preset.databaseId
+          ? await selectLabelPreset(preset.databaseId, entityType)
+          : false
+      }
+      return saved
+    }).then(saved => {
+      if (saved && presetName?.value.trim() === name && controller.getReplacementVersion() === replacementVersion) {
+        loadedOwnPreset = name
+        cleanDesign = JSON.stringify(design)
+        cleanPresetName = name
+      }
+      refreshPresetList(saved ? name : undefined)
+      if (action === latestPresetAction) {
+        setStatus(saved
+          ? selectionSynced
+            ? (options.translate?.('labelDesigner.presetSaved', 'Preset saved.') ?? 'Preset saved.')
+            : (options.translate?.(
+                'labelDesigner.presetSavedSelectionFailed',
+                'Preset saved, but selection synchronization failed. Load it again to retry.',
+              ) ?? 'Preset saved, but selection synchronization failed. Load it again to retry.')
+          : (options.translate?.('labelDesigner.presetSaveFailed', 'Preset save failed.') ?? 'Preset save failed.'))
+      }
+      return saved ? name : null
+    }, () => {
+      refreshPresetList()
+      if (action === latestPresetAction) {
+        setStatus(options.translate?.('labelDesigner.presetSaveFailed', 'Preset save failed.') ?? 'Preset save failed.')
+      }
+      return null
+    })
+  }
+  listen<MouseEvent>(presetSave, 'click', () => { void savePreset(true) })
+  listen<MouseEvent>(presetUpdate, 'click', () => {
+    if (canUpdatePreset() && pendingPresetMutations === 0) void savePreset()
+  })
+  listen<MouseEvent>(presetDelete, 'click', async () => {
+    if (!editorEditable) return
+    const value = presetSelect?.value ?? ''
+    if (!value.startsWith('own:')) return
+    const name = value.slice(4)
+    const message = (options.translate?.(
+      'labelDesigner.confirmDeletePreset',
+      'Delete preset "{name}"? This cannot be undone.',
+    ) ?? 'Delete preset "{name}"? This cannot be undone.').replace('{name}', name)
+    if (!await confirmAction(message)) return
+    const action = ++latestPresetAction
+    void enqueuePresetMutation(() => persistStoredPresetMutation(
+      options.presetsKey,
+      readStoredPresets(options.presetsKey).filter(preset => preset.name !== name),
+      () => deleteLabelPreset(options.presetsKey, name),
+    )).then(deleted => {
+      refreshPresetList()
+      if (action === latestPresetAction) {
+        setStatus(deleted
+          ? (options.translate?.('labelDesigner.presetDeleted', 'Preset deleted.') ?? 'Preset deleted.')
+          : (options.translate?.('labelDesigner.presetDeleteFailed', 'Preset delete failed.') ?? 'Preset delete failed.'))
+      }
+    }, () => {
+      refreshPresetList()
+      if (action === latestPresetAction) {
+        setStatus(options.translate?.('labelDesigner.presetDeleteFailed', 'Preset delete failed.') ?? 'Preset delete failed.')
+      }
+    })
+  })
+
+  const syncMobileState = (availableWidth = measuredWorkspaceWidth()) => {
+    const nextEditable = availableWidth > FREEFORM_EDITOR_BREAKPOINT_PX
+    if (mobileNotice) mobileNotice.hidden = nextEditable
+    if (workspace) workspace.dataset.editorEditable = String(nextEditable)
+    const changed = nextEditable !== editorEditable
+    editorEditable = nextEditable
+    syncSidebarMutationControls()
+    if (changed) void domBinding?.setEditable(nextEditable)
+  }
+  if (editorContainer && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(entries => {
+      if (destroyed) return
+      const entry = entries.find(candidate => candidate.target === editorContainer) ?? entries[0]
+      syncMobileState(entry?.contentRect.width ?? measuredWorkspaceWidth())
+    })
+    resizeObserver.observe(editorContainer)
+  } else {
+    listen(window, 'resize', () => syncMobileState())
+  }
+  const spoolTab = document.getElementById('freeform-field-tab-spool')
+  if (spoolTab) spoolTab.hidden = entityType !== 'spool'
+  renderExtraFields()
+  syncGeometry()
+  refreshPresetList()
+  syncMobileState()
+  try {
+    domBinding = bindFreeformEditorDom({
+      root: document,
+      controller,
+      editable: editorEditable,
+      loadInteract: options.loadInteract,
+      translate: options.translate,
+      getPreviewData: options.getPreviewData,
+      getQrEntityIds: options.getQrEntityIds,
+      entityPath: entityType === 'filament' ? 'filaments' : 'spools',
+    })
+    await domBinding.ready
+    if (entityType === 'spool') spoolTab?.click()
+  } catch (error) {
+    destroy()
+    throw error
+  }
+
+  return {
+    getDesign: controller.getDesign,
+    savePreset,
+    loadPreset,
+    loadSettings,
+    refresh: () => domBinding?.refresh() ?? Promise.resolve(),
+    refreshInteractions: () => domBinding?.refreshInteractions() ?? Promise.resolve(),
+    refreshExtraFields(next) {
+      extraFields = next
+      renderExtraFields()
+      domBinding?.sync()
+    },
+    refreshPresetList,
+    destroy,
+  }
+}

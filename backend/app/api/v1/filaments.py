@@ -1,38 +1,43 @@
+import hashlib
 import logging
-from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from sqlalchemy import delete, func, or_, select, literal_column
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse, JSONResponse, Response
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
-from app.core.cache import response_cache
-from app.core.db_utils import get_next_available_id
+from app.api.v1.printers import (
+    _is_primary_worker,
+    _proxy_to_primary,
+    pick_bambuddy_driver,
+)
 from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.schemas_filament import (
     BulkFilamentDeleteRequest,
     BulkFilamentUpdateRequest,
+    ColorCatalogSnapshot,
     ColorCreate,
+    ColorFilterStop,
     ColorResponse,
     ColorUpdate,
-    FilamentColorEntry,
     FilamentColorResponse,
     FilamentColorsReplace,
     FilamentCreate,
     FilamentDetailResponse,
     FilamentResponse,
-    ResolveFilamentFromTagRequest,
-    ResolveFilamentFromTagResponse,
     FilamentUpdate,
     ManufacturerCreate,
     ManufacturerResponse,
     ManufacturerUpdate,
+    ResolveFilamentFromTagRequest,
+    ResolveFilamentFromTagResponse,
 )
-from app.core.config import settings, MANUFACTURER_LOGO_DIR
+from app.core.cache import response_cache
+from app.core.config import MANUFACTURER_LOGO_DIR, settings
+from app.core.db_utils import get_next_available_id
 from app.core.event_bus import event_bus
 from app.models import (
     Color,
@@ -41,8 +46,10 @@ from app.models import (
     Manufacturer,
     Spool,
     SpoolStatus,
-    SystemExtraField,
 )
+from app.utils.colors import normalize_hex_color
+from app.services.color_search import filament_color_filter, filament_has_named_color
+from app.utils.query_params import parse_multi_int, parse_multi_str
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +237,7 @@ async def get_manufacturer_label_logo(manufacturer_id: int, _principal: Principa
 
 class DownloadLogoRequest(BaseModel):
     slug: str
+    has_web_logo: bool = True
     has_label_logo: bool = False
 
 
@@ -254,31 +262,34 @@ async def download_manufacturer_logo(
     MANUFACTURER_LOGO_DIR.mkdir(parents=True, exist_ok=True)
     base_url = settings.filamentdb_url.rstrip("/")
 
-    # Download web logo
-    logo_url = f"{base_url}/uploads/logos/web/{data.slug}.png"
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(logo_url)
-            resp.raise_for_status()
-    except (httpx.HTTPStatusError, httpx.HTTPError) as exc:
-        logger.warning(
-            "Failed to download logo for manufacturer %s (slug=%s): %s",
-            manufacturer_id,
-            data.slug,
-            exc,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={
-                "code": "logo_download_failed",
-                "message": "Could not download logo from FilamentDB",
-            },
-        )
+    # Keep legacy web-only requests working, including previously ignored false flags.
+    download_web = data.has_web_logo or not data.has_label_logo
+    if download_web:
+        # Download web logo
+        logo_url = f"{base_url}/uploads/logos/web/{data.slug}.png"
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(logo_url)
+                resp.raise_for_status()
+        except (httpx.HTTPStatusError, httpx.HTTPError) as exc:
+            logger.warning(
+                "Failed to download logo for manufacturer %s (slug=%s): %s",
+                manufacturer_id,
+                data.slug,
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "code": "logo_download_failed",
+                    "message": "Could not download logo from FilamentDB",
+                },
+            )
 
-    # Save web logo to persistent storage
-    logo_path = MANUFACTURER_LOGO_DIR / f"{manufacturer_id}.png"
-    logo_path.write_bytes(resp.content)
-    manufacturer.logo_file = f"{manufacturer_id}.png"
+        # Save web logo to persistent storage
+        logo_path = MANUFACTURER_LOGO_DIR / f"{manufacturer_id}.png"
+        logo_path.write_bytes(resp.content)
+        manufacturer.logo_file = f"{manufacturer_id}.png"
 
     # Download label logo (grayscale, for label printing) — non-critical
     if data.has_label_logo:
@@ -303,6 +314,10 @@ async def download_manufacturer_logo(
                 data.slug,
                 exc,
             )
+            if not download_web:
+                raise HTTPException(status_code=502, detail={
+                    "code": "logo_download_failed", "message": "Could not download label logo from FilamentDB",
+                })
 
     await db.commit()
     await db.refresh(manufacturer)
@@ -315,7 +330,8 @@ async def download_manufacturer_logo(
         data.slug,
     )
 
-    return {"ok": True, "logo_url": f"/api/v1/manufacturers/{manufacturer_id}/logo"}
+    logo_kind = "logo" if download_web else "label-logo"
+    return {"ok": True, "logo_url": f"/api/v1/manufacturers/{manufacturer_id}/{logo_kind}"}
 
 
 @router.patch("/{manufacturer_id}", response_model=ManufacturerResponse)
@@ -469,6 +485,28 @@ async def list_colors(
     return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
 
 
+@router_colors.get(
+    "/discovery/snapshot",
+    response_model=ColorCatalogSnapshot,
+    responses={304: {"description": "Catalog unchanged"}},
+)
+async def color_catalog_snapshot(request: Request, db: DBSession, principal: PrincipalDep):
+    rows = await db.execute(
+        select(Color.id, Color.name, Color.hex_code, func.count(FilamentColor.id).label("usage_count"))
+        .outerjoin(FilamentColor, Color.id == FilamentColor.color_id)
+        .group_by(Color.id, Color.name, Color.hex_code)
+        .order_by(Color.name, Color.id)
+    )
+    response = JSONResponse({"items": [dict(row) for row in rows.mappings()]})
+    etag = '"' + hashlib.sha256(response.body).hexdigest() + '"'
+    headers = {"ETag": f"W/{etag}", "Cache-Control": "private, no-cache"}
+    validators = request.headers.get("if-none-match", "").split(",")
+    if any(value.strip().removeprefix("W/") in (etag, "*") for value in validators):
+        return Response(status_code=304, headers=headers)
+    response.headers.update(headers)
+    return response
+
+
 @router_colors.post(
     "", response_model=ColorResponse, status_code=status.HTTP_201_CREATED
 )
@@ -555,22 +593,34 @@ async def delete_color(
 router_filaments = APIRouter(prefix="/filaments", tags=["filaments"])
 
 
-def _parse_temp_value(value: int | float | str | None) -> int | None:
+def _parse_temp_value(value: float | str | None) -> int | None:
     if value is None:
         return None
     if isinstance(value, int):
         return value
     if isinstance(value, float):
-        return int(round(value))
+        try:
+            return int(round(value))
+        except (ValueError, OverflowError):
+            return None
     if isinstance(value, str):
         stripped = value.strip()
         if not stripped:
             return None
         try:
             return int(round(float(stripped)))
-        except ValueError:
+        except (ValueError, OverflowError):
             return None
     return None
+
+
+def _tag_temperature_range(filament: Filament) -> dict[str, int | float | None]:
+    temperature_range = dict(filament.extruder_temp_range_c or {})
+    for key, endpoint in (("min_temp", "min"), ("max_temp", "max")):
+        legacy = _parse_temp_value((filament.custom_fields or {}).get(key))
+        if legacy is not None:
+            temperature_range[endpoint] = legacy
+    return temperature_range
 
 
 def _parse_diameter_value(value: float | str | None) -> float | None:
@@ -589,38 +639,6 @@ def _parse_diameter_value(value: float | str | None) -> float | None:
     return None
 
 
-async def _ensure_filament_temp_fields(db: DBSession) -> list[str]:
-    created_keys: list[str] = []
-    required_fields = [
-        {
-            "target_type": "filament",
-            "key": "min_temp",
-            "label": "Min Temp",
-            "field_type": "number",
-        },
-        {
-            "target_type": "filament",
-            "key": "max_temp",
-            "label": "Max Temp",
-            "field_type": "number",
-        },
-    ]
-
-    for field in required_fields:
-        result = await db.execute(
-            select(SystemExtraField).where(
-                SystemExtraField.target_type == field["target_type"],
-                SystemExtraField.key == field["key"],
-            )
-        )
-        existing = result.scalar_one_or_none()
-        if existing is None:
-            db.add(SystemExtraField(**field))
-            created_keys.append(field["key"])
-
-    return created_keys
-
-
 @router_filaments.post(
     "/resolve-from-tag",
     response_model=ResolveFilamentFromTagResponse,
@@ -637,7 +655,10 @@ async def resolve_filament_from_tag(
     if not material_type_raw:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "validation_error", "message": "Tag field 'type' is required"},
+            detail={
+                "code": "validation_error",
+                "message": "Tag field 'type' is required",
+            },
         )
 
     brand_name = brand_raw or "Generic"
@@ -665,14 +686,43 @@ async def resolve_filament_from_tag(
         await db.flush()
         manufacturer_created = True
 
-    filament_result = await db.execute(
-        select(Filament)
-        .where(Filament.manufacturer_id == manufacturer.id)
-        .where(func.upper(Filament.material_type) == material_type_raw)
-        .order_by(Filament.id.asc())
-        .limit(1)
-    )
-    filament = filament_result.scalar_one_or_none()
+    target_color_hex: str | None = None
+    if data.color_hex and str(data.color_hex).strip():
+        try:
+            target_color_hex = normalize_hex_color(data.color_hex)
+        except ValueError:
+            target_color_hex = None
+
+    filament = None
+    if target_color_hex:
+        color_query = (
+            select(Filament)
+            .join(Filament.filament_colors)
+            .join(FilamentColor.color)
+            .where(Filament.manufacturer_id == manufacturer.id)
+            .where(func.upper(Filament.material_type) == material_type_raw)
+            .where(
+                or_(
+                    func.upper(Color.hex_code) == target_color_hex,
+                    func.upper(func.substr(Color.hex_code, 1, 7))
+                    == target_color_hex[:7],
+                )
+            )
+            .order_by(Filament.id.asc())
+            .limit(1)
+        )
+        filament_result = await db.execute(color_query)
+        filament = filament_result.scalar_one_or_none()
+
+    if filament is None:
+        filament_result = await db.execute(
+            select(Filament)
+            .where(Filament.manufacturer_id == manufacturer.id)
+            .where(func.upper(Filament.material_type) == material_type_raw)
+            .order_by(Filament.id.asc())
+            .limit(1)
+        )
+        filament = filament_result.scalar_one_or_none()
 
     filament_created = False
     filament_updated = False
@@ -695,26 +745,62 @@ async def resolve_filament_from_tag(
         db.add(filament)
         await db.flush()
         filament_created = True
+
+        if target_color_hex:
+            color_match = await db.execute(
+                select(Color)
+                .where(
+                    or_(
+                        func.upper(Color.hex_code) == target_color_hex,
+                        func.upper(func.substr(Color.hex_code, 1, 7))
+                        == target_color_hex[:7],
+                    )
+                )
+                .limit(1)
+            )
+            matched_color = color_match.scalar_one_or_none()
+            if matched_color is None:
+                matched_color = Color(name=target_color_hex, hex_code=target_color_hex)
+                db.add(matched_color)
+                await db.flush()
+            fc = FilamentColor(
+                filament_id=filament.id,
+                color_id=matched_color.id,
+                position=1,
+            )
+            db.add(fc)
     else:
         designation = filament.designation
 
-    custom_fields = dict(filament.custom_fields or {})
-    before_custom_fields = dict(custom_fields)
-    if min_temp is not None:
-        custom_fields["min_temp"] = min_temp
-    if max_temp is not None:
-        custom_fields["max_temp"] = max_temp
-    if custom_fields != before_custom_fields:
-        filament.custom_fields = custom_fields
-        filament_updated = True
-
-    created_system_fields: list[str] = []
     if min_temp is not None or max_temp is not None:
-        created_system_fields = await _ensure_filament_temp_fields(db)
-
-    if created_system_fields:
-        response_cache.delete("extra_fields:filament:all")
-        response_cache.delete("extra_fields:all:all")
+        current_range = _tag_temperature_range(filament)
+        temperature_range = {
+            "min": min_temp if min_temp is not None else current_range.get("min"),
+            "max": max_temp if max_temp is not None else current_range.get("max"),
+        }
+        custom_fields = dict(filament.custom_fields or {})
+        if (
+            temperature_range["min"] is not None
+            and temperature_range["max"] is not None
+            and temperature_range["max"] < temperature_range["min"]
+        ):
+            # Legacy tag partial updates may cross; keep the native range valid.
+            custom_fields.update(
+                min_temp=temperature_range["min"], max_temp=temperature_range["max"]
+            )
+        else:
+            if filament.extruder_temp_range_c != temperature_range:
+                filament.extruder_temp_range_c = temperature_range
+                filament_updated = True
+            for key, supplied in (("min_temp", min_temp), ("max_temp", max_temp)):
+                if (
+                    supplied is not None
+                    or _parse_temp_value(custom_fields.get(key)) is not None
+                ):
+                    custom_fields.pop(key, None)
+        if custom_fields != (filament.custom_fields or {}):
+            filament.custom_fields = custom_fields or None
+            filament_updated = True
 
     await db.commit()
     await db.refresh(filament)
@@ -725,7 +811,7 @@ async def resolve_filament_from_tag(
         await event_bus.publish({"event": "filaments_changed"})
         response_cache.delete("filament_types")
 
-    final_custom_fields = filament.custom_fields or {}
+    temperature_range = _tag_temperature_range(filament)
     return ResolveFilamentFromTagResponse(
         filament_id=filament.id,
         filament_created=filament_created,
@@ -735,13 +821,36 @@ async def resolve_filament_from_tag(
         manufacturer_created=manufacturer_created,
         material_type=material_type_raw,
         designation=filament.designation,
-        min_temp=final_custom_fields.get("min_temp"),
-        max_temp=final_custom_fields.get("max_temp"),
-        system_extra_fields_created=created_system_fields,
+        min_temp=_parse_temp_value(temperature_range.get("min")),
+        max_temp=_parse_temp_value(temperature_range.get("max")),
+        system_extra_fields_created=[],
     )
+
 
 # Default filament types (always included in the types list)
 DEFAULT_FILAMENT_TYPES = ["PLA", "PETG", "ABS", "ASA", "TPU", "NYLON", "PC"]
+
+
+class FilterOption(BaseModel):
+    value: str
+    label: str
+
+
+class ColorFilterOption(FilterOption):
+    color_hexes: list[str]
+    color_stops: list[ColorFilterStop]
+
+
+class FilamentFilterOptionsResponse(BaseModel):
+    manufacturers: list[FilterOption]
+    types: list[str]
+    designations: list[str]
+    diameters: list[float]
+    finishes: list[str]
+    subgroups: list[str]
+    spool_counts: list[int]
+    colors: list[ColorFilterOption]
+    has_empty_colors: bool
 
 
 @router_filaments.get("/types", response_model=list[str])
@@ -759,14 +868,125 @@ async def list_filament_types(db: DBSession, principal: PrincipalDep):
     return all_types
 
 
+@router_filaments.get("/filter-options", response_model=FilamentFilterOptionsResponse)
+async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
+    """Return only values used by at least one filament."""
+    cached = response_cache.get("filter_options:filaments")
+    if cached is not None:
+        return cached
+
+    facet_result = await db.execute(
+        select(
+            Filament.manufacturer_id,
+            Manufacturer.name,
+            Filament.material_type,
+            Filament.designation,
+            Filament.diameter_mm,
+            Filament.finish_type,
+            Filament.material_subgroup,
+        )
+        .join(Manufacturer, Manufacturer.id == Filament.manufacturer_id)
+        .distinct()
+    )
+    color_result = await db.execute(
+        select(Color.name, Color.hex_code, Color.id, filament_has_named_color())
+        .select_from(Filament)
+        .outerjoin(FilamentColor, FilamentColor.filament_id == Filament.id)
+        .outerjoin(Color, Color.id == FilamentColor.color_id)
+        .distinct()
+    )
+    active_spool_counts = (
+        select(Spool.filament_id, func.count(Spool.id).label("spool_count"))
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+        .where(SpoolStatus.key != "archived")
+        .group_by(Spool.filament_id)
+        .subquery()
+    )
+    spool_count_result = await db.execute(
+        select(func.coalesce(active_spool_counts.c.spool_count, 0))
+        .select_from(Filament)
+        .outerjoin(
+            active_spool_counts,
+            active_spool_counts.c.filament_id == Filament.id,
+        )
+        .distinct()
+    )
+
+    manufacturers: dict[int, str] = {}
+    types: set[str] = set()
+    designations: set[str] = set()
+    diameters: set[float] = set()
+    finishes: set[str] = set()
+    subgroups: set[str] = set()
+    colors: dict[str, set[tuple[str, int]]] = {}
+    for (
+        manufacturer_id,
+        manufacturer_name,
+        material_type,
+        designation,
+        diameter_mm,
+        finish,
+        subgroup,
+    ) in facet_result.all():
+        manufacturers[manufacturer_id] = manufacturer_name
+        if material_type:
+            types.add(material_type)
+        if designation:
+            designations.add(designation)
+        if diameter_mm is not None:
+            diameters.add(diameter_mm)
+        if finish:
+            finishes.add(finish)
+        if subgroup:
+            subgroups.add(subgroup)
+    has_empty_colors = False
+    for color_name, hex_code, color_id, has_named_color in color_result.all():
+        if color_name:
+            colors.setdefault(color_name, set()).add((hex_code, color_id))
+        if not has_named_color:
+            has_empty_colors = True
+
+    payload = FilamentFilterOptionsResponse(
+        manufacturers=[
+            FilterOption(value=str(manufacturer_id), label=name)
+            for manufacturer_id, name in sorted(
+                manufacturers.items(), key=lambda item: item[1].casefold()
+            )
+        ],
+        types=sorted(types, key=str.casefold),
+        designations=sorted(designations, key=str.casefold),
+        diameters=sorted(diameters),
+        finishes=sorted(finishes, key=str.casefold),
+        subgroups=sorted(subgroups, key=str.casefold),
+        spool_counts=sorted(int(row[0]) for row in spool_count_result.all()),
+        colors=[
+            ColorFilterOption(
+                value=name,
+                label=name,
+                color_hexes=sorted({hex_code for hex_code, _ in stops if hex_code}),
+                color_stops=[ColorFilterStop(id=color_id, hex=hex_code) for hex_code, color_id in sorted(stops)],
+            )
+            for name, stops in sorted(
+                colors.items(), key=lambda item: item[0].casefold()
+            )
+        ],
+        has_empty_colors=has_empty_colors,
+    )
+    response_cache.set("filter_options:filaments", payload, ttl=300)
+    return payload
+
+
 @router_filaments.get("", response_model=PaginatedResponse[FilamentDetailResponse])
 async def list_filaments(
     db: DBSession,
     principal: PrincipalDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    type: str | None = None,
-    manufacturer_id: int | None = None,
+    type: list[str] | None = Query(None),
+    manufacturer_id: list[str] | None = Query(None),
+    color_name: list[str] | None = Query(None),
+    color_id: list[int] | None = Query(None),
+    color_unassigned: bool = Query(False),
     search: str | None = Query(None, max_length=200),
     sort_by: str = Query(
         "designation",
@@ -779,11 +999,16 @@ async def list_filaments(
     needs_manufacturer_join = False
     needs_spool_count_join = False
     spool_count_subquery = None
+    types = parse_multi_str(type, "type")
+    manufacturer_ids = parse_multi_int(manufacturer_id, "manufacturer_id")
+    color_condition = filament_color_filter(color_name, color_unassigned, db.get_bind().dialect.name, color_ids=color_id)
+    if color_condition is not None:
+        conditions.append(color_condition)
 
-    if type:
-        conditions.append(Filament.material_type == type)
-    if manufacturer_id:
-        conditions.append(Filament.manufacturer_id == manufacturer_id)
+    if types:
+        conditions.append(Filament.material_type.in_(types))
+    if manufacturer_ids:
+        conditions.append(Filament.manufacturer_id.in_(manufacturer_ids))
 
     if search:
         search_term = f"%{search}%"
@@ -861,6 +1086,7 @@ async def list_filaments(
     # Compute spool counts for the fetched filaments (excluding archived spools)
     filament_ids = [f.id for f in items]
     spool_counts: dict[int, int] = {}
+    spool_status_ids: dict[int, list[int]] = {}
     if filament_ids:
         spool_count_query = (
             select(Spool.filament_id, func.count(Spool.id))
@@ -872,12 +1098,22 @@ async def list_filaments(
         spool_result = await db.execute(spool_count_query)
         spool_counts = {row[0]: row[1] for row in spool_result.all()}
 
+        status_query = (
+            select(Spool.filament_id, Spool.status_id)
+            .where(Spool.filament_id.in_(filament_ids))
+            .distinct()
+        )
+        status_result = await db.execute(status_query)
+        for filament_id, status_id in status_result.all():
+            spool_status_ids.setdefault(filament_id, []).append(status_id)
+
     items_with_count = [
         FilamentDetailResponse.model_validate(
             {
                 **f.__dict__,
                 "manufacturer": f.manufacturer,
                 "spool_count": spool_counts.get(f.id, 0),
+                "spool_status_ids": spool_status_ids.get(f.id, []),
                 "colors": sorted(f.filament_colors, key=lambda fc: fc.position),
             }
         )
@@ -1191,3 +1427,110 @@ async def delete_filament(
     await db.commit()
     await event_bus.publish({"event": "filaments_changed"})
     response_cache.delete("filament_types")
+
+
+class DefaultFilamentSlicerProfileBody(BaseModel):
+    base_name: str = Field(..., min_length=1)
+    apply_to_existing: bool = False
+
+
+class ModelFilamentSlicerProfileBody(BaseModel):
+    base_name: str | None = None
+    clear_override: bool = False
+
+
+@router_filaments.post("/{filament_id}/slicer-profile/default")
+@router_filaments.put("/{filament_id}/slicer-profile/default")
+async def set_filament_default_slicer_profile(
+    filament_id: int,
+    body: DefaultFilamentSlicerProfileBody,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """Set default Bambu cloud slicer profile for a filament."""
+    if not _is_primary_worker():
+        return await _proxy_to_primary(
+            request,
+            method="POST",
+            path=f"/api/v1/filaments/{filament_id}/slicer-profile/default",
+            json_body=body.model_dump(),
+        )
+    filament = await db.get(Filament, filament_id)
+    if not filament:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Filament not found"},
+        )
+    _printer_id, driver = await pick_bambuddy_driver(db)
+    method = getattr(driver, "set_default_filament_profile", None)
+    if not callable(method):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsupported",
+                "message": "Driver does not support default slicer profiles",
+            },
+        )
+    result = await method(
+        int(filament_id),
+        base_name=body.base_name.strip(),
+        apply_to_existing=body.apply_to_existing,
+    )
+    return result
+
+
+@router_filaments.post("/{filament_id}/slicer-profile/models/{model}")
+@router_filaments.put("/{filament_id}/slicer-profile/models/{model}")
+async def set_filament_model_slicer_profile(
+    filament_id: int,
+    model: str,
+    body: ModelFilamentSlicerProfileBody,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """Set or clear a per-model slicer profile override on a filament."""
+    if not _is_primary_worker():
+        return await _proxy_to_primary(
+            request,
+            method="POST",
+            path=f"/api/v1/filaments/{filament_id}/slicer-profile/models/{model}",
+            json_body=body.model_dump(),
+        )
+    filament = await db.get(Filament, filament_id)
+    if not filament:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Filament not found"},
+        )
+    _printer_id, driver = await pick_bambuddy_driver(db)
+    method = getattr(driver, "set_filament_profile_for_model", None)
+    if not callable(method):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsupported",
+                "message": "Driver does not support per-model slicer profiles",
+            },
+        )
+    if body.clear_override:
+        result = await method(
+            int(filament_id), model.strip().upper(), clear_override=True
+        )
+    else:
+        if not body.base_name or not body.base_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "invalid_params",
+                    "message": "base_name is required",
+                },
+            )
+        result = await method(
+            int(filament_id),
+            model.strip().upper(),
+            base_name=body.base_name.strip(),
+            link_others=False,
+        )
+    return result

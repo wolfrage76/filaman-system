@@ -10,15 +10,17 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Path, Query, status
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.api.deps import DBSession, PrincipalDep
-from app.core.config import settings, MANUFACTURER_LOGO_DIR
-from app.models import Color, FilamentColor, Manufacturer
+from app.core.config import MANUFACTURER_LOGO_DIR, settings
+from app.models import Color, Manufacturer
 from app.models.plugin import InstalledPlugin
+from app.services.extra_field_validation import normalize_numeric_range
+from app.services.filamentdb_field_mapping import standard_filamentdb_fields
 from app.utils.search import (
     FUZZY_MATCH_THRESHOLD,
     fuzzy_token_score,
@@ -197,7 +199,10 @@ async def _search_with_fuzzy_fallback(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             probe_data_list = await asyncio.wait_for(
                 asyncio.gather(
-                    *(fetch_probe(client, probe_params) for probe_params in probe_params_list)
+                    *(
+                        fetch_probe(client, probe_params)
+                        for probe_params in probe_params_list
+                    )
                 ),
                 timeout=_FUZZY_FALLBACK_TIMEOUT,
             )
@@ -241,7 +246,7 @@ async def _search_with_fuzzy_fallback(
 @router.get("/manufacturers")
 async def search_manufacturers(
     _principal: PrincipalDep,
-    search: str | None = Query(None, min_length=2),
+    search: str | None = Query(None, min_length=1),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
@@ -252,10 +257,35 @@ async def search_manufacturers(
     return await _proxy_get("/manufacturers", params)
 
 
+@router.get("/manufacturers/{manufacturer_id}")
+async def get_manufacturer(manufacturer_id: int, _principal: PrincipalDep):
+    """Read one catalog record without fetching the catalog sync snapshot."""
+    return await _proxy_get(f"/manufacturers/{manufacturer_id}")
+
+
+@router.get("/manufacturer-logos/{slug}/{kind}")
+async def manufacturer_logo(
+    _principal: PrincipalDep,
+    slug: str = Path(pattern=r"^[a-zA-Z0-9_-]{1,255}$"),
+    kind: str = Path(pattern=r"^(web|label)$"),
+):
+    url = f"{settings.filamentdb_url.rstrip('/')}/uploads/logos/{kind}/{slug}.png"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPError:
+        raise HTTPException(status_code=404, detail="Logo not found")
+    return Response(response.content, media_type="image/png", headers={
+        "Cache-Control": "private, max-age=86400",
+        "Content-Security-Policy": "sandbox", "X-Content-Type-Options": "nosniff",
+    })
+
+
 @router.get("/filaments")
 async def search_filaments(
     _principal: PrincipalDep,
-    search: str | None = Query(None, min_length=2),
+    search: str | None = Query(None, min_length=1),
     manufacturer_id: int | None = Query(None),
     manufacturer_name: str | None = Query(
         None,
@@ -312,7 +342,7 @@ async def search_filaments(
 @router.get("/spool-profiles")
 async def search_spool_profiles(
     _principal: PrincipalDep,
-    search: str | None = Query(None, min_length=2),
+    search: str | None = Query(None, min_length=1),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
@@ -357,7 +387,11 @@ async def proxy_spool_profile_image(
     return Response(
         content=resp.content,
         media_type=content_type,
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Content-Security-Policy": "sandbox",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -379,12 +413,32 @@ class PrepareFilamentRequest(BaseModel):
     material_key: str | None = None
     material_name: str | None = None
     material_subtype: str | None = None
+    manufacturer_color_name: str | None = None
     diameter_mm: float = 1.75
     density_g_cm3: float | None = None
+    temp_nozzle_min: float | None = None
+    temp_nozzle_max: float | None = None
+    temp_bed: float | None = None
     nominal_weight_g: int | None = None
     price: float | None = None
     currency: str | None = None
     shop_url: str | None = None
+    sku: str | None = None
+    datasheet_url: str | None = None
+    image_url: str | None = None
+    image_file: str | None = None
+    discontinued: bool | None = None
+    dry_temp: float | None = None
+    dry_time_hours: float | None = None
+    softening_temp: float | None = None
+    fan_speed_min: float | None = None
+    fan_speed_max: float | None = None
+    chamber_temp: float | None = None
+    max_volumetric_speed: float | None = None
+    flow_ratio: float | None = None
+    k_value: float | None = None
+    ams_compatible: str | list[str] | None = None
+    build_plates: str | list[str] | None = None
     color_mode: str = "single"
     multi_color_style: str | None = None
 
@@ -393,6 +447,8 @@ class PrepareFilamentRequest(BaseModel):
     # e.g. [{"hex_code": "#FF0000", "color_name": "Red", "position": 1}]
 
     # Spool profile info (for spool defaults)
+    spool_profile_image_file: str | None = None
+    spool_profile_id: int | None = Field(None, gt=0, strict=True)
     spool_profile_empty_weight_g: float | None = None
     spool_profile_outer_diameter_mm: float | None = None
     spool_profile_width_mm: float | None = None
@@ -421,6 +477,22 @@ async def prepare_filament(
     2. Find or create each color locally (hex_code match).
     3. Return local IDs + pre-filled form data.
     """
+    temperature_ranges: dict[str, Any] = {}
+    if data.temp_nozzle_min is not None or data.temp_nozzle_max is not None:
+        try:
+            temperature_ranges["extruder_temp_range_c"] = normalize_numeric_range(
+                {"min": data.temp_nozzle_min, "max": data.temp_nozzle_max}
+            )
+        except ValueError:
+            pass
+    if data.temp_bed is not None:
+        try:
+            temperature_ranges["bed_temp_range_c"] = normalize_numeric_range(
+                data.temp_bed
+            )
+        except ValueError:
+            pass
+
     # ── 1. Manufacturer ─────────────────────────────────────────────
     manufacturer_created = False
     stmt = select(Manufacturer).where(
@@ -547,12 +619,17 @@ async def prepare_filament(
         "color_mode": data.color_mode,
         "multi_color_style": data.multi_color_style,
         "material_subgroup": data.material_subtype,
+        "manufacturer_color_name": data.manufacturer_color_name,
         "default_spool_weight_g": data.spool_profile_empty_weight_g,
         "spool_outer_diameter_mm": data.spool_profile_outer_diameter_mm,
         "spool_width_mm": data.spool_profile_width_mm,
         "spool_material": data.spool_profile_material,
         "color_ids": color_ids,
     }
+    prefilled.update(temperature_ranges)
+    prefilled.update(
+        standard_filamentdb_fields(data.model_dump(), base_url=settings.filamentdb_url)
+    )
 
     return PrepareFilamentResponse(
         manufacturer_id=manufacturer.id,

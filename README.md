@@ -16,20 +16,42 @@ FilaMan is a comprehensive filament management system for 3D printing. It helps 
 ### Documentation
 The full user manual is available at **[docu.filaman.app](https://docu.filaman.app)**.
 
+To browse, install, or submit plugins, see the [plugin catalog guide](plugin-catalog/README.md).
+See the [label rendering and print-request API](docs/label-api.md) for device and client integration.
+
 ### 💡 Hardware Extension: FilaMan ESP32 Scale
 To unlock the full potential of this system, we highly recommend our companion hardware project:
 **[FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)**
 With this ESP32-based smart scale and RFID integration, you can simply place your spools on the scale, automatically measure the remaining weight, and sync the data seamlessly with this software via RFID tags!
 
 ### 🏠 Home Assistant Integration
-If you are using Home Assistant, there is a very convenient Add-on available:
-**[ha-filaman-system](https://github.com/netscout2001/ha-filaman-system)**
-This allows you to install and run the FilaMan System directly within your Home Assistant environment with just a few clicks.
+If you are using Home Assistant, install FilaMan from our add-on repository:
+**[Fire-Devils/filaman-ha-app](https://github.com/Fire-Devils/filaman-ha-app)**
+Add that URL under Settings → Add-ons → Add-on store → ⋮ → Repositories, then install FilaMan and run it directly inside your Home Assistant environment.
+
+### 🎋 Bambuddy Integration
+Connect FilaMan to Bambu Lab printers and AMS units with the
+**[Bambuddy driver plugin](https://github.com/Fire-Devils/filaman-bambuddy-plugin)**.
+The integration keeps spool and AMS information in sync, supports automatic
+assignment after weighing and inserting a spool, and reports filament usage
+back to FilaMan.
+
+When used with Bambuddy, FilaMan can also apply your custom, Bambu
+Cloud-synced slicer profiles automatically when a spool is placed in an AMS
+slot. The correct material profile is then available in both the AMS and Bambu
+Studio, giving custom and third-party filament much the same seamless workflow
+as an official Bambu RFID spool.
 
 ## Features
-- **Spool Management:** Track remaining weight, location, and status.
+- **Spool Management:** Track remaining weight, estimated metres and percentage, location, and status.
+- **Filament and Spool Details:** Consistent, responsive pages with quick actions and in-place editing.
+- **Standard Filament Properties:** Temperature ranges, drying recommendations, print settings, and dimensions alongside typed extra fields.
+- **Catalogs and Imports:** Search FilaManDB for filament specifications and import existing inventory from Spoolman.
+- **Dual RFID Tags:** Store two RFID tag UIDs per spool, so either side of a dual-tag spool can identify the same inventory item.
 - **Multi-User:** Role-based access control and tenant support.
-- **Printer Integration:** Plugin system to connect with 3D printers and AMS units.
+- **Printer Integration:** Plugin system to connect with 3D printers and AMS units. Plugin authors can supply [custom icon assets](docs/plugin-icons.md).
+- **Bambuddy Integration:** Synchronize spool inventory and AMS assignments, track filament use, and automatically apply custom Bambu Cloud slicer profiles.
+- **Printable Labels:** Print and export spool or filament labels with QR codes, custom layouts, grouped and searchable field tokens, and label-paper sheet output.
 - **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.
 - **Responsive UI:** Modern design with light, dark, and brand themes.
 - **OIDC (OAuth2) Login:** Single Sign-On (SSO) via OpenID Connect for existing users.
@@ -38,7 +60,6 @@ This allows you to install and run the FilaMan System directly within your Home 
 We have exciting plans for the future of FilaMan:
 - **Printer Plugins:** Develop plugins to connect with various 3D printers (community contributions are highly welcome!).
 - **Mobile Apps:** Dedicated apps for iOS and Android.
-- **Printable Labels:** Generate and print custom labels for your spools.
 
 ## Installation
 
@@ -59,6 +80,12 @@ The application will be available at `http://localhost:8083`.
 - **Default Email:** `admin@example.com`
 - **Default Password:** `admin123`
 
+Labels use a shared SVG/WASM renderer for the designer, exports and API.
+The image packages Node 20 and fonts; no server browser is required. SVG is the
+only label renderer, with no renderer selector or fallback. Container checks pass on native
+ARM64 and emulated AMD64/ARMv7; physical print/scan acceptance is still pending.
+See [API documentation](docs/label-api.md).
+
 ### Build Docker Container Yourself
 
 #### Prerequisites
@@ -69,11 +96,14 @@ The application will be available at `http://localhost:8083`.
 ```bash
 git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
 
+# Create .env if needed, then configure it.
+test -e .env || cp .env.example .env
+
 # Build image
 docker build -t filaman-system:latest .
 
-# Or with docker-compose
-docker-compose up --build
+# Or use Docker Compose (adjust its data-volume path first)
+PORT=8083 docker compose -f docker-compose.build.yml up --build
 
 # Start container
 docker run -d \
@@ -93,7 +123,7 @@ docker run -d \
 
 #### Prerequisites
 - Python 3.11+
-- Node.js 18+
+- Node.js 20.3+
 - uv (Python Package Manager)
 
 #### Start Backend
@@ -115,7 +145,7 @@ The frontend will be available at `http://localhost:4321`.
 #### Build Frontend for Production
 ```bash
 cd frontend
-npm run build
+BUILD_MODE=static npx astro build
 ```
 The static files will be in `frontend/dist/`.
 
@@ -128,10 +158,10 @@ Create a `.env` file in the project root directory. Use `.env.example` as a temp
 DATABASE_URL=sqlite+aiosqlite:///./filaman.db
 
 # MySQL:
-# DATABASE_URL=aiomysql://username:password@hostname:3306/database
+# DATABASE_URL=mysql+aiomysql://username:password@hostname:3306/database
 
 # PostgreSQL:
-# DATABASE_URL=asyncpg://username:password@hostname:5432/database
+# DATABASE_URL=postgresql+asyncpg://username:password@hostname:5432/database
 ```
 
 #### Generate Secrets
@@ -153,6 +183,14 @@ To enable OIDC (OpenID Connect) login, set the following environment variable:
 OIDC_ENC_KEY=your-fernet-key
 ```
 
+#### Worker Processes
+The Docker image starts 4 worker processes by default. Each one holds a full copy of the application (about 90 MB), so on a small host such as a Raspberry Pi you can run fewer:
+
+```bash
+# Default: 4. A single worker runs the printer drivers itself, nothing is forwarded.
+WEB_CONCURRENCY=1
+```
+
 **Note:** When using MySQL or PostgreSQL, backups must be managed externally by the administrator. The automatic SQLite backup is disabled in this case.
 
 ## Project Structure
@@ -162,7 +200,8 @@ OIDC_ENC_KEY=your-fernet-key
 ├── backend/
 │   ├── app/
 │   │   ├── core/          # Config, database, security
-│   │   ├── modules/       # Domain modules
+│   │   ├── models/        # Database models
+│   │   ├── services/      # Shared domain logic
 │   │   └── plugins/       # Printer plugins
 │   ├── alembic/           # Database migrations
 │   └── tests/             # Backend tests
@@ -172,7 +211,7 @@ OIDC_ENC_KEY=your-fernet-key
 │   │   ├── layouts/       # Page layouts
 │   │   └── components/    # UI components
 │   └── dist/              # Production build
-└── spec/                  # Project specifications
+└── docs/                  # Project documentation
 ```
 
 ## Technology
@@ -184,7 +223,7 @@ OIDC_ENC_KEY=your-fernet-key
 
 **Frontend:**
 - Astro + Tailwind CSS
-- Static Build
+- Static Docker build; Node server output for source builds
 
 ## License
 MIT

@@ -1,29 +1,37 @@
 import asyncio
-from contextlib import asynccontextmanager
 import fcntl
 import json as _json
 import os
-from pathlib import Path
 import tempfile
 import time
+from contextlib import AsyncExitStack, asynccontextmanager
+from math import isfinite
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
-from sqlalchemy import text
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from sqlalchemy import select, text
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
+from app.api.deps import DBSession
 from app.api.v1.router import api_router, mount_deferred_plugin_routers
-from app.core.config import settings, MANUFACTURER_LOGO_DIR
+from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.database import async_session_maker
 from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
+from app.core.primary_socket import serve_primary_socket
+from app.core.worker_reload import worker_is_draining
 from app.core.seeds import run_all_seeds
-from app.core.shared_health import shared_health_store
+from app.core.shared_health import shared_display_store, shared_health_store
+from app.models.plugin import InstalledPlugin
 from app.plugins.manager import plugin_manager
-from app.services.plugin_service import PLUGINS_DIR
+from app.services.plugin_service import PLUGINS_DIR, is_integration_slug
 
 setup_logging()
 logger = __import__("logging").getLogger(__name__)
@@ -36,7 +44,78 @@ logger = __import__("logging").getLogger(__name__)
 _STARTUP_LOCK_PATH = Path(tempfile.gettempdir()) / "filaman-startup.lock"
 _is_primary = False
 _lock_fd = None
+_primary_socket = AsyncExitStack()
 _WATCHDOG_INTERVAL = 60  # seconds
+_TAKEOVER_INTERVAL = 1  # seconds
+_LABEL_ASSET_CLEANUP_INTERVAL = 24 * 60 * 60
+_LABEL_ASSET_REQUEST_BYTES = 6 * 1024 * 1024
+_next_label_asset_cleanup = 0.0
+
+
+def _label_asset_request_too_large_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=413,
+        content={
+            "detail": {
+                "code": "request_too_large",
+                "message": "Label image request cannot exceed 6 MiB",
+            }
+        },
+    )
+
+
+class _LabelAssetBodyLimitMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(
+        self, scope: Scope, receive: Receive, send: Send
+    ) -> None:
+        if (
+            scope["type"] != "http"
+            or scope["method"] != "POST"
+            or scope["path"] != "/api/v1/me/label-assets"
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        content_length = dict(scope["headers"]).get(b"content-length", b"")
+        if content_length.isdigit():
+            if int(content_length) > _LABEL_ASSET_REQUEST_BYTES:
+                await _label_asset_request_too_large_response()(
+                    scope, receive, send
+                )
+                return
+            await self.app(scope, receive, send)
+            return
+
+        received = 0
+        messages: list[Message] = []
+        while True:
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > _LABEL_ASSET_REQUEST_BYTES:
+                    await _label_asset_request_too_large_response()(
+                        scope, receive, send
+                    )
+                    return
+            messages.append(message)
+            if message["type"] == "http.disconnect" or not message.get(
+                "more_body", False
+            ):
+                break
+
+        replay = iter(messages)
+
+        async def replay_receive() -> Message:
+            return next(replay, {
+                "type": "http.request",
+                "body": b"",
+                "more_body": False,
+            })
+
+        await self.app(scope, replay_receive, send)
 
 
 def run_migrations() -> None:
@@ -46,8 +125,9 @@ def run_migrations() -> None:
     automatisch ein synchroner DB-Treiber verwendet, auch wenn die App
     asynchron konfiguriert ist.
     """
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     alembic_cfg = Config("alembic.ini")
     alembic_cfg.set_main_option(
@@ -72,12 +152,19 @@ async def _driver_watchdog() -> None:
     """Background task: monitors driver health and handles primary failover."""
     global _is_primary, _lock_fd
 
-    # Give the primary worker time to finish initial startup.
-    await asyncio.sleep(30)
+    if _is_primary:
+        # Delay maintenance while the freshly started drivers connect.
+        await asyncio.sleep(30)
 
     while True:
         try:
             if _is_primary:
+                try:
+                    await _cleanup_stale_label_assets()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Label asset cleanup error (will retry tomorrow)")
                 await _watchdog_health_check()
             else:
                 await _watchdog_try_takeover()
@@ -86,14 +173,32 @@ async def _driver_watchdog() -> None:
         except Exception:
             logger.exception("Driver watchdog error (will retry next cycle)")
 
-        await asyncio.sleep(_WATCHDOG_INTERVAL)
+        await asyncio.sleep(_WATCHDOG_INTERVAL if _is_primary else _TAKEOVER_INTERVAL)
+
+
+async def _cleanup_stale_label_assets() -> None:
+    """Delete label images that have remained unreferenced for 30 days."""
+    global _next_label_asset_cleanup
+    now = time.monotonic()
+    if now < _next_label_asset_cleanup:
+        return
+    _next_label_asset_cleanup = now + _LABEL_ASSET_CLEANUP_INTERVAL
+
+    from app.services.label_asset_service import cleanup_orphaned_label_assets
+
+    async with async_session_maker() as db:
+        deleted = await cleanup_orphaned_label_assets(db)
+        await db.commit()
+    if deleted:
+        logger.info("Removed %s stale label image(s)", deleted)
 
 
 async def _watchdog_health_check() -> None:
     """Primary worker: restart dead drivers and start missing ones."""
-    from app.models.printer import Printer
-    from app.models.plugin import InstalledPlugin
     from sqlalchemy import select
+
+    from app.models.plugin import InstalledPlugin
+    from app.models.printer import Printer
 
     health = plugin_manager.get_health()
 
@@ -101,6 +206,12 @@ async def _watchdog_health_check() -> None:
     # can return accurate status to the frontend.
     if health:
         shared_health_store.publish(health)
+
+    # Same for the Display API: a board whose polls never land on the primary
+    # would otherwise show nothing at all.
+    display_states = await plugin_manager.get_display_states()
+    if display_states:
+        shared_display_store.publish(display_states)
 
     # Deaktivierte Plugins ermitteln
     async with async_session_maker() as db:
@@ -205,22 +316,64 @@ async def _watchdog_health_check() -> None:
 
 async def _watchdog_try_takeover() -> None:
     """Secondary worker: try to become primary if the lock is available."""
-    global _is_primary, _lock_fd
+    global _lock_fd
 
+    if worker_is_draining():
+        return
+
+    fd = open(_STARTUP_LOCK_PATH, "a")
     try:
-        fd = open(_STARTUP_LOCK_PATH, "w")
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        # Lock acquired – previous primary is gone.
-        _lock_fd = fd
-        _is_primary = True
-        logger.info("Watchdog: acquired lock – promoted to primary worker")
-        await plugin_manager.start_all()
-        logger.info("Watchdog: drivers started after takeover")
     except OSError:
-        # Primary still holds the lock – nothing to do.
-        pass
-    except Exception:
-        logger.exception("Watchdog: takeover attempt failed")
+        fd.close()
+        return
+
+    _lock_fd = fd
+    promotion = asyncio.create_task(_start_primary_drivers(app))
+    try:
+        await asyncio.shield(promotion)
+    except asyncio.CancelledError:
+        # Keep the election lock until promotion has committed or finished rolling back.
+        await asyncio.gather(promotion, return_exceptions=True)
+        raise
+    if _is_primary:
+        logger.info("Watchdog: acquired lock and started drivers as primary worker")
+
+
+def _release_primary_lock() -> None:
+    global _is_primary, _lock_fd
+    _is_primary = False
+    if _lock_fd is not None:
+        _lock_fd.close()
+        _lock_fd = None
+
+
+async def _start_primary_drivers(app: FastAPI, *, initial: bool = False) -> None:
+    global _is_primary
+    async with AsyncExitStack() as rollback:
+        rollback.callback(_release_primary_lock)
+        rollback.push_async_callback(plugin_manager.stop_all)
+        await plugin_manager.start_all()
+        if initial:
+            # Take the first snapshot before any forwarded request can change drivers.
+            initial_health = plugin_manager.get_health()
+            if initial_health:
+                shared_health_store.publish(initial_health)
+            initial_display = await plugin_manager.get_display_states()
+            if initial_display:
+                shared_display_store.publish(initial_display)
+
+        if worker_is_draining():
+            return
+
+        rollback.push_async_callback(_primary_socket.aclose)
+        publish = await _primary_socket.enter_async_context(serve_primary_socket(app))
+        if worker_is_draining():
+            return
+
+        publish()
+        _is_primary = True
+        rollback.pop_all()
 
 
 @asynccontextmanager
@@ -252,12 +405,13 @@ async def lifespan(app: FastAPI):
     # We use an exclusive file-lock: the first worker wins and runs the
     # one-time tasks; the others skip them.
     try:
-        _lock_fd = open(_STARTUP_LOCK_PATH, "w")
+        _lock_fd = open(_STARTUP_LOCK_PATH, "a")
         fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _is_primary = True
         logger.info("Primary worker – running seeds and starting plugins")
     except OSError:
         # Another worker already holds the lock
+        _release_primary_lock()
         logger.info("Secondary worker – skipping seeds and plugin start")
     except Exception as exc:
         logger.warning(f"Startup lock failed ({exc}), running seeds as fallback")
@@ -266,11 +420,7 @@ async def lifespan(app: FastAPI):
     if _is_primary:
         async with async_session_maker() as db:
             await run_all_seeds(db)
-        await plugin_manager.start_all()
-        # Publish initial health so secondary workers have data immediately
-        initial_health = plugin_manager.get_health()
-        if initial_health:
-            shared_health_store.publish(initial_health)
+        await _start_primary_drivers(app, initial=True)
 
     # Start the driver watchdog in every worker (handles health checks
     # for the primary and automatic takeover for secondary workers).
@@ -288,23 +438,19 @@ async def lifespan(app: FastAPI):
         pass
 
     if _is_primary:
+        await _primary_socket.aclose()
         await plugin_manager.stop_all()
-        # Clean up shared health memory (primary is the owner)
+        # Clean up shared memory (primary is the owner of both blocks)
         shared_health_store.cleanup()
+        shared_display_store.cleanup()
         # Release the file lock (OS also releases automatically on exit).
         # We intentionally do NOT delete the lock file so that secondary
         # workers can still attempt flock() on it during takeover.
-        if _lock_fd:
-            try:
-                fcntl.flock(_lock_fd, fcntl.LOCK_UN)
-                _lock_fd.close()
-            except OSError:
-                pass
-            _lock_fd = None
-        _is_primary = False
+        _release_primary_lock()
     else:
-        # Secondary workers just close their handle (don't unlink)
+        # Secondary workers just close their handles (don't unlink)
         shared_health_store.close()
+        shared_display_store.close()
     logger.info("FilaMan backend stopped")
 
 
@@ -329,6 +475,25 @@ app = FastAPI(
     redoc_url=None,
 )
 
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    # JSON decoding can overflow a number before request validation rejects it.
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": jsonable_encoder(
+                exc.errors(),
+                custom_encoder={
+                    float: lambda value: value if isfinite(value) else str(value)
+                },
+            )
+        },
+    )
+
+
 cors_origins: list[str] = []
 if settings.cors_origins == "*":
     cors_origins = ["*"]
@@ -350,6 +515,7 @@ app.add_middleware(RequestIdMiddleware)
 app.add_middleware(CsrfMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(_LabelAssetBodyLimitMiddleware)
 
 # Note: Rate limiting for /auth/login is handled by nginx (see nginx.conf)
 # This ensures consistent limits across all Gunicorn workers
@@ -413,7 +579,7 @@ async def allow_iframe_embedding(request, call_next):
     # Allow embedding from any origin
     # This enables Bambuddy and other self-hosted integrations to display
     # FilaMan pages in iframes
-    response.headers["content-security-policy"] = "frame-ancestors *"
+    response.headers.setdefault("content-security-policy", "frame-ancestors *")
     
     return response
 
@@ -421,10 +587,40 @@ async def allow_iframe_embedding(request, call_next):
 # Cache-Control Middleware for static files
 @app.middleware("http")
 async def add_cache_control_header(request, call_next):
-    response = await call_next(request)
     path = request.url.path
     is_api = path.startswith("/api/") or path.startswith("/auth/")
-    if not is_api and (
+    is_label_render = path.startswith(("/api/v1/labels/spool/", "/api/v1/labels/filament/")) and path.rstrip("/").endswith("/render")
+    try:
+        response = await call_next(request)
+    except Exception:
+        if not is_label_render:
+            raise
+        logger.exception("Unhandled label render error")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error"},
+            headers={"Cache-Control": "no-store"},
+        )
+    if is_label_render:
+        response.headers["Cache-Control"] = "no-store"
+    elif path.startswith(("/plugins/", "/plugin-view/")):
+        # Revalidate even hashed assets so deactivation takes effect on new requests.
+        if response.status_code >= 400:
+            response.headers["Cache-Control"] = "no-store"
+        else:
+            directives = {
+                directive.strip().lower()
+                for value in response.headers.getlist("Cache-Control")
+                for directive in value.split(",")
+            }
+            if "no-store" not in directives:
+                response.headers["Cache-Control"] = "private, no-cache" if "private" in directives else "no-cache"
+    elif path in (
+        "/spool-reel.js", "/plugin-fonts.css", "/color-harmonies.js", "/color-harmonies.css", "/icons.svg"
+    ):
+        # Sprite v=2 is a one-time cache reset; future deployments revalidate.
+        response.headers["Cache-Control"] = "no-cache"
+    elif not is_api and (
         path.startswith("/_astro/")
         or path.startswith("/img/")
         or path.endswith((".js", ".css", ".png", ".jpg", ".svg", ".woff2", ".ico"))
@@ -453,8 +649,9 @@ mount_deferred_plugin_routers(app)
 @app.get("/plugin-page/{plugin_slug:path}")
 async def serve_plugin_page(plugin_slug: str):
     from fastapi import HTTPException
-    from app.models.plugin import InstalledPlugin
     from sqlalchemy import select
+
+    from app.models.plugin import InstalledPlugin
 
     if not PLUGINS_DIR.is_dir():
         raise HTTPException(status_code=404, detail="Plugin page not found")
@@ -526,7 +723,7 @@ async def health_ready():
 # In Docker the canonical location is /app/data/uploads; during local
 # development we fall back to <PROJECT_ROOT>/data/uploads.
 # ---------------------------------------------------------------------------
-from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
+from fastapi.staticfiles import StaticFiles as _StaticFiles
 
 _uploads_dir = Path("/app/data/uploads")
 if not _uploads_dir.is_dir():
@@ -538,6 +735,24 @@ _uploads_dir.mkdir(parents=True, exist_ok=True)
 
 app.mount("/uploads", _StaticFiles(directory=str(_uploads_dir)), name="uploads")
 logger.info("Serving uploads from '%s'", _uploads_dir)
+
+async def serve_plugin_view(plugin_slug: str, db: DBSession):
+    if plugin_slug in ("", "index.html"):
+        return FileResponse(os.path.join(static_files_path, "plugin-view/index.html"))
+    plugin_slug = plugin_slug.removesuffix("/")
+    if not is_integration_slug(plugin_slug):
+        raise HTTPException(status_code=404, detail="Plugin is unavailable")
+    active = await db.scalar(
+        select(InstalledPlugin.id).where(
+            InstalledPlugin.plugin_type == "integration",
+            InstalledPlugin.page_url == f"/plugin-view/{plugin_slug}",
+            InstalledPlugin.is_active.is_(True),
+        ).limit(1)
+    )
+    if active is None:
+        raise HTTPException(status_code=404, detail="Plugin is unavailable")
+    return FileResponse(Path(static_files_path).parent / "plugin-shell.html")
+
 
 if not settings.debug:
     static_files_path = "/app/static"
@@ -573,6 +788,12 @@ if not settings.debug:
         async def serve_spool_edit_placeholder():
             return FileResponse(
                 os.path.join(static_files_path, "spools/detail/edit/index.html")
+            )
+
+        @app.get("/spools/print")
+        async def serve_spools_print():
+            return FileResponse(
+                os.path.join(static_files_path, "spools/print/index.html")
             )
 
         @app.get("/spools/{id}")
@@ -629,6 +850,24 @@ if not settings.debug:
                 os.path.join(static_files_path, "filaments/detail/edit/index.html")
             )
 
+        @app.get("/filaments/print")
+        async def serve_filaments_print():
+            return FileResponse(
+                os.path.join(static_files_path, "filaments/print/index.html")
+            )
+
+        @app.get("/filaments/detail/print")
+        async def serve_filament_print_placeholder():
+            return FileResponse(
+                os.path.join(static_files_path, "filaments/detail/print/index.html")
+            )
+
+        @app.get("/filaments/{id}/print")
+        async def serve_filament_print(id: int):
+            return FileResponse(
+                os.path.join(static_files_path, "filaments/detail/print/index.html")
+            )
+
         @app.get("/filaments/{id}")
         async def serve_filament_detail(id: int):
             return FileResponse(
@@ -640,6 +879,10 @@ if not settings.debug:
             return FileResponse(
                 os.path.join(static_files_path, "filaments/detail/edit/index.html")
             )
+
+        app.add_api_route(
+            "/plugin-view/{plugin_slug:path}", serve_plugin_view, methods=["GET", "HEAD"]
+        )
 
         @app.get("/admin/oidc")
         async def serve_admin_oidc():

@@ -1,0 +1,220 @@
+// @vitest-environment happy-dom
+
+import { describe, expect, it } from 'vitest'
+
+import {
+  alphaPercentToHex,
+  bindAlphaColorControls,
+  composeHexWithAlpha,
+  filamentColorValues,
+  inventoryColorMatcher,
+  composeHexWithAlphaByte,
+  getAlphaPercent,
+  normalizeHexCode,
+  toColorSwatchBackground,
+  toCssColor,
+  toOpaqueRgbHex,
+} from './colors'
+
+describe('filament table color values', () => {
+  const filament = {
+    colors: [
+      { color: { name: 'Red', hex_code: '#FF0000' } },
+      { color: null },
+      { color: { name: 'Clear', hex_code: '#FFFFFF00' } },
+    ],
+  }
+
+  it('returns color names for the normal color filter', () => {
+    expect(filamentColorValues(filament, 'name')).toEqual(['Red', 'Clear'])
+  })
+
+  it('returns hex codes for the color-range filter', () => {
+    expect(filamentColorValues(filament, 'hex_code')).toEqual(['#FF0000', '#FFFFFF00'])
+  })
+})
+
+it('keeps exact color stops distinct in the inventory fallback', () => {
+  const item = (color_id: number, name = 'Silk') => ({ colors: [{ color_id, color: { name } }] })
+  const filter = { type: 'multi' as const, values: ['Silk', 'Gray', ''], colorStopIds: [['Silk', [21]]] as [string, number[]][] }
+  const matches = inventoryColorMatcher(filter)
+  expect(matches(item(21))).toBe(true)
+  expect(matches(item(21, 'Renamed'))).toBe(true)
+  expect(matches(item(22))).toBe(false)
+  expect(matches(item(22, 'Gray'))).toBe(true)
+  expect(matches(item(23, ''))).toBe(true)
+  expect(matches({ colors: [...item(22).colors, ...item(23, '').colors] })).toBe(false)
+})
+
+function createAlphaControls() {
+  const picker = document.createElement('input')
+  picker.type = 'color'
+  const hexInput = document.createElement('input')
+  const alphaEnabled = document.createElement('input')
+  alphaEnabled.type = 'checkbox'
+  const alphaOptions = document.createElement('div')
+  alphaOptions.classList.add('hidden')
+  const alphaPreview = document.createElement('span')
+  const alphaInput = document.createElement('input')
+  alphaInput.type = 'range'
+  alphaInput.min = '0'
+  alphaInput.max = '100'
+  const alphaValueInput = document.createElement('input')
+  alphaValueInput.type = 'number'
+  const alphaHexInput = document.createElement('input')
+  alphaHexInput.type = 'text'
+
+  const controls = bindAlphaColorControls({
+    picker,
+    hexInput,
+    alphaEnabled,
+    alphaOptions,
+    alphaPreview,
+    alphaInput,
+    alphaValueInput,
+    alphaHexInput,
+  })
+
+  return {
+    controls,
+    picker,
+    hexInput,
+    alphaEnabled,
+    alphaOptions,
+    alphaPreview,
+    alphaInput,
+    alphaValueInput,
+    alphaHexInput,
+  }
+}
+
+describe('color helpers', () => {
+  it('normalizes supported RGB and RGBA forms', () => {
+    expect(normalizeHexCode('abc')).toBe('#AABBCC')
+    expect(normalizeHexCode('#abcd')).toBe('#AABBCCDD')
+    expect(normalizeHexCode('00d4d488')).toBe('#00D4D488')
+  })
+
+  it('rejects malformed values instead of returning unsafe CSS fallbacks', () => {
+    expect(normalizeHexCode('#12345')).toBe('')
+    expect(normalizeHexCode('not-a-color')).toBe('')
+    expect(toCssColor('not-a-color')).toBe('transparent')
+  })
+
+  it('converts alpha colors for CSS and opaque consumers', () => {
+    expect(toOpaqueRgbHex('#BE000022')).toBe('#BE0000')
+    expect(toCssColor('#BE000080')).toBe('rgba(190, 0, 0, 0.502)')
+    expect(toColorSwatchBackground('#BE000080')).toContain(
+      'linear-gradient(rgba(190, 0, 0, 0.502), rgba(190, 0, 0, 0.502))'
+    )
+    expect(toColorSwatchBackground('#BE000080')).toContain('conic-gradient(')
+  })
+
+  it('round-trips opacity controls through trailing alpha bytes', () => {
+    expect(composeHexWithAlpha('#00D4D4', 50)).toBe('#00D4D480')
+    expect(getAlphaPercent('#00D4D480')).toBe(50)
+    expect(composeHexWithAlpha('#00D4D480', 100)).toBe('#00D4D4')
+    expect(composeHexWithAlpha('#00D4D4', 100, true)).toBe('#00D4D4FF')
+    expect(alphaPercentToHex(25)).toBe('40')
+    expect(composeHexWithAlphaByte('#00D4D4', '3c')).toBe('#00D4D43C')
+  })
+
+  it('keeps normal colors six-digit until opacity is explicitly enabled', () => {
+    const {
+      controls,
+      hexInput,
+      alphaEnabled,
+      alphaOptions,
+      alphaInput,
+      alphaValueInput,
+      alphaHexInput,
+    } = createAlphaControls()
+
+    controls.reset('#336699')
+    expect(alphaEnabled.checked).toBe(false)
+    expect(alphaOptions.classList.contains('hidden')).toBe(true)
+    expect(hexInput.value).toBe('#336699')
+    expect(alphaHexInput.value).toBe('FF')
+
+    alphaEnabled.checked = true
+    alphaEnabled.dispatchEvent(new Event('change'))
+    expect(alphaOptions.classList.contains('hidden')).toBe(false)
+    expect(hexInput.value).toBe('#336699FF')
+
+    alphaInput.value = '25'
+    alphaInput.dispatchEvent(new Event('input'))
+    expect(alphaValueInput.value).toBe('25')
+    expect(alphaHexInput.value).toBe('40')
+    expect(hexInput.value).toBe('#33669940')
+
+    alphaValueInput.value = '50'
+    alphaValueInput.dispatchEvent(new Event('input'))
+    expect(alphaInput.value).toBe('50')
+    expect(alphaHexInput.value).toBe('80')
+    expect(hexInput.value).toBe('#33669980')
+
+    alphaHexInput.value = '3c'
+    alphaHexInput.dispatchEvent(new Event('input'))
+    expect(alphaInput.value).toBe('24')
+    expect(alphaValueInput.value).toBe('24')
+    expect(alphaHexInput.value).toBe('3C')
+    expect(hexInput.value).toBe('#3366993C')
+
+    alphaValueInput.value = ''
+    alphaValueInput.dispatchEvent(new Event('change'))
+    expect(alphaValueInput.value).toBe('24')
+    expect(hexInput.value).toBe('#3366993C')
+
+    alphaHexInput.value = 'G'
+    alphaHexInput.dispatchEvent(new Event('change'))
+    expect(alphaHexInput.value).toBe('3C')
+    expect(hexInput.value).toBe('#3366993C')
+
+    alphaEnabled.checked = false
+    alphaEnabled.dispatchEvent(new Event('change'))
+    expect(hexInput.value).toBe('#336699')
+  })
+
+  it.each([
+    ['#123456', '#123456'],
+    ['123456ab', '#123456AB'],
+    ['#aBc', '#AABBCC'],
+    ['#aBcD', '#AABBCCDD'],
+  ])('preserves %s while typing and normalizes it on change', (typed, normalized) => {
+    const { hexInput, picker, alphaEnabled } = createAlphaControls()
+
+    for (const char of typed) {
+      hexInput.value += char
+      hexInput.dispatchEvent(new Event('input'))
+    }
+
+    expect(hexInput.value).toBe(typed)
+    expect(picker.value.toUpperCase()).toBe(normalized.slice(0, 7))
+    expect(alphaEnabled.checked).toBe(normalized.length === 9)
+
+    hexInput.dispatchEvent(new Event('change'))
+    expect(hexInput.value).toBe(normalized)
+  })
+
+  it('derives the opacity checkbox from a manually entered AA suffix', () => {
+    const {
+      controls,
+      alphaEnabled,
+      alphaOptions,
+      alphaInput,
+      alphaValueInput,
+      alphaHexInput,
+    } = createAlphaControls()
+
+    controls.reset('#D8100C3C')
+    expect(alphaEnabled.checked).toBe(true)
+    expect(alphaOptions.classList.contains('hidden')).toBe(false)
+    expect(alphaInput.value).toBe('24')
+    expect(alphaValueInput.value).toBe('24')
+    expect(alphaHexInput.value).toBe('3C')
+
+    controls.reset('#D8100C')
+    expect(alphaEnabled.checked).toBe(false)
+    expect(alphaOptions.classList.contains('hidden')).toBe(true)
+  })
+})

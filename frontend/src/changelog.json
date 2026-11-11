@@ -1,6 +1,582 @@
 {
   "versions": [
     {
+      "version": "2.0.6",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "improved", "text": "Die AMS-Ansicht zeigt den Füllstand jetzt als Viertel-Spule mit den verfügbaren Gramm an, im normalen und im Kiosk-Modus. Kompakte AMS-Einheiten ordnen ihre Slots zweispaltig an. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Checkboxen, Zahlen, Bereiche und Mehrfachauswahlen in Zusatzfeld-Spalten werden bei Filamenten und Spulen korrekt angezeigt, gefiltert und sortiert. Die gewählte Sortierung bleibt nach dem Neuladen erhalten. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "AMS-Slots bleiben als belegt erkannt, auch wenn kein Filamentprofil hinterlegt ist. Entfernte Slots werden sauber deaktiviert, und Zuweisungen von der Spulenseite oder per Waage landen zuverlässig bei genau einer Spule. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Gehostete Plugins mit eigenen SVG-Grafiken, zum Beispiel mit Farbverläufen, lassen sich wieder installieren. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "improved", "text": "AMS View now shows remaining filament as a quarter-spool graphic with the available grams, in normal and kiosk mode. Compact AMS units arrange their bays in two columns. (Contributed by akira69)" },
+          { "type": "fix", "text": "Checkboxes, numbers, ranges and multi-select values in extra-field columns are now displayed, filtered and sorted correctly for filaments and spools. The chosen sort order is kept after reloading. (Contributed by akira69)" },
+          { "type": "fix", "text": "AMS bays stay marked as occupied even without a filament profile. Removed bays are deactivated cleanly, and assignments from the spool page or via scale reliably go to exactly one spool. (Contributed by akira69)" },
+          { "type": "fix", "text": "Hosted plugins that bundle their own SVG artwork, such as gradients, can be installed again. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
+      "version": "2.0.5",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Neuer Plugin-Katalog: Plugins lassen sich aus einer kuratierten Liste auswählen und installieren, mit eigenen Symbolen und übersichtlicherer Plugin-Liste. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Plugins können eigene Integrations-Apps direkt in FilaMan anzeigen, sich in den Filament-Editor einklinken und mit ausgewählten Filamenten Sammelaktionen ausführen. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Farbharmonie-Suche: Im Bestand lassen sich passende Komplementär- und Triadenfarben finden, übersichtlich gruppiert nach Farbton. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Der Etiketten-Designer und die Sammelvorschau sind deutlich schneller. Felder und Vorlagen lassen sich komfortabler bearbeiten, mit Feldvorschau, gruppierter Feldsuche und Hinweisen bei leeren Werten. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Die Suche nach benannten Farben ist bei großen Beständen schneller, und der Farbfilter bei Spulen zeigt nur Farben passend zum gewählten Status. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Druckerzuweisungen und Waagen funktionieren jetzt auch zuverlässig, wenn FilaMan mit mehreren Prozessen läuft. Nach dem Umlagern per Waage aktualisiert sich die Lagerort-Anzeige automatisch. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Plugins lassen sich auch bei mehreren Prozessen zuverlässig aktivieren und deaktivieren. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Hex-Farbwerte werden beim Eintippen nicht mehr verändert oder überschrieben. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "QR-Codes auf Thermo-Etiketten behalten ihre Größe, und Hinweise zu zu langem Text erscheinen übersetzt am betroffenen Feld. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Die Parameter der BambuLab-Zuweisung werden jetzt übersetzt angezeigt. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Geräte-Tokens lassen sich direkt aus dem Dialog kopieren. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Die Katalogsuche im Filament-Formular bleibt auch auf schmalen Bildschirmen gut bedienbar. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Die Bildlaufleisten der Dashboard-Kacheln verhalten sich besser und passen sich dem Farbschema an. (Beigetragen von githubber4ever)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "New plugin catalog: plugins can be picked and installed from a curated list, with their own icons and a clearer plugin list. (Contributed by akira69)" },
+          { "type": "feature", "text": "Plugins can show their own integration apps inside FilaMan, hook into the filament editor and run batch actions on selected filaments. (Contributed by akira69)" },
+          { "type": "feature", "text": "Color harmony search: find matching complementary and triadic colors in your inventory, neatly grouped by hue. (Contributed by akira69)" },
+          { "type": "improved", "text": "The label designer and batch previews are much faster. Fields and presets are easier to edit, with field previews, grouped field search and hints for empty values. (Contributed by akira69)" },
+          { "type": "improved", "text": "Searching for named colors is faster on large inventories, and the spool color filter only shows colors matching the selected status. (Contributed by akira69)" },
+          { "type": "fix", "text": "Printer assignments and scales now work reliably when FilaMan runs with multiple processes. After moving a spool via scale, the locations view refreshes automatically. (Contributed by akira69)" },
+          { "type": "fix", "text": "Plugins can be enabled and disabled reliably with multiple processes. (Contributed by akira69)" },
+          { "type": "fix", "text": "Hex color values are no longer altered or overwritten while typing. (Contributed by akira69)" },
+          { "type": "fix", "text": "QR codes on thermal labels keep their size, and text-overflow hints now appear translated on the affected field. (Contributed by akira69)" },
+          { "type": "fix", "text": "BambuLab assignment parameters are now shown translated. (Contributed by akira69)" },
+          { "type": "fix", "text": "Device tokens can be copied directly from the dialog. (Contributed by akira69)" },
+          { "type": "fix", "text": "The catalog search in the filament form stays usable on narrow screens. (Contributed by akira69)" },
+          { "type": "fix", "text": "Dashboard box scrollbars behave better and follow the color theme. (Contributed by githubber4ever)" }
+        ]
+      }
+    },
+    {
+      "version": "2.0.2",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Symbole werden nach einem FilaMan-Update zuverlässig neu geladen, statt veraltet oder fehlend angezeigt zu werden. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Die Katalog-Suchergebnisse im Hersteller-Popup bleiben jetzt vollständig sichtbar und bedienbar. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Icons are now reliably refreshed after a FilaMan update instead of appearing outdated or missing. (Contributed by akira69)" },
+          { "type": "fix", "text": "Catalog search results in the manufacturer popup now stay fully visible and usable. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
+      "version": "2.0.1",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Das Dashboard lässt sich anpassen: Einzelne Bereiche können ein- und ausgeblendet werden. Die Auswahl wird pro Benutzer gespeichert und gilt auf allen Geräten." },
+          { "type": "feature", "text": "Die Hersteller-Ansicht zeigt und bearbeitet Hersteller jetzt in einem gemeinsamen Popup, das den Katalog berücksichtigt. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Das Spulen-Protokoll lässt sich jetzt durchsuchen und filtern, bevor es seitenweise angezeigt wird. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Einheitlicheres Bedienkonzept: Dialoge, Listen, Formulare, Verwaltungsseiten, Profil- und Anwendungseinstellungen sowie das Dashboard sehen jetzt gleich aus und verhalten sich gleich. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Rollen werden kompakter dargestellt, und die Speichern-Schaltflächen bleiben beim Bearbeiten sichtbar. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Die Spulendarstellung der Plugins zeigt die volle Spule einheitlich, und Druckerdetails behalten ungespeicherte Eingaben. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Plugin-Updates melden ihr Ergebnis jetzt verständlicher, und fehlgeschlagene Eingaben gehen nicht verloren. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Technische Integrationsdaten erscheinen nicht mehr als eigene Zusatzfelder an Spulen. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "The dashboard can be customised: individual sections can be shown or hidden. The choice is saved per user and applies on all devices." },
+          { "type": "feature", "text": "The manufacturers view now shows and edits manufacturers in a shared popup that takes the catalog into account. (Contributed by akira69)" },
+          { "type": "improved", "text": "The spool log can now be searched and filtered before it is shown page by page. (Contributed by akira69)" },
+          { "type": "improved", "text": "More consistent interface: dialogs, lists, forms, admin pages, profile and application settings as well as the dashboard now look and behave the same. (Contributed by akira69)" },
+          { "type": "improved", "text": "Roles are displayed more compactly, and the save buttons stay visible while editing. (Contributed by akira69)" },
+          { "type": "improved", "text": "Plugins show the full spool in a consistent way, and printer details keep unsaved input. (Contributed by akira69)" },
+          { "type": "fix", "text": "Plugin updates report their result more clearly, and failed input is no longer lost. (Contributed by akira69)" },
+          { "type": "fix", "text": "Technical integration data no longer shows up as separate extra fields on spools. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
+      "version": "2.0.0",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Besonderer Dank an akira69: Das Layout von Filamenten und Spulen wurde komplett überarbeitet. Die Ansichten zum Anzeigen und Bearbeiten sind übersichtlicher, Standardfelder (z. B. Eigenschaften, Spulentypen und Bilder aus dem Katalog) sind neu geordnet, und die detaillierte Spulendarstellung zeigt weitere Kennzahlen. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Deutlich bessere Darstellung auf Smartphone und Tablet. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Druckereinstellungen und Slicer-Profile sind jetzt an einer Stelle zusammengefasst. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Etiketten-Platzhalter sind nach Typ geordnet; bestehende Vorlagen funktionieren unverändert weiter. Die Etiketten-API nutzt ein Papierdrucker-Symbol. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Importe aus Spoolman und dem Katalog übernehmen die neuen Standardfelder und laufen schneller." },
+          { "type": "fix", "text": "Gewählte Standardwerte im Etiketten-Designer gehen beim Laden nicht mehr verloren." },
+          { "type": "fix", "text": "Kompatible Treiberparameter von Plugins werden beim Update sicher übernommen." },
+          { "type": "fix", "text": "FilaManDB-Aktualisierungen finden Filamente auch nach einer Änderung des Materialnamens wieder zuverlässig. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "Special thanks to akira69: the layout of filaments and spools has been completely reworked. Viewing and editing are clearer, standard fields (e.g. properties, spool types and images from the catalog) are reorganized, and the detailed spool view shows additional metrics. (Contributed by akira69)" },
+          { "type": "improved", "text": "Much better display on smartphones and tablets. (Contributed by akira69)" },
+          { "type": "improved", "text": "Printer settings and slicer profiles are now combined in one place. (Contributed by akira69)" },
+          { "type": "improved", "text": "Label placeholders are organized by type; existing templates keep working unchanged. The label API uses a paper printer icon. (Contributed by akira69)" },
+          { "type": "improved", "text": "Imports from Spoolman and the catalog adopt the new standard fields and run faster." },
+          { "type": "fix", "text": "Defaults selected in the label designer are no longer lost while loading." },
+          { "type": "fix", "text": "Compatible driver parameters of plugins are migrated safely on update." },
+          { "type": "fix", "text": "FilaManDB updates reliably find filaments again after a material name changes. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
+      "version": "1.6.0",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Spulen-Antworten der API enthalten jetzt einen Link zur Detailseite der Spule (z. B. für QR-Codes auf Etiketten). Voraussetzung ist die neue Einstellung PUBLIC_URL mit der öffentlichen Adresse von FilaMan." },
+          { "type": "fix", "text": "Wer ohne Anmeldung einen Link öffnet, etwa per QR-Code auf einem Spulenetikett, landet nach dem Login wieder auf der aufgerufenen Seite statt auf dem Dashboard." },
+          { "type": "fix", "text": "Behält der Browser das Sitzungs-Cookie nicht, endet die automatische Anmeldung nicht mehr in einer Endlosschleife, sondern zeigt einen Hinweis." },
+          { "type": "fix", "text": "Beim Zuweisen einer Spule zu einem AMS-Slot wird wieder die richtige Bambu-Filament-ID übertragen." },
+          { "type": "fix", "text": "Bambu-RFID-Tag-Kennungen an Spulen gehen beim Start des BambuLab-Treibers nicht mehr verloren; bereits verschobene Werte werden automatisch wiederhergestellt." },
+          { "type": "fix", "text": "Der FilamentDB-Import übernimmt den Materialnamen in der üblichen Schreibweise (z. B. „PLA+/Pro“ statt „PLA-PLUS“)." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Spool API responses now include a link to the spool's detail page (e.g. for QR codes on labels). Requires the new PUBLIC_URL setting with FilaMan's public address." },
+          { "type": "fix", "text": "Opening a link without being signed in, e.g. via the QR code on a spool label, now returns you to that page after login instead of the dashboard." },
+          { "type": "fix", "text": "If the browser does not keep the session cookie, automatic login no longer loops endlessly but shows a hint instead." },
+          { "type": "fix", "text": "Assigning a spool to an AMS slot sends the correct Bambu filament ID again." },
+          { "type": "fix", "text": "Bambu RFID tag IDs on spools are no longer lost when the BambuLab driver starts; values that were already moved are restored automatically." },
+          { "type": "fix", "text": "The FilamentDB import uses the material name in its usual spelling (e.g. \"PLA+/Pro\" instead of \"PLA-PLUS\")." }
+        ]
+      }
+    },
+    {
+      "version": "1.4.3",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Spulen- und Filamentetiketten lassen sich jetzt auch per API als PNG oder Schwarzweiß-Bitmap (z. B. für Thermodrucker) abrufen, inklusive Auflösung, Schwellwert und Ausrichtung. Browser-Druckaufträge können über die API angestoßen werden. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Vorschau, Druck, PDF und PNG nutzen jetzt dieselbe Etiketten-Darstellung. Der Designer bietet kompakte Größen- und Lesbarkeitsregler sowie eine Hilfe zu Datumsformaten; QR-Codes bleiben über dem Inhalt. Die zuletzt gewählte Vorlage wird für Spulen und Filamente getrennt gemerkt. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "API-Schlüssel von Superadmins halten jetzt ihre eingestellten Berechtigungsbereiche ein." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Spool and filament labels can now also be fetched via the API as PNG or monochrome bitmap (e.g. for thermal printers), including resolution, threshold and orientation. Browser print jobs can be triggered through the API. (Contributed by akira69)" },
+          { "type": "improved", "text": "Preview, print, PDF and PNG now share the same label rendering. The designer offers compact size and readability controls and help for date formats; QR codes stay above the content. The last selected preset is remembered separately for spools and filaments. (Contributed by akira69)" },
+          { "type": "fix", "text": "Superadmin API keys now respect their configured permission scopes." }
+        ]
+      }
+    },
+    {
+      "version": "1.4.1",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Der Etiketten-Designer bietet jetzt eine freie, millimetergenaue Arbeitsfläche für Spulen- und Filamentetiketten. Texte und Datenfelder lassen sich direkt auf dem Etikett mit abschnittsweiser Formatierung, Umbruch und Größenanpassung bearbeiten. QR-Codes, Farbfelder, Formen, Herstellerlogos und zugeschnittene eigene Bilder können frei platziert werden; Ausrichten, Einrasten, Rückgängig/Wiederholen und Zoom erleichtern die Gestaltung. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Freie Vorlagen funktionieren beim Einzel- und Stapeldruck sowie bei Druck-, PDF-, PNG- und AML-Ausgaben. Vordefinierte klassische Layouts sind enthalten, Etikettenbogen-Vorlagen können eine freie Vorlage verwenden, und hochgeladene Bilder werden benutzerbezogen gespeichert, in Sicherungen aufgenommen und vor dem Löschen geschützt, solange eine gespeicherte Vorlage sie verwendet. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Vollständige und reine Inventar-Sicherungen verwenden jetzt ein gestreamtes JSONL-Format. Dadurch bleiben Speicherverbrauch und Verarbeitung auch bei großen Datenbanken begrenzt; ältere JSON-Sicherungen können weiterhin importiert werden." },
+          { "type": "warning", "text": "Bestehende Designer-Vorlagen werden für die Verwendung im neuen Designer automatisch umgewandelt. Diese Kompatibilitätsfunktion bleibt mindestens drei Monate nach dieser Veröffentlichung erhalten. Wer Versionen überspringt, sollte innerhalb dieses Zeitraums einmal auf diese Version aktualisieren und die Etikettenansichten öffnen, damit insbesondere nur im Browser gespeicherte Vorlagen in die Datenbank übernommen werden. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "The label designer now provides a freeform, millimetre-accurate canvas for spool and filament labels. Text and data fields can be edited directly on the label with partial formatting, wrapping, and fitting. QR codes, colour swatches, shapes, manufacturer logos, and cropped uploaded images can be positioned freely, with alignment, snapping, undo/redo, and zoom controls. (Contributed by akira69)" },
+          { "type": "feature", "text": "Freeform presets work in single and batch printing and across Print, PDF, PNG, and AML outputs. Built-in classic layouts are included, label-sheet presets can use a freeform preset, and uploaded images are stored per user, included in backups, and protected from deletion while a saved preset uses them. (Contributed by akira69)" },
+          { "type": "improved", "text": "Complete and inventory-only backups now use a streaming JSONL format. This keeps memory use and processing bounded for large databases, while older JSON backups can still be imported." },
+          { "type": "warning", "text": "Existing designer presets are converted automatically for use in the new designer. This compatibility path will remain available for at least three months after this release. Users who skip releases should upgrade to this version and open the label views during that window so browser-only presets in particular are copied into the database. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
+      "version": "1.3.9",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "In der AMS View zeigen die Fächer jetzt alle Farben eines mehrfarbigen Filaments: gestreifte Farben stehen als klare Bänder nebeneinander, Farbverläufe gehen ineinander über. Leuchtfilament bekommt einen leuchtenden Rahmen, transparentes Filament einen Glanz wie Glas. Einfarbige und leere Fächer sehen aus wie bisher, und ein Klick öffnet weiterhin die Spule. (Beigetragen von wolfrage76)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "In the AMS View, bays now show every color of a multi-color filament: striped colors appear as clear bands side by side, gradients blend into each other. Glow-in-the-dark filament gets a glowing frame, translucent filament a glass-like highlight. Single-color and empty bays look the same as before, and clicking a bay still opens the spool. (Contributed by wolfrage76)" }
+        ]
+      }
+    },
+    {
+      "version": "1.3.8",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "change", "text": "Die AMS View zeigt Temperatur, Luftfeuchte und Fachbelegung jetzt mit denselben Symbolen wie die Drucker-Seite. Das Kürzel \"RH\" entfällt dadurch, die Werte bleiben als Text lesbar und die Symbole wachsen im Kiosk-Modus mit der Schriftgröße mit. (Beigetragen von Niko11111)" },
+          { "type": "fix", "text": "Auf Französisch erscheinen jetzt auch die zuletzt hinzugekommenen Texte übersetzt: der Tag-Scanner samt Einstellungen und Hinweisen, die Meldung bei fehlgeschlagenem Kopieren eines API-Keys und die Beschriftung eines laufenden Drucker-Befehls. An Deutsch und Englisch ändert sich nichts. (Beigetragen von nanostra)" },
+          { "type": "feature", "text": "Angebundene Displays und Apps erfahren jetzt, welches AMS-Modell eine Einheit ist (AMS, AMS Lite, AMS 2 Pro oder AMS HT). Damit lassen sich Funktionen anbieten, die nur beheizte Einheiten können — etwa das Festhalten eines Trockenvorgangs. Meldet ein Drucker-Plugin das Modell nicht, bleibt die Angabe leer. (Beigetragen von Niko11111)" }
+        ],
+        "en": [
+          { "type": "change", "text": "The AMS View now shows temperature, humidity and slot usage with the same icons as the Printers page. The \"RH\" label is gone, the values stay readable as text, and the icons scale with the font size in kiosk mode. (Contributed by Niko11111)" },
+          { "type": "fix", "text": "In French, the most recently added texts are now translated as well: the tag scanner with its settings and notes, the message shown when copying an API key fails, and the label of a running printer action. Nothing changes for German and English. (Contributed by nanostra)" },
+          { "type": "feature", "text": "Connected displays and apps now learn which AMS model a unit is (AMS, AMS Lite, AMS 2 Pro or AMS HT). This makes it possible to offer features only heated units support, such as recording a drying run. If a printer plugin does not report the model, the field stays empty. (Contributed by Niko11111)" }
+        ]
+      }
+    },
+    {
+      "version": "1.3.7",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Ein gescannter RFID-Tag kann jetzt die passende Spule im Browser öffnen: Tag an Waage, App oder Lesegerät halten, und die Spulen-Seite geht auf. Die Funktion ist pro Browser unter Einstellungen → Tag-Scanner ein- und ausschaltbar und standardmäßig aus; wahlweise folgt der Browser nur einem bestimmten Lesegerät. Auf Übersichts- und Spulen-Seiten wird direkt gesprungen, überall sonst (Formulare, Plugin-Seiten, offene Dialoge) erscheint nur ein Hinweis mit Öffnen-Knopf. Unbekannte Tags werden mit ihrer UID gemeldet. Lesegeräte melden Scans über die neue API /api/v1/tag/scan und bekommen die Spule direkt zurück. (Beigetragen von Niko11111)" },
+          { "type": "feature", "text": "Die Oberfläche ist jetzt auch auf Französisch verfügbar und in den Einstellungen als Sprache auswählbar. (Beigetragen von nanostra)" },
+          { "type": "fix", "text": "Die AMS View zeigt Drucker wieder als verbunden an, samt Status, Düsen- und Betttemperatur sowie Temperatur und Luftfeuchte der AMS-Einheiten. Vorher kamen dort bei mehreren Server-Workern leere oder widersprüchliche Werte an, obwohl die Drucker-Seite alles korrekt zeigte. (Beigetragen von Niko11111)" },
+          { "type": "fix", "text": "Die Kopieren-Knöpfe für neue API-Keys, die OIDC-Callback-URL und das Drucker-Debug-Log funktionieren jetzt auch, wenn FilaMan über eine unverschlüsselte Verbindung im lokalen Netz geöffnet wird. Klappt das Kopieren nicht, wird das sichtbar angezeigt und der Text zum Kopieren von Hand markiert. (Beigetragen von Niko11111)" },
+          { "type": "feature", "text": "Die Tabellen für Filamente, Spulen, Hersteller und Farben haben jetzt pro Spalte eigene Sortier- und Filterschaltflächen. Je nach Spaltentyp stehen Text-, Zahlen-, Datums- und Auswahlfilter bereit, und die Auswahlmöglichkeiten stammen nur aus tatsächlich vorhandenen Werten. Sichtbare systemweite Extrafelder lassen sich genauso filtern, und Suche, Gruppierung sowie die gespeicherte Spaltenansicht bleiben davon unberührt. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Farben lassen sich jetzt visuell filtern: über ein durchsuchbares Farbraster und wahlweise über Bereiche für Farbton, Sättigung, Helligkeit und Transparenz, inklusive Vorlagen für Schwarz, Grau, Weiß und ROYGBIV. Derselbe Farbfilter steht auch beim Anlegen eines neuen Filaments zur Verfügung. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Das Hersteller-Logo ist jetzt eine eigene Spalte in den Tabellen für Hersteller, Filamente und Spulen. Sie ist standardmäßig sichtbar und lässt sich wie jede andere Spalte ausblenden, verschieben und in der Breite ändern; der Herstellername bleibt daneben als Text stehen. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Die Schaltfläche zum Kopieren des Gerätecodes funktioniert jetzt auch, wenn FilaMan im lokalen Netz über eine unverschlüsselte Verbindung geöffnet wird. \"Kopiert!\" erscheint nur bei Erfolg, andernfalls bleibt der Code markiert und kann von Hand kopiert werden. Außerdem lädt die Geräteliste jetzt alle Seiten in fester Reihenfolge und meldet einen Fehler, statt still eine unvollständige Liste zu zeigen. (Beigetragen von akira69)" },
+          { "type": "security", "text": "Die Geräteverwaltung zeigt keine Token-Daten mehr in der Geräteliste und schreibt keine Registrierungscodes mehr in die Browser-Konsole. Von Geräten gemeldete Adressen und Texte werden jetzt geprüft, bevor sie angezeigt werden. Ob eine Registrierung noch aussteht, bleibt wie gewohnt sichtbar. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "In der AMS View stimmen Luftfeuchte und Temperatur jetzt mit der Drucker-Seite überein, bei X1C erscheinen dort also echte Prozent- und °C-Werte. Belegte HT-Fächer ohne zugeordnete Spule zeigen jetzt Material und Farbe des Druckers, statt leer zu wirken. (Beigetragen von wolfrage76)" },
+          { "type": "change", "text": "Die App-Einstellung \"Doppelpunkte in RFID-UIDs anzeigen\" ist bei einer neuen Installation jetzt standardmäßig aus. Eine bereits gespeicherte Einstellung bleibt unverändert, und an gespeicherten UIDs oder der Suche ändert sich nichts. (Beigetragen von wolfrage76)" },
+          { "type": "fix", "text": "Die Fehlermeldung für ein Auswahl- oder Mehrfachauswahlfeld ohne Optionen erscheint jetzt einheitlich für beide Feldtypen. (Beigetragen von wolfrage76)" },
+          { "type": "fix", "text": "Auf der Changelog-Seite werden Sicherheits-, Verbesserungs- und Entfernt-Einträge jetzt auch als solche gekennzeichnet, statt pauschal als \"Geändert\" zu erscheinen." }
+        ],
+        "en": [
+          { "type": "feature", "text": "A scanned RFID tag can now open its spool in the browser: hold the tag to a scale, app or reader and the spool page opens. It is switched on or off per browser under Settings → Tag scanner and is off by default; the browser can optionally follow a single reader only. On overview and spool pages it jumps directly, everywhere else (forms, plugin pages, open dialogs) it only shows a note with an Open button. Unknown tags are reported with their UID. Readers report scans through the new /api/v1/tag/scan API and get the matching spool back. (Contributed by Niko11111)" },
+          { "type": "feature", "text": "The interface is now also available in French and can be selected as a language in the settings. (Contributed by nanostra)" },
+          { "type": "fix", "text": "The AMS View shows printers as connected again, including state, nozzle and bed temperature and the temperature and humidity of the AMS units. With several server workers it used to receive empty or conflicting values, even though the printer page showed everything correctly. (Contributed by Niko11111)" },
+          { "type": "fix", "text": "The copy buttons for new API keys, the OIDC callback URL and the printer debug log now also work when FilaMan is opened over an unencrypted connection on the local network. If copying fails, this is shown and the text is selected for copying by hand. (Contributed by Niko11111)" },
+          { "type": "feature", "text": "The filament, spool, manufacturer and colour tables now have their own sort and filter buttons per column. Depending on the column type you get text, number, date and choice filters, and the choices are built only from values that actually exist. Visible system-wide extra fields can be filtered the same way, while search, grouping and your saved column layout stay untouched. (Contributed by akira69)" },
+          { "type": "feature", "text": "Colours can now be filtered visually: through a searchable colour grid and optionally through ranges for hue, saturation, brightness and transparency, including presets for black, grey, white and ROYGBIV. The same colour filter is available when creating a new filament. (Contributed by akira69)" },
+          { "type": "feature", "text": "The manufacturer logo is now a column of its own in the manufacturer, filament and spool tables. It is visible by default and can be hidden, reordered and resized like any other column, with the manufacturer name still shown as text next to it. (Contributed by akira69)" },
+          { "type": "fix", "text": "The button that copies a device code now also works when FilaMan is opened over an unencrypted connection on your local network. \"Copied!\" only appears on success, otherwise the code stays selected so you can copy it by hand. The device list also loads every page in a stable order now and reports an error instead of silently showing an incomplete list. (Contributed by akira69)" },
+          { "type": "security", "text": "Device management no longer shows token data in the device list and no longer writes enrollment codes to the browser console. Addresses and text reported by devices are now validated before they are displayed. Whether a registration is still pending remains visible as before. (Contributed by akira69)" },
+          { "type": "fix", "text": "In AMS View, humidity and temperature now match the Printers page, so X1C units show real percentage and °C readings. Occupied HT bays without a linked spool now show the printer's material and colour instead of looking empty. (Contributed by wolfrage76)" },
+          { "type": "change", "text": "The app setting \"Show colons in RFID UIDs\" is now off by default on a fresh installation. An already saved setting is left unchanged, and stored UIDs and search behaviour are unaffected. (Contributed by wolfrage76)" },
+          { "type": "fix", "text": "The error message for a dropdown or multi-select field without options now appears consistently for both field types. (Contributed by wolfrage76)" },
+          { "type": "fix", "text": "On the changelog page, security, improvement and removal entries are now labelled as such instead of all showing up as \"Changed\"." }
+        ]
+      }
+    },
+    {
+      "version": "1.3.5",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Ein neu erstellter API Key wird jetzt zusätzlich als QR-Code angezeigt. In der FilaMan-App lässt sich der Token damit einscannen statt abzutippen (Anmeldung → Token → QR-Symbol im Token-Feld)." }
+        ],
+        "en": [
+          { "type": "feature", "text": "A newly created API key is now also shown as a QR code. In the FilaMan app you can scan the token instead of typing it (sign-in → Token → QR icon in the token field)." }
+        ]
+      }
+    },
+    {
+      "version": "1.3.4",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Die Suche auf der Spulenseite findet Extrafeld-Werte jetzt unabhängig davon, wie das Feld entstanden ist: systemweit definiert, nur an der einzelnen Spule definiert (z. B. über die API angelegt) oder ganz ohne Definition. Zusätzlich werden jetzt auch die Extrafelder des zugehörigen Filaments durchsucht, verschachtelte Felder gefunden und Ja/Nein-Werte einheitlich behandelt. Gesucht wird weiterhin nur in den Werten, nicht in den Feldnamen. (Gemeldet von mark77-DE)" },
+          { "type": "removed", "text": "Fünf weitere Berechtigungen, die in der Rollenverwaltung auswählbar waren, aber nirgends geprüft wurden, sind entfernt: \"Farben anzeigen\", \"Standorte anzeigen\" und \"Hersteller anzeigen\" (Lesen ist grundsätzlich für jeden angemeldeten Zugang erlaubt) sowie \"Eigene API-Schlüssel ändern\" und \"Eigene API-Schlüssel erneuern\", für die es gar keine Funktion gibt. An den tatsächlichen Rechten bestehender Rollen ändert sich dadurch nichts." }
+        ],
+        "en": [
+          { "type": "fix", "text": "The search on the spools page now finds extra-field values no matter how the field came to be: defined system-wide, defined on the individual spool (for example created through the API) or with no definition at all. It now also searches the extra fields of the linked filament, matches nested fields and treats yes/no values consistently. As before, only values are searched, never field names. (Reported by mark77-DE)" },
+          { "type": "removed", "text": "Five more permissions that could be selected in the role editor but were never checked have been removed: \"View colors\", \"View locations\" and \"View manufacturers\" (reading is open to every authenticated principal anyway), plus \"Update own API keys\" and \"Rotate own API keys\", for which no feature exists. Nothing your existing roles are actually allowed to do changes." }
+        ]
+      }
+    },
+    {
+      "version": "1.3.3",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "change", "text": "Die Seite \"Display\" heißt jetzt \"AMS View\" und wurde neu gestaltet: Jedes Fach ist ein Farbfeld mit gut lesbarer Beschriftung, reguläre AMS-Einheiten stehen in einer Reihe, AMS-HT und externe Halter in der Zeile darunter. Vier AMS-Einheiten liegen bei genügend Platz nebeneinander und bei schmalem Fenster als 2×2 (nie 3+1), der Kiosk-Modus nutzt die volle Fensterbreite. In der Seitenleiste steht \"AMS View\" jetzt unter \"Drucker\", \"Standorte\" darunter. (Beigetragen von wolfrage76)" },
+          { "type": "feature", "text": "Die AMS View hat jetzt eine Drucker-Auswahl (alle Drucker oder ein einzelner). Die Auswahl steht in der Adresse (\"?printer=…\"), sodass ein Kiosk-Display dauerhaft auf einem Drucker bleiben kann. (Beigetragen von wolfrage76)" },
+          { "type": "fix", "text": "Mehrere Korrekturen in der AMS View: Bei H2/H2C erscheinen die externen Halter jetzt als zwei Fächer (\"Ext1\"/\"Ext2\") statt vier übrig gebliebener Einträge, belegte Fächer verlinken auf die zugewiesene Spule, leere AMS-Einheiten verschwinden nicht mehr zwischen zwei Aktualisierungen, Farben werden mit dem Herstellernamen benannt, die Zuführfächer der AMS-HT sind markiert, und \"Trocknen\" erscheint nur noch, wenn tatsächlich ein Trocknungszyklus läuft. (Beigetragen von wolfrage76)" },
+          { "type": "feature", "text": "RFID-UIDs werden jetzt genau in der übermittelten Schreibweise gespeichert; verglichen wird weiterhin unabhängig von Trennzeichen, \"04:EF:14\" findet also auch \"04ef14\". Neu in den App-Einstellungen: \"Doppelpunkte in RFID-UIDs anzeigen\" steuert die Darstellung in Spulenliste, Detailseite und RFID-Dialogen. (Beigetragen von wolfrage76)" },
+          { "type": "fix", "text": "Nach dem Schreiben eines Tags an der NFC-Waage wird die Spule jetzt auch dann automatisch zugewiesen, wenn die UID noch nicht in der Spule gespeichert ist. Außerdem überschreibt die Tag-Rückmeldung ein bereits bekanntes Restgewicht nicht mehr mit dem Bruttowert der Waage, und eine aktivierte automatische Zuweisung ohne bereiten Treiber wird jetzt im Log gemeldet statt still zu scheitern. (Beigetragen von wolfrage76)" }
+        ],
+        "en": [
+          { "type": "change", "text": "The \"Display\" page is now called \"AMS View\" and has been redesigned: every bay is a colour swatch with readable labels, regular AMS units sit on one row and AMS-HT plus external holders on the line below. Four AMS units go 4-across when there is room and 2×2 when the window is narrow (never 3+1), and kiosk mode uses the full viewport width. In the sidebar, \"AMS View\" now sits under \"Printers\", with \"Locations\" below it. (Contributed by wolfrage76)" },
+          { "type": "feature", "text": "AMS View now has a printer selector (all printers, or a single machine). The choice is kept in the address (\"?printer=…\"), so a kiosk display can stay on one printer. (Contributed by wolfrage76)" },
+          { "type": "fix", "text": "Several AMS View fixes: on H2/H2C the external holders now show as two bays (\"Ext1\"/\"Ext2\") instead of four leftover entries, assigned bays link to their spool, empty AMS units no longer disappear between refreshes, colours are named using the manufacturer's colour name, AMS-HT feeding bays are marked, and \"Drying\" only appears while a drying cycle is actually running. (Contributed by wolfrage76)" },
+          { "type": "feature", "text": "RFID UIDs are now stored exactly as submitted, while matching stays independent of separators — \"04:EF:14\" still finds \"04ef14\". New in App Settings: \"Show colons in RFID UIDs\" controls how UIDs are displayed in the spool list, detail pages and RFID dialogs. (Contributed by wolfrage76)" },
+          { "type": "fix", "text": "After writing a tag on the NFC scale, the spool is now auto-assigned even when the UID has not been stored on the spool yet. The tag result also no longer overwrites a known remaining weight with the scale's gross reading, and auto-assign being enabled without an armed driver is now reported in the log instead of failing silently. (Contributed by wolfrage76)" }
+        ]
+      }
+    },
+    {
+      "version": "1.3.1",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Neue \"Display\"-Seite und eine nur lesende Schnittstelle, mit der sich eigene Wand-Dashboards und digitale Farbmuster-Boards bauen lassen: pro Drucker jede AMS-Einheit und jeder Slot mit Farbe, Material, Hersteller und Restmenge, optional ergänzt um Live-Daten des Druckers. (Beigetragen von wolfrage76)" },
+          { "type": "feature", "text": "In der Seitenleiste erscheint jetzt neben der Versionsnummer ein Hinweis, sobald eine neuere FilaMan-Version verfügbar ist. (Beigetragen von Simon-CR)" },
+          { "type": "improved", "text": "Beim Anlegen einer Spule aus einem Tag (OpenSpool, Bambu, NFC-Waage) wird jetzt die Farbe des Tags berücksichtigt, sodass z. B. ein schwarzes Filament nicht mehr fälschlich als weißes erkannt wird. Tags ohne Farbinformation funktionieren unverändert. (Beigetragen von Simon-CR)" },
+          { "type": "feature", "text": "Eine Spule kann jetzt zwei RFID-Tags besitzen – z. B. je einen pro Seite einer Spule. Das Scannen eines der beiden Tags findet dieselbe Spule, ein Schreibvorgang belegt den freien Slot, und in der Spulen-Detailansicht lässt sich ein einzelner Tag wieder entfernen. Die Suche findet Spulen über beide Tags, mit oder ohne Doppelpunkte. Bereits gespeicherte RFID-UIDs werden beim Update auf eine einheitliche Schreibweise gebracht. (Beigetragen von wolfrage76)" },
+          { "type": "fix", "text": "Verbrauchsmeldungen von Druck-Plugins (z. B. Bambuddy) werden bei einer erneut zugestellten, identischen Meldung nicht mehr doppelt vom Restgewicht der Spule abgezogen. (Beigetragen von wolfrage76)" },
+          { "type": "security", "text": "Benutzer mit der Rolle \"Viewer\" konnten auf dem Dashboard über \"Alle archivieren\" Spulen archivieren, obwohl sie dazu nicht berechtigt sind. Die Aktion ist jetzt genauso geschützt wie das Archivieren einer einzelnen Spule, die Schaltflächen werden nur noch Berechtigten angezeigt, und fehlgeschlagene Versuche zeigen jetzt eine Meldung statt stillschweigend nichts zu tun. (Gemeldet von EagleWolfpack)" },
+          { "type": "removed", "text": "Sieben Berechtigungen, die in der Rollenverwaltung zwar auswählbar waren, aber nirgends geprüft wurden, sind entfernt: \"Spulengewicht anpassen\", \"Spulen archivieren\", \"Spulen verschieben\", \"Verbrauch erfassen\" (diese Aktionen werden weiterhin über die jeweilige Spulenereignis-Berechtigung gesteuert) sowie die drei Bewertungs-Berechtigungen, für die es keine Funktion gibt. An bestehenden Rollen ändert sich dadurch nichts, was tatsächlich erlaubt ist – die Auswahl spiegelt jetzt nur ehrlich wider, was wirklich wirkt." }
+        ],
+        "en": [
+          { "type": "feature", "text": "New \"Display\" page and a read-only feed for building your own wall dashboards and digital swatch boards: per printer, every AMS unit and slot with colour, material, manufacturer and remaining amount, optionally enriched with the printer's live state. (Contributed by wolfrage76)" },
+          { "type": "feature", "text": "The sidebar now shows a hint next to the version number as soon as a newer FilaMan version is available. (Contributed by Simon-CR)" },
+          { "type": "improved", "text": "When creating a spool from a tag (OpenSpool, Bambu, NFC scale), the tag's colour is now taken into account, so e.g. a black filament is no longer mistakenly matched as white. Tags without colour information keep working as before. (Contributed by Simon-CR)" },
+          { "type": "feature", "text": "A spool can now hold two RFID tags – e.g. one per side of a spool. Scanning either tag finds the same spool, a write fills the free slot, and a single tag can be removed again from the spool detail view. Search matches spools by either tag, with or without colons. Existing RFID UIDs are normalised to a consistent format on update. (Contributed by wolfrage76)" },
+          { "type": "fix", "text": "Consumption reports from print plugins (e.g. Bambuddy) are no longer subtracted twice from a spool's remaining weight when the same report is delivered again. (Contributed by wolfrage76)" },
+          { "type": "security", "text": "Users with the \"Viewer\" role could archive spools from the dashboard via \"Archive All\" even though they are not allowed to. The action is now protected exactly like archiving a single spool, the buttons are only shown to users who may use them, and failed attempts now show a message instead of silently doing nothing. (Reported by EagleWolfpack)" },
+          { "type": "removed", "text": "Seven permissions that could be selected in the role editor but were never actually checked have been removed: \"Adjust spool weight\", \"Archive spools\", \"Move spools\" and \"Record consumption\" (these actions are still governed by their respective spool event permission), plus the three rating permissions for a feature that does not exist. Nothing your existing roles are actually allowed to do changes — the list now honestly reflects what has an effect." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.49",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Die Suche auf der Spulenseite findet jetzt auch Spulen anhand ihrer ID (auch mit vorangestelltem \"#\") sowie anhand der Werte ihrer Extrafelder." }
+        ],
+        "en": [
+          { "type": "feature", "text": "The search on the spools page now also finds spools by their ID (with or without a leading \"#\") and by the values of their extra fields." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.45",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Beim Öffnen einer Plugin-Seite (z. B. über die Seitenleiste oder unter Admin > Plugins) bleibt jetzt die Navigations-Sidebar sichtbar, statt dass die Plugin-Seite das gesamte Fenster ersetzt und die Navigation verschwindet. Plugin-Seiten laufen dabei jetzt zusätzlich in einer Sandbox, sodass sie das übergeordnete Fenster nicht mehr übernehmen können. (Beigetragen von Niko11111)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "Opening a plugin page (e.g. from the sidebar or from Admin > Plugins) now keeps the app's navigation sidebar visible instead of the plugin page replacing the whole window and losing the navigation. Plugin pages are also now sandboxed, so they can no longer take over the top-level window. (Contributed by Niko11111)" }
+        ]
+      }
+    },
+    {
+      "version": "1.2.44",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Wenn eine Treiber-Aktion (z. B. \"Spule einer Ace-/AMS-Tray zuweisen\", Drucker-Treiber starten/stoppen) an einen anderen Backend-Prozess weitergeleitet werden musste und dessen Antwort nicht als JSON gelesen werden konnte, führte das zu einem unbehandelten 500-Fehler ohne Fehlermeldung. Solche Fälle liefern jetzt einen strukturierten Fehler statt eines rohen Absturzes." }
+        ],
+        "en": [
+          { "type": "fix", "text": "When a driver action (e.g. \"assign a spool to an Ace/AMS tray\", starting/stopping a printer driver) had to be forwarded to another backend process and its response couldn't be read as JSON, this caused an unhandled 500 error with no error body. Such cases now return a structured error instead of a raw crash." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.43",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Beim Spoolman-Import kann jetzt gewählt werden, wie Spoolman-Extra-Felder gespeichert werden: als wiederverwendbare System-Extra-Felder, als filament- oder spulenspezifische typisierte Felder, unverändert unter den Rohwerten oder im bisherigen bereinigten Format. Jedes Feld kann in der Vorschau einzeln vom globalen Import-Standard abweichen. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Ein neuer Reparatur-Editor kann bereits früher importierte Spoolman-Extra-Felder nachträglich in System- oder feldspezifische typisierte Felder umwandeln — inklusive Text-, Zahlen-, Bereichs-, Auswahl-, Mehrfachauswahl-, Kontrollkästchen-, Datums- und URL-Feldern, mit bearbeitbaren Einheiten/Optionen und einer serverseitigen Umwandlungsvorschau. Bestehende native Werte werden dabei nie überschrieben, und nicht eindeutig zuordenbare Werte bleiben unangetastet erhalten. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "The Spoolman import now lets you choose how Spoolman extra fields are stored: as reusable System Extra Fields, as filament- or spool-specific typed fields, preserved unchanged under the raw values, or in the previous cleaned format. Each field can individually override the global import default in the preview. (Contributed by akira69)" },
+          { "type": "feature", "text": "A new repair editor can convert previously imported Spoolman extra fields into System or record-specific typed fields after the fact — including text, number, range, dropdown, multiselect, checkbox, date, and URL fields, with editable units/choices and a server-generated conversion preview. Existing native values are never overwritten, and values that cannot be safely matched are left untouched. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
+      "version": "1.2.41",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Bei mehreren aktiven Druckern flackerte der Verbindungsstatus eines Druckers zwischen \"verbunden\" und \"getrennt\", während ein anderer stabil blieb. Ursache war der geteilte Health-Status zwischen den Backend-Prozessen: Eine Statusabfrage für einen Drucker löschte dabei versehentlich die zuletzt bekannten Daten aller anderen Drucker. Statusaktualisierungen werden jetzt zusammengeführt statt sich gegenseitig zu überschreiben." }
+        ],
+        "en": [
+          { "type": "fix", "text": "With multiple active printers, one printer's connection status could flap between \"connected\" and \"disconnected\" while another stayed stable. This was caused by the health status shared between backend processes: a status check for one printer would inadvertently wipe out the last known data for all other printers. Status updates are now merged instead of overwriting each other." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.40",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Nach der Installation, Aktualisierung oder Deinstallation eines Import-/Integration-Plugins (z. B. der Spoolman-API) war die betroffene Route je nach Backend-Prozess nur zufällig erreichbar – identische Anfragen lieferten abwechselnd 200 und 404, bis der Container neu gestartet wurde. Das Backend gleicht die Routen jetzt automatisch über alle Backend-Prozesse ab, sodass sie nach jeder Plugin-Änderung sofort und konsistent verfügbar sind." }
+        ],
+        "en": [
+          { "type": "fix", "text": "After installing, updating, or removing an import/integration plugin (e.g. the Spoolman API), the affected route was only reachable on some backend processes, causing identical requests to randomly return 200 or 404 until the container was restarted. The backend now automatically synchronizes routes across all backend processes, making them immediately and consistently available after every plugin change." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.39",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Bei Druckern mit mehreren Slots (AMS/MMU) wurde die aktuell geladene Spule fortlaufend in den ersten Slot geschrieben und überschrieb dessen echte Zuordnung, sodass dieselbe Spule in zwei Slots erschien. Ausgelöst wurde das durch die regelmäßige Statusabfrage der Druckerseite. Die druckerweite \"aktive Spule\" wird jetzt nur noch bei Druckern mit einem einzigen Slot übernommen, wo sie den Slot eindeutig benennt." },
+          { "type": "fix", "text": "Im Formular für die Treiber-Konfiguration wurden Einstellungen mit Listen- oder Objektwerten als \"[object Object]\" angezeigt und beim Speichern durch genau diesen Text ersetzt — die Einstellung ging verloren, auch wenn nur ein anderes Feld geändert wurde. Solche Werte werden jetzt lesbar dargestellt und beim Speichern unverändert übernommen. Ja/Nein-Einstellungen erscheinen jetzt als Auswahlkästchen statt als Textfeld." }
+        ],
+        "en": [
+          { "type": "fix", "text": "On printers with multiple slots (AMS/MMU), the currently loaded spool was continuously written into the first slot, overwriting its real assignment so that the same spool appeared in two slots. The printer page's periodic status refresh triggered this. The printer-wide \"active spool\" is now only applied on single-slot printers, where it unambiguously identifies the slot." },
+          { "type": "fix", "text": "In the driver configuration form, settings holding list or object values were shown as \"[object Object]\" and replaced by that very text on save — the setting was lost even when only an unrelated field was edited. Such values are now displayed readably and carried through the save unchanged. Boolean settings now render as a checkbox instead of a text field." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.38",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Die Migration für Farbtransparenz konnte beim Reparieren Spoolman-importierter Filamentfarben mit \"NOT NULL constraint failed: colors.created_at\" abbrechen, weil neu angelegte Farben ohne Zeitstempel eingefügt wurden. Die Migration setzt jetzt Erstellungs- und Änderungszeitpunkt korrekt." }
+        ],
+        "en": [
+          { "type": "fix", "text": "The color transparency migration could fail with \"NOT NULL constraint failed: colors.created_at\" while repairing Spoolman-imported filament colors, because newly created colors were inserted without timestamps. The migration now sets the created/updated timestamps correctly." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.37",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Ein per Docker-Neustart unterbrochener Migrationslauf konnte beim erneuten Upgrade-Versuch mit \"table _alembic_tmp_colors already exists\" fehlschlagen. Die Migration bereinigt jetzt eine eventuell zurückgebliebene Arbeitstabelle, bevor sie erneut ausgeführt wird." }
+        ],
+        "en": [
+          { "type": "fix", "text": "An upgrade run interrupted by a Docker restart could fail on retry with \"table _alembic_tmp_colors already exists\". The migration now cleans up any leftover work table before running again." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.36",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Filamentfarben unterstützen jetzt Transparenz: Der Farb-Hexcode kann als #RRGGBBAA gespeichert werden, mit einem eigenen Deckkraft-Regler und einer Live-Vorschau im Farbeditor. Ist keine Deckkraft gesetzt, bleibt die Farbe wie bisher als #RRGGBB gespeichert. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Beim Spoolman-Import können bestehende, per spoolman_id verknüpfte Filament-Farbzuordnungen gezielt auf ihre Transparenz repariert werden, ohne sonstige importierte Daten zu verändern. Das Ergebnis zeigt an, wie viele Zuordnungen repariert und wie viele RGBA-Farben dafür neu erstellt bzw. wiederverwendet wurden." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Filament colors now support transparency: the color hex code can be stored as #RRGGBBAA, with its own opacity slider and a live preview in the color editor. When no opacity is set, the color is still stored as #RRGGBB as before. (Contributed by akira69)" },
+          { "type": "feature", "text": "During Spoolman import, existing filament color assignments linked via spoolman_id can be selectively repaired for transparency without touching other imported data. The result reports how many assignments were repaired and how many RGBA colors were created or reused for it." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.35",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Benutzerdefinierte Felder lassen sich jetzt einzeln pro Spule und pro Filament typisieren – unabhängig von den systemweiten Feldern. Ein Datensatz kann damit eigene Zusatzfelder mit Feldtyp, Auswahloptionen und Einheit führen, die in Detail-, Bearbeitungs- und Druckansichten passend dargestellt werden. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "AMS-/Slot-Standorte, die von einem Drucker-Plugin verwaltet werden, lassen sich nicht mehr von Hand belegen. Sie werden in der Standortauswahl beim Anlegen, Bearbeiten, Duplizieren und beim Standortwechsel (auch als Massenaktion) nicht mehr angeboten, und das Anlegen einer Spule auf einem solchen Standort wird jetzt mit einer verständlichen Meldung abgelehnt statt den Standort stillschweigend zu verwerfen. Zugewiesen wird ein Slot weiterhin ausschließlich vom Drucker-Plugin, sobald es die Spule dort erkennt. Steht eine Spule bereits in einem Slot, bleibt dieser in der Bearbeitungsansicht sichtbar und geht beim Speichern nicht verloren." },
+          { "type": "fix", "text": "Beim Duplizieren einer Spule wurden Standort, Status, Restgewicht, RFID-Kennung und Zeitstempel mitkopiert. Übernommen werden jetzt nur noch die Produkt- und Maßangaben; das Restgewicht wird aus Brutto- minus Leergewicht neu berechnet." },
+          { "type": "fix", "text": "Ein pro Druckermodell gesetztes Profil verschwand nach dem Speichern aus dem Eingabefeld und tauchte erst nach dem Neuladen der Seite wieder auf. Der gespeicherte Name bleibt jetzt sofort stehen." },
+          { "type": "fix", "text": "Ein systemweites Zusatzfeld kann nicht mehr angelegt oder umgestellt werden, wenn vorhandene Datensätze dazu unpassende Werte oder eine eigene, abweichende Feldtyp-Definition führen. Statt die Werte stillschweigend unbrauchbar zu machen, nennt die Fehlermeldung jetzt die Anzahl und Beispiel-Datensätze." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Custom fields can now be typed per individual spool and per filament, independently of the system-wide fields. A record can carry its own extra fields with field type, options, and unit, rendered accordingly in the detail, edit, and print views. (Contributed by akira69)" },
+          { "type": "fix", "text": "AMS/slot locations owned by a printer plugin can no longer be assigned by hand. They are no longer offered in the location pickers when creating, editing, duplicating, or moving a spool (including the bulk action), and creating a spool in such a location is now rejected with a clear message instead of silently dropping the location. A slot is still only claimed by the printer plugin once it detects the spool there. If a spool already sits in a slot, that slot stays visible in the edit view and is not lost on save." },
+          { "type": "fix", "text": "Duplicating a spool also copied its location, status, remaining weight, RFID tag, and timestamps. Only product and dimension data is carried over now; the remaining weight is recalculated from gross minus empty weight." },
+          { "type": "fix", "text": "A profile set for a specific printer model disappeared from the input field after saving and only came back after a page reload. The saved name now stays in place immediately." },
+          { "type": "fix", "text": "A system-wide extra field can no longer be created or retyped while existing records hold incompatible values or carry their own conflicting field-type definition. Instead of silently rendering those values unusable, the error now reports how many records are affected and lists examples." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.34",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Label-Vorlagen und Etikettenbogen-Vorlagen werden jetzt in der Datenbank gespeichert statt nur im Browser. Eigene Vorlagen stehen dadurch auf allen Geräten und in allen Browsern zur Verfügung und gehen beim Leeren des Browser-Speichers nicht mehr verloren. Bereits im Browser vorhandene Vorlagen werden beim ersten Aufruf automatisch übernommen. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Der Label-Designer meldet jetzt verständlich, wenn eine Vorlage nicht gespeichert oder gelöscht werden konnte, statt den Fehler stillschweigend zu verschlucken. Die Rückmeldung beim Laden und Auswählen von Vorlagen wurde ebenfalls überarbeitet. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Beim Einzel-Etikettendruck entstand je nach Browser weiterhin eine überflüssige leere Seite. Die Seitenaufteilung wurde entfernt bzw. korrigiert. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Der Druckdialog enthält jetzt einen Hilfebereich mit browserspezifischen Hinweisen (Brave, Firefox) zu Skalierung, Papiergröße und PDF-Export. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Im erweiterten Label-Designer sind Rechtschreibprüfung, Autokorrektur und automatische Großschreibung in den Vorlagenfeldern jetzt deaktiviert – sie hatten Tokens und Ausdrücke ungewollt verändert. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Auf Etiketten blieben die Felder Standort und Status leer, wenn die Spule nur eine Standort- bzw. Status-ID lieferte. Beide Werte werden jetzt beim Etikettendruck (Einzel- und Stapeldruck) zuverlässig aufgelöst und angezeigt. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Düsen- und Betttemperatur auf dem Etikett greifen jetzt auf die benutzerdefinierten Felder des Filaments zurück, wenn keine Filament-Einstellungen hinterlegt sind. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Benutzerdefinierte Felder unterstützen jetzt weitere Feldtypen: Bereich (Min/Max), Mehrfachauswahl, Auswahlliste, Ankreuzfeld, mehrzeiliger Text, Datum, URL und Formel. Zahlenfelder lassen sich zusätzlich mit Einheit, Nachkommastellen sowie Minimal- und Maximalwert konfigurieren. Die Werte werden in den Detail- und Bearbeitungsansichten von Spulen und Filamenten sowie auf Etiketten passend zum Feldtyp dargestellt. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "Label presets and label sheet presets are now stored in the database instead of only in the browser. Your own presets are therefore available on every device and in every browser and are no longer lost when clearing browser storage. Presets that already exist in the browser are migrated automatically on first use. (Contributed by akira69)" },
+          { "type": "fix", "text": "The label designer now reports clearly when a preset could not be saved or deleted instead of silently swallowing the error. Feedback for loading and selecting presets was reworked as well. (Contributed by akira69)" },
+          { "type": "fix", "text": "Single label printing still produced a spurious blank page in some browsers. The page splitting has been removed / corrected. (Contributed by akira69)" },
+          { "type": "feature", "text": "The print dialog now includes a help section with browser-specific hints (Brave, Firefox) about scaling, paper size, and PDF export. (Contributed by akira69)" },
+          { "type": "fix", "text": "In the advanced label designer, spell checking, autocorrect, and auto-capitalisation are now disabled in the template fields – they were unintentionally altering tokens and expressions. (Contributed by akira69)" },
+          { "type": "fix", "text": "Labels left the location and status fields empty when the spool only provided a location or status ID. Both values are now resolved reliably for single and batch label printing. (Contributed by akira69)" },
+          { "type": "fix", "text": "Nozzle and bed temperature on labels now fall back to the filament's custom fields when no filament settings are stored. (Contributed by akira69)" },
+          { "type": "feature", "text": "Custom fields now support additional field types: range (min/max), multiselect, dropdown, checkbox, textarea, date, URL, and formula. Number fields can additionally be configured with a unit, decimal places, and minimum/maximum bounds. Values are rendered according to their field type in the spool and filament detail and edit views as well as on labels. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
+      "version": "1.2.31",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Die zuvor eingeführte automatische Drucker-Slot-Zuweisung beim Verschieben einer Spule auf einen Slot-Standort wurde wieder entfernt. Das Verschieben auf einen Standort setzt wie bisher nur den Standort der Spule und löst keine Aktion am Drucker aus." }
+        ],
+        "en": [
+          { "type": "fix", "text": "The previously introduced automatic printer-slot assignment when moving a spool to a slot location has been removed again. Moving a spool to a location only sets the spool's location as before and no longer triggers any action on the printer." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.28",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Der Umschalter auf der Filament-Kachel im Dashboard war unabhängig von der Spracheinstellung fest auf Englisch beschriftet ('All / Active / Used'). Die Beschriftungen sind jetzt übersetzt und die Schaltflächen übernehmen die Farben des eingestellten Farbschemas – zuvor war die aktive Schaltfläche fest auf weiße Schrift gesetzt und dadurch in einem der Themes kaum lesbar." }
+        ],
+        "en": [
+          { "type": "fix", "text": "The scope toggle on the dashboard's Filaments tile was always labelled in English ('All / Active / Used') regardless of the selected language. The labels are now translated and the buttons follow the active colour scheme – previously the selected button used hard-coded white text, making it hard to read in one of the themes." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.27",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Moonraker-Plugin: Eine Spule, die einem zweiten oder weiteren Toolhead zugewiesen wurde, erschien im Protokoll und in den Standorten fälschlich an Toolhead 1. Die Zuweisung wird jetzt an den tatsächlichen Extruder übergeben und pro Toolhead ausgewertet – Drucker mit nur einem Toolhead verhalten sich unverändert." },
+          { "type": "feature", "text": "Brasilianischer Real (BRL – R$) steht jetzt als Anzeigewährung in den App-Einstellungen zur Auswahl." },
+          { "type": "fix", "text": "Standorte, denen nur noch archivierte Spulen zugewiesen waren, ließen sich nicht löschen (Fehler 409), obwohl die Übersicht sie als leer anzeigte. Archivierte Spulen blockieren das Löschen jetzt nicht mehr – sie bleiben erhalten und verlieren lediglich die Standortzuweisung." },
+          { "type": "feature", "text": "Die Filament-Kachel im Dashboard hat jetzt einen Umschalter (Alle / Aktiv / Verwendet). Nach einem FilamentDB-Massenimport war die Gesamtzahl wenig aussagekräftig – 'Aktiv' zeigt nur Filamente mit vorhandenem Bestand. Die Auswahl wird pro Browser gespeichert. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Moonraker plugin: a spool assigned to a second or later toolhead was incorrectly shown on toolhead 1 in the event log and in locations. The assignment is now passed to the actual extruder and tracked per toolhead – printers with a single toolhead behave as before." },
+          { "type": "feature", "text": "Brazilian Real (BRL – R$) is now available as a display currency in the app settings." },
+          { "type": "fix", "text": "Locations holding only archived spools could not be deleted (error 409) even though the overview showed them as empty. Archived spools no longer block deletion – they are kept and simply lose their location assignment." },
+          { "type": "feature", "text": "The Filaments tile on the dashboard now has a scope toggle (All / Active / Used). After a bulk FilamentDB import the total count was not very meaningful – 'Active' shows only filaments with stock on hand. The selection is remembered per browser. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
+      "version": "1.2.24",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Eine Spule kann ihr zugewiesenes Slicer-Profil jetzt an das übergeordnete Filament zurückschreiben – mit Vorschau, Bestätigungsdialog und optionaler Übernahme auf alle Geschwister-Spulen desselben Filaments." },
+          { "type": "feature", "text": "Der Cloud-Slicer-Profil-Picker ist jetzt vollständig ins Deutsche und Englische übersetzt." },
+          { "type": "fix", "text": "Einzel-Etikettendruck in Firefox erzeugt keine überflüssige leere Seite mehr (Pagination korrigiert)." },
+          { "type": "fix", "text": "In den App-Einstellungen sind die Bereiche 'Standard-Spulengewichte' und 'Slicer-Profil-Fallback' jetzt vollständig übersetzt (zuvor fest auf Englisch)." },
+          { "type": "fix", "text": "Behebt sporadische CSRF-Fehler bei angemeldeten Nutzern nach längerer Inaktivität: Das CSRF-Cookie wird jetzt gemeinsam mit der rollierenden Sitzung verlängert und läuft nicht mehr vorzeitig ab. Ein erneutes Ab- und Anmelden ist dafür nicht mehr nötig." }
+        ],
+        "en": [
+          { "type": "feature", "text": "A spool can now write its assigned slicer profile back to its parent filament – with preview, confirmation dialog, and optional propagation to all sibling spools of the same filament." },
+          { "type": "feature", "text": "The cloud slicer profile picker is now fully translated into English and German." },
+          { "type": "fix", "text": "Single label printing in Firefox no longer produces a spurious blank page (pagination fixed)." },
+          { "type": "fix", "text": "The 'Spool Weight Defaults' and 'Slicer Profile Fallback' sections in App Settings are now fully translated (previously hard-coded in English)." },
+          { "type": "fix", "text": "Fixes sporadic CSRF errors for logged-in users after longer periods of inactivity: the CSRF cookie is now renewed together with the rolling session and no longer expires prematurely, so logging out and back in is no longer required." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.21",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Etiketten können jetzt auch für Filamente gedruckt werden – einzeln oder als Massendruck direkt aus der Filamentübersicht." },
+          { "type": "feature", "text": "Etiketten lassen sich jetzt auf handelsübliche Etikettenbögen (z. B. Avery) drucken – mit Layout-Steuerung für Spalten, Zeilen und Kopien, wählbaren Bogen-Vorlagen und Vorschau." },
+          { "type": "feature", "text": "Mehrfarbige Filamente (gestreift, co-extrudiert, Gradient/mehrschichtig) werden auf Etiketten jetzt korrekt mit passenden Farbfeldern dargestellt; zusätzlich gibt es eine Invers-Option für die Farbdarstellung." },
+          { "type": "feature", "text": "Im Filament- und Spulen-Editor kann jetzt ein Bambu-Slicer-Profil druckerunabhängig über eine durchsuchbare Liste ausgewählt werden. Beim Filament lässt sich das Profil wahlweise auf bestehende Spulen oder nur auf neue anwenden." },
+          { "type": "feature", "text": "Neuer Workflow für modellspezifische Slicer-Profile über die gesamte Druckerflotte: Abfrage verbundener Modelle, Abdeckungsprüfung beim Zuweisen und eine Admin-Einstellung, ob bei fehlendem Modell-Profil 'Generic' oder 'Bambu' als Fallback verwendet wird." },
+          { "type": "feature", "text": "Pro Spule kann jetzt ein Kern- bzw. Adaptergewicht hinterlegt werden (mit globalem Standardwert). Das Gewicht der Pappinnenrolle, des Spulenhalters oder des Waagenadapters wird beim Wiegen automatisch abgezogen, sodass die Restmenge korrekt berechnet wird." },
+          { "type": "feature", "text": "Das globale Ereignisprotokoll zeigt jetzt Hersteller, Herstellerfarbe und Material – passend zur Spulenübersicht und mit kompakter ID-Spalte." },
+          { "type": "fix", "text": "Etiketten-Export mit hochgeladenen Logos (Blob) korrigiert." },
+          { "type": "fix", "text": "Druckgröße von Spulen-Etiketten beim Browser-Druck korrigiert." },
+          { "type": "fix", "text": "RFID-Tag-Duplikate werden jetzt unabhängig von Groß-/Kleinschreibung der UID bereinigt, um Fehler beim Tag-Schreiben zu vermeiden." },
+          { "type": "fix", "text": "Cloud-Voreinstellungen überschreiben beim Speichern der Drucker-Parameter nicht mehr versehentlich den zugewiesenen Slicer-Profil-Index (bambu_idx)." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Labels can now be printed for filaments too – individually or as a batch directly from the filament list." },
+          { "type": "feature", "text": "Labels can now be printed onto standard label sheets (e.g. Avery) – with layout controls for columns, rows and copies, selectable sheet presets, and a preview." },
+          { "type": "feature", "text": "Multi-color filaments (striped, co-extruded, gradient/layered) are now rendered correctly on labels with matching color swatches; an inverse option for color output was also added." },
+          { "type": "feature", "text": "A Bambu slicer profile can now be selected directly in the filament and spool editors – printer-independent, via a searchable list. For filaments, the profile can optionally be applied to existing spools or only to new ones." },
+          { "type": "feature", "text": "New workflow for model-specific slicer profiles across the whole printer fleet: querying connected models, coverage checks on assignment, and an admin setting for whether 'Generic' or 'Bambu' is used as fallback when no model-specific profile resolves." },
+          { "type": "feature", "text": "A core / adapter weight can now be set per spool (with a global default). The weight of the cardboard inner tube, spool holder, or scale adapter is automatically subtracted when weighing, so the remaining amount is calculated correctly." },
+          { "type": "feature", "text": "The global event log now shows manufacturer, manufacturer color, and material – matching the spools list and with a compact ID column." },
+          { "type": "fix", "text": "Fixed label export with uploaded (blob) logos." },
+          { "type": "fix", "text": "Fixed print sizing of spool labels for browser printing." },
+          { "type": "fix", "text": "RFID tag duplicates are now cleaned up regardless of UID letter case, preventing errors when writing tags." },
+          { "type": "fix", "text": "Cloud presets no longer accidentally overwrite the assigned slicer profile index (bambu_idx) when saving printer parameters." }
+        ]
+      }
+    },
+    {
       "version": "1.2.20",
       "date": "",
       "changes": {

@@ -1,0 +1,586 @@
+---
+import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
+---
+
+<LabelPrintPageShell
+  title="FilaMan - Print Filament Labels"
+  variant="batch"
+  backHref="/filaments"
+  backLabel="Back to Filaments"
+  backLabelId="btn-back-label"
+  backI18n="filaments.backToFilaments"
+  idLabelI18n="filaments.showFilamentId"
+  idFallback="Filament ID"
+  extraFieldsMode="batch"
+  printI18n="labelPrint.btnPrint"
+  resetI18n="labelPrint.btnReset"
+>
+  <div slot="preview" class="label-count" id="label-count"></div>
+</LabelPrintPageShell>
+
+<script>
+  import { bindLabelSheetControls, createLabelSheetPdf } from '../../lib/label-sheet'
+  import { labelAssetContentUrl } from '../../lib/freeform-label/assets'
+  import {
+    bindDesignerPreviewNavigation,
+    bindLabelPrintWorkspaceTabs,
+    createBatchLabelPreviewRuntime,
+    createLabelDataReadiness,
+    getPrintDesignerDesign,
+    initPrintDesignerEditor,
+  } from '../../lib/label-print-workspace'
+  import {
+    buildSpoolDataFromFlatLabel,
+    getDesignerLabelDimensions,
+    renderDesignerLabel,
+    type DesignerExtraField,
+  } from '../../lib/label-designer'
+  import {
+    buildStandardLabelDataFromFlat,
+    buildStandardLabelHtml,
+    renderStandardLabel,
+  } from '../../lib/label-standard'
+  import {
+    REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS,
+    buildDesignerExtraFieldsFromFilament,
+    buildFilamentLabelDataFromApi,
+  } from '../../lib/filament-label-data'
+  import {
+    applyBatchLabelPreviewZoom,
+    bindLabelOutputPreview,
+    bindLabelOutputs,
+    bindLabelPreviewZoom,
+    bindLabelSettingsEvents,
+    bindPrintPageSidebarCollapse,
+    appendLabelSettingsCheckbox,
+    captureLabelSettings,
+    captureBatchLabel,
+    createPrintWorkspaceCoordinator,
+    createPreviewRenderCoordinator,
+    findBatchLabelElement,
+    getCachedEntityLogoUrl,
+    getLabelOutputControls,
+    getLabelSettingsControls,
+    getStandardLabelSettings,
+    makeBatchLabelHtml,
+    singleLabelPrintUrl,
+    prefetchEntityLogos,
+    readPrintWorkspaceMode,
+    readVersionedLabelSettings,
+    removeStorageValue,
+    resetLabelSettings,
+    restoreLabelSettings,
+    type LabelSettingsState,
+    type LabelPrintEntityAdapter,
+    type PrintWorkspaceMode,
+    writeStorageValue,
+  } from '../../lib/label-print-page'
+  import { buildLegacyLabelAliases, isBuiltInLabelField } from '../../lib/label-extra-fields'
+  import {
+    FILAMENT_LABEL_PRESETS_KEY,
+    hydrateLabelPresetStorage,
+    SPOOL_LABEL_PRESETS_KEY,
+  } from '../../lib/label-preset-storage'
+  import { isIntegrationExtraFieldPath, type SystemExtraFieldDef } from '../../lib/extra-fields'
+  import {
+    buildSystemExtraFieldDefinitionMap,
+    getExtraFieldValue,
+    normalizeEntityExtraFieldDefinitions,
+    normalizeSystemExtraFieldDefinitions,
+    renderRecordExtraField,
+    type EntityExtraFieldDefinitions,
+  } from '../../lib/entity-extra-fields'
+  import { t, initI18n } from '../../lib/i18n'
+
+  const SETTINGS_KEY = 'filaman-filament-batch-label-settings'
+  const SETTINGS_VERSION = 2
+  const DESIGNER_PRESETS_KEY = FILAMENT_LABEL_PRESETS_KEY
+  const DESIGNER_SETTINGS_KEY = 'filaman-filament-label-designer-v1'
+
+  bindPrintPageSidebarCollapse()
+  const settingsControls = getLabelSettingsControls()
+  const outputControls = getLabelOutputControls()
+  const resetBtn         = document.getElementById('btn-reset') as HTMLButtonElement | null
+  const previewContainer = document.getElementById('preview-container') as HTMLElement
+  const previewLabelsHost = document.getElementById('freeform-canvas-host') as HTMLElement
+  const countEl = document.getElementById('label-count')!
+  const ids = (new URLSearchParams(window.location.search).get('ids') || '')
+    .split(',').map(Number).filter(n => n > 0)
+  const singlePrintUrl = singleLabelPrintUrl('filament', ids)
+  if (singlePrintUrl) window.location.replace(singlePrintUrl)
+  else {
+  await hydrateLabelPresetStorage()
+  let syncOutputPreview: (zoomOnly?: boolean) => void = () => undefined
+  let refreshWorkspace: () => void = () => syncOutputPreview()
+  const sheetControls = bindLabelSheetControls(
+    () => refreshWorkspace(),
+    (key, fallback) => t(key) || fallback,
+    'filament',
+    () => syncOutputPreview(),
+  )
+
+  type ExtraFieldDef = SystemExtraFieldDef & { legacyAlias?: boolean }
+  type FilamentBatchSettings = LabelSettingsState & { zoom?: unknown }
+  type ApiObject = Record<string, unknown>
+  type ApiFilament = ApiObject & {
+    id?: string | number
+    custom_fields?: Record<string, unknown>
+    custom_field_definitions?: EntityExtraFieldDefinitions
+    manufacturer?: { id?: string | number; name?: string }
+  }
+
+  let filaments: ApiFilament[] = []
+  type FilamentLabelEntity = ApiFilament
+  const logoCache: Record<number, string | null> = {}
+  const initialMode: PrintWorkspaceMode = readPrintWorkspaceMode('filaman-label-active-tab')
+  let designerEditor: Awaited<ReturnType<typeof initPrintDesignerEditor>> | null = null
+  const previewRenders = createPreviewRenderCoordinator()
+  const labelDataReadiness = createLabelDataReadiness()
+  const workspace = createPrintWorkspaceCoordinator({
+    initialMode,
+    getItems: () => filaments,
+    getSheetSource: sheetControls.getSource,
+    onModeChange: state => {
+      if (state.mode === 'designer' && designerEditor) void designerEditor.refresh()
+      else void renderBatchPreview(state.mode)
+    },
+  })
+
+  const syncPreviewNavigation = bindDesignerPreviewNavigation(workspace)
+
+  // Extra field definitions for filaments only. The Standard Label tab is
+  // reduced to common fields; Label Designer still receives all fields.
+  let efDefs: ExtraFieldDef[] = []
+  let settingsLoaded = ids.length === 0
+  const systemFieldKeys = new Set<string>()
+  let systemDefinitions: SystemExtraFieldDef[] = []
+  const legacyFieldKeys = new Set<string>()
+  const efCheckMap: Record<string, HTMLInputElement> = {}
+
+  const STANDARD_FILAMENT_EF = REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS
+  const STANDARD_FILAMENT_EF_KEYS = new Set(STANDARD_FILAMENT_EF.map(def => def.key))
+
+  function efMapKey(key: string): string { return `filament:${key}` }
+
+  function getExtraFieldDefinitionMap(): Record<string, SystemExtraFieldDef> {
+    return buildSystemExtraFieldDefinitionMap(
+      systemDefinitions,
+      () => true,
+    )
+  }
+
+  function saveSettings() {
+    if (!settingsLoaded) return
+    writeStorageValue(SETTINGS_KEY, JSON.stringify({
+      ...captureLabelSettings(settingsControls, efCheckMap),
+      _v: SETTINGS_VERSION,
+      zoom: String(previewZoom.getZoom()),
+    }))
+  }
+
+  function loadSettings() {
+    settingsLoaded = true
+    const settings = readVersionedLabelSettings<FilamentBatchSettings>(
+      SETTINGS_KEY,
+      SETTINGS_VERSION,
+    )
+    if (!settings) return
+    restoreLabelSettings(
+      settingsControls,
+      settings,
+      efCheckMap,
+      { requireInputValues: true },
+    )
+  }
+
+  async function loadLogo(mfrId: number): Promise<string | null> {
+    if (mfrId in logoCache) return logoCache[mfrId]
+    try {
+      const r = await fetch(`/api/v1/manufacturers/${mfrId}/label-logo`, { credentials: 'include' })
+      if (r.ok) {
+        const blob = await r.blob()
+        const dataUrl = await new Promise<string>((res) => {
+          const reader = new FileReader()
+          reader.onload = () => res(reader.result as string)
+          reader.readAsDataURL(blob)
+        })
+        logoCache[mfrId] = dataUrl; return dataUrl
+      }
+    } catch {}
+    logoCache[mfrId] = null; return null
+  }
+
+  function getFilamentMfrId(filament: ApiFilament): number | null {
+    const data = buildFilamentLabelDataFromApi(filament)
+    const id = Number(data.mfr_id || data.manufacturer_id)
+    return Number.isFinite(id) && id > 0 ? id : null
+  }
+
+  function getBatchDesignerExtraFields(): DesignerExtraField[] {
+    const fields = new Map<string, DesignerExtraField>()
+    for (const def of efDefs) {
+      if (STANDARD_FILAMENT_EF_KEYS.has(def.key) || legacyFieldKeys.has(`filament.${def.key}`)) continue
+      const key = `filament.${def.key}`
+      fields.set(key, {
+        key,
+        label: def.label,
+        value: '',
+        fieldType: def.field_type,
+        source: 'filament',
+        origin: 'system',
+      })
+    }
+    return Array.from(fields.values())
+  }
+
+  function getExtraFieldsForFilament(filament: ApiFilament): {label: string, value: string}[] {
+    const result: {label: string, value: string}[] = []
+    const custom = filament?.custom_fields ?? {}
+    const recordDefinitions = normalizeEntityExtraFieldDefinitions(
+      filament.custom_field_definitions,
+    )
+    const aliases = buildLegacyLabelAliases(filament, filament, 'filament', getExtraFieldDefinitionMap())
+    for (const def of efDefs) {
+      if (!efCheckMap[efMapKey(def.key)]?.checked) continue
+      const alias = aliases.find(field => field.key === `filament.${def.key}`)
+      if (alias) { if (alias.value) result.push(alias); continue }
+      // Standard fields use shared reduced definitions; system custom fields use custom_fields[key].
+      const stdDef = STANDARD_FILAMENT_EF.find(s => s.key === def.key)
+      const customValue = getExtraFieldValue(custom, def.key)
+      const rendered = stdDef
+        ? { label: def.label, value: String(stdDef.valueFromApi(filament) ?? '') }
+        : customValue !== null && customValue !== undefined
+          ? renderRecordExtraField(
+              def.key,
+              customValue,
+              def,
+              recordDefinitions,
+              systemFieldKeys.has(def.key),
+            )
+          : null
+      if (rendered?.value) {
+        result.push(rendered)
+      }
+    }
+    return result
+  }
+
+  const buildStandardSettings = () => getStandardLabelSettings(settingsControls)
+
+  function buildStandardDataFromFilament(filament: ApiFilament): ReturnType<typeof buildStandardLabelDataFromFlat> {
+    const data = buildFilamentLabelDataFromApi(filament)
+    return buildStandardLabelDataFromFlat({
+      id: data.id,
+      designation: data.designation,
+      manufacturer: data.manufacturer,
+      material: data.type,
+      colorName: data.color,
+      hexCode: data.hex_code,
+      colorHexes: data.color_hexes,
+      multiColorStyle: data.multi_color_style,
+      extraFields: getExtraFieldsForFilament(filament),
+      qrUrl: `${window.location.origin}/filaments/${data.id}`,
+    })
+  }
+
+  function buildDesignerDataFromFilament(filament: ApiFilament): ReturnType<typeof buildSpoolDataFromFlatLabel> {
+    const data = buildFilamentLabelDataFromApi(filament)
+    return buildSpoolDataFromFlatLabel({
+      ...data,
+      filament_id: data.id,
+      manufacturer_id: data.manufacturer_id || data.mfr_id,
+      extraFields: buildDesignerExtraFieldsFromFilament(filament, getExtraFieldDefinitionMap()),
+    })
+  }
+
+  const labelAdapter = {
+    entityType: 'filament',
+    entityPath: 'filaments',
+    getId: filament => filament?.id,
+    getLogoManufacturerId: getFilamentMfrId,
+    buildStandardData: buildStandardDataFromFilament,
+    buildDesignerData: buildDesignerDataFromFilament,
+    zipName: () => 'filament-labels.zip',
+    zipEntryName: filament => `filament-label-${filament.id}.png`,
+    pdfName: () => 'filament-labels.pdf',
+    missingIdMessage: 'Cannot capture label: filament is missing an id',
+  } satisfies LabelPrintEntityAdapter<FilamentLabelEntity>
+
+  function makeLabelHtml(filamentId: number): string {
+    return makeBatchLabelHtml(filamentId, buildStandardLabelHtml())
+  }
+
+  async function prefetchLogos() {
+    await prefetchEntityLogos(filaments, labelAdapter, loadLogo)
+  }
+
+  async function renderLabel(container: HTMLElement, filament: ApiFilament, isStale = () => false) {
+    const settings = buildStandardSettings()
+    await renderStandardLabel({
+      element: container,
+      data: labelAdapter.buildStandardData(filament),
+      settings,
+      logoUrl: getCachedEntityLogoUrl(labelAdapter, logoCache, filament),
+      isStale,
+    })
+  }
+
+  function getDesignerDesign() {
+    return getPrintDesignerDesign({
+      settingsKey: DESIGNER_SETTINGS_KEY,
+      presetsKey: DESIGNER_PRESETS_KEY,
+      crossPresetsKey: SPOOL_LABEL_PRESETS_KEY,
+      kind: 'filament',
+      mode: workspace.getActiveMode(),
+      sheetSource: sheetControls.getSource(),
+    })
+  }
+
+  async function renderDesignerLabelForFilament(
+    container: HTMLElement,
+    filament: ApiFilament,
+    interactive: boolean,
+    design: ReturnType<typeof getDesignerDesign>,
+    isStale = () => false,
+  ) {
+    await renderDesignerLabel({
+      element: container,
+      previewBorder: false,
+      design,
+      data: labelAdapter.buildDesignerData(filament),
+      logoUrl: getCachedEntityLogoUrl(labelAdapter, logoCache, filament),
+      resolveAssetUrl: labelAssetContentUrl,
+      interactive,
+      vectorPreview: true,
+      isStale,
+      entityPath: labelAdapter.entityPath,
+    })
+  }
+
+  const batchPreview = createBatchLabelPreviewRuntime({
+    isReady: labelDataReadiness.isReady,
+    getActiveMode: workspace.getActiveMode,
+    getPreviewIndex: workspace.getPreviewIndex,
+    getWorkspaceState: workspace.getState,
+    getDesign: getDesignerDesign,
+    findElement: filament => findBatchLabelElement(labelAdapter, filament),
+    renderStandard: renderLabel,
+    renderDesigner: renderDesignerLabelForFilament,
+    getSourceElements: getLabelSourceElements,
+    afterRender: () => { syncPreviewNavigation(); syncOutputPreview(); saveSettings() },
+  })
+
+  const renderBatchPreview = (mode = workspace.getActiveMode(), output = false) =>
+    previewRenders.run(() => batchPreview.render(mode, output))
+  refreshWorkspace = renderBatchPreview
+
+  function getActiveLabelDimensions() {
+    if (workspace.getSource() === 'designer') return getDesignerLabelDimensions(getDesignerDesign())
+    const settings = buildStandardSettings()
+    return { widthMm: settings.widthMm, heightMm: settings.heightMm }
+  }
+
+  function getLabelSourceElements() {
+    return filaments
+      .map(filament => document.getElementById(`wrapper-${filament.id}`))
+      .filter((element): element is HTMLElement => element instanceof HTMLElement)
+  }
+
+  function updateLabelCount() {
+    if (!countEl || ids.length === 0) return
+    const copies = sheetControls.getOutputMode() === 'sheet' ? sheetControls.getSettings().copies : 1
+    const renderedCount = filaments.length * copies
+    countEl.textContent = filaments.length === ids.length
+      ? t('labelPrint.labelsReady', { count: String(renderedCount) })
+      : `${t('labelPrint.labelsReady', { count: String(renderedCount) })} (${filaments.length}/${ids.length})`
+  }
+
+  async function loadExtraFieldDefs() {
+    try {
+      const defs = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => [])
+      systemDefinitions = normalizeSystemExtraFieldDefinitions(defs)
+      const aliases = filaments.flatMap(filament => buildLegacyLabelAliases(filament, filament, 'filament', getExtraFieldDefinitionMap()))
+      aliases.forEach(field => legacyFieldKeys.add(field.key))
+      const selected = readVersionedLabelSettings<FilamentBatchSettings>(SETTINGS_KEY, SETTINGS_VERSION)?.extraFields as Record<string, boolean> | undefined
+      const historicalDefs = [...new Map(aliases.filter(field => selected?.[efMapKey(field.key.slice('filament.'.length))])
+        .map(field => [field.key, { key: field.key.slice('filament.'.length), label: field.label, field_type: field.fieldType || 'text', legacyAlias: true }])).values()]
+      const customDefs = systemDefinitions
+        .filter(def => !isIntegrationExtraFieldPath(def.key) || selected?.[efMapKey(def.key)] === true)
+        .filter(def => !isBuiltInLabelField('filament', def.key, def.label) && !legacyFieldKeys.has(`filament.${def.key}`))
+      const standardDefs = STANDARD_FILAMENT_EF.map(s => ({ key: s.key, label: s.label }))
+      systemFieldKeys.clear()
+      customDefs.forEach(def => systemFieldKeys.add(def.key))
+      // Batch selectors are centrally governed: built-ins first, then System Extra Fields.
+      efDefs = [...standardDefs, ...customDefs, ...historicalDefs]
+      if (efDefs.length === 0) return
+
+      const titleEl = document.getElementById('ef-section-title')!
+      const container = document.getElementById('ef-checkboxes')!
+      titleEl.textContent = t('labelPrint.filamentFieldsTitle') || 'Filament Fields'
+      titleEl.style.display = ''
+      container.style.removeProperty('display')
+
+      const addFieldRows = (fields: ExtraFieldDef[], target: HTMLElement) => {
+        for (const def of fields) {
+          efCheckMap[efMapKey(def.key)] = appendLabelSettingsCheckbox({
+            container: target,
+            label: def.label,
+            checked: false,
+            onChange: renderBatchPreview,
+          })
+        }
+      }
+
+      addFieldRows([...standardDefs, ...historicalDefs], container)
+
+      if (customDefs.length > 0) {
+        const customTitle = document.createElement('h3')
+        customTitle.textContent = t('filaments.dsSystemExtraFieldsLabel') || 'Filament System Extra Fields'
+        const customContainer = document.createElement('div')
+        customContainer.className = container.className
+        customContainer.style.removeProperty('display')
+        container.insertAdjacentElement('afterend', customTitle)
+        customTitle.insertAdjacentElement('afterend', customContainer)
+        addFieldRows(customDefs, customContainer)
+      }
+    } catch {}
+  }
+
+  async function captureLabel(filament: ApiFilament): Promise<string> {
+    return captureBatchLabel(labelAdapter, filament)
+  }
+
+  await initI18n()
+  const previewZoom = bindLabelPreviewZoom({
+    storageKey: SETTINGS_KEY,
+    settingsVersion: SETTINGS_VERSION,
+    previewRoot: previewContainer,
+    getTranslation: (key, fallback) => t(key) || fallback,
+    onChange: () => syncOutputPreview(true),
+  })
+  const syncSharedOutputPreview = bindLabelOutputPreview({
+    previewRoot: previewContainer,
+    sheetControls,
+    outputControls,
+    getSourceElements: getLabelSourceElements,
+    getDimensions: getActiveLabelDimensions,
+    getZoom: previewZoom.getZoom,
+    applyIndividualZoom: zoom => {
+      applyBatchLabelPreviewZoom(previewContainer, zoom)
+      void designerEditor?.refreshInteractions()
+    },
+    onSheetCancelled: () => tabControls.activate('standard'),
+  })
+  syncOutputPreview = (zoomOnly = false) => {
+    syncSharedOutputPreview(zoomOnly)
+    if (!zoomOnly) updateLabelCount()
+  }
+
+  designerEditor = await initPrintDesignerEditor({
+    sheetControls,
+    activateDesigner: () => tabControls.activate('designer'),
+    extraFields: [],
+    entityType: labelAdapter.entityType,
+    batchMode: true,
+    getQrEntityIds: () => workspace.getOutputItems().map(filament => String(filament.id ?? '')),
+    translate: (key, fallback) => t(key) || fallback,
+    getPreviewData: () => {
+      const filament = workspace.getState().representativeItem
+      return filament ? labelAdapter.buildDesignerData(filament) : null
+    },
+    onChange: renderBatchPreview,
+    presetsKey: DESIGNER_PRESETS_KEY,
+    settingsKey: DESIGNER_SETTINGS_KEY,
+    entityLabel: 'Filament',
+    crossPresetsKey: SPOOL_LABEL_PRESETS_KEY,
+    ownPresetsLabel: (t('filaments.dsPresetsOwnGroup') || 'Filament presets'),
+    crossPresetsLabel: (t('filaments.dsPresetsCrossGroupSpool') || 'Spool presets'),
+  })
+
+  const tabControls = bindLabelPrintWorkspaceTabs({
+    outputControls,
+    sheetControls,
+    storageKey: 'filaman-label-active-tab',
+    initialMode,
+    onChange: mode => workspace.activate(mode),
+  })
+
+  bindLabelOutputs({
+    controls: outputControls,
+    collection: {
+      getItems: workspace.getOutputItems,
+      prepare: async () => {
+        await labelDataReadiness.wait()
+        await previewRenders.settle()
+        if (workspace.getActiveMode() === 'designer') await renderBatchPreview('designer', true)
+      },
+      capture: captureLabel,
+      getDimensions: getActiveLabelDimensions,
+      browserPrint: {
+        previewRoot: previewContainer,
+        sheetControls,
+        getIndividualPages: getLabelSourceElements,
+      },
+      pngName: filament => labelAdapter.zipEntryName(filament),
+      pngArchiveName: labelAdapter.zipName,
+      pdfName: () =>
+        sheetControls.getOutputMode() === 'sheet'
+          ? 'filament-label-sheet.pdf'
+          : labelAdapter.pdfName(),
+      allowPartialPng: true,
+      allowPartialPdf: true,
+    },
+    getTranslation: (key, fallback) => t(key) || fallback,
+    createPdf: (pages, defaultCreate) =>
+      sheetControls.getOutputMode() === 'sheet'
+        ? createLabelSheetPdf(
+            pages,
+            sheetControls.getSettings(),
+          )
+        : defaultCreate(),
+  })
+
+  const urlParams = new URLSearchParams(window.location.search)
+  const backId = urlParams.get('back')
+  const backBtn = document.getElementById('btn-back') as HTMLAnchorElement
+  if (backId) {
+    backBtn.href = `/filaments/${backId}`
+    ;(document.getElementById('btn-back-label') as HTMLElement).textContent = t('filaments.backToFilament') || 'Back to Filament'
+  }
+
+  if (ids.length === 0) {
+    countEl.textContent = t('labelPrint.noFilamentsSelected')
+    labelDataReadiness.markReady()
+  } else {
+    countEl.textContent = t('labelPrint.labelsLoading', { count: String(ids.length) })
+    ids.forEach(id => previewLabelsHost.insertAdjacentHTML('beforeend', makeLabelHtml(id)))
+
+    const filamentResults = await Promise.allSettled(ids.map(async id => {
+        const r = await fetch(`/api/v1/filaments/${id}`, { credentials: 'include' })
+        if (!r.ok) throw new Error(`Failed to load filament ${id}: ${r.status}`)
+        return await r.json()
+      }))
+    filaments = filamentResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<ApiFilament>).value)
+    await loadExtraFieldDefs()
+    designerEditor?.refreshExtraFields(getBatchDesignerExtraFields())
+    updateLabelCount()
+
+    loadSettings()
+    await prefetchLogos()
+    labelDataReadiness.markReady()
+    tabControls.activate(tabControls.getActiveMode())
+  }
+
+  bindLabelSettingsEvents({
+    controls: settingsControls,
+    resetButton: resetBtn,
+    onChange: renderBatchPreview,
+    onReset: () => {
+      removeStorageValue(SETTINGS_KEY)
+      resetLabelSettings(settingsControls, efCheckMap)
+      previewZoom.applyZoom(100)
+      void renderBatchPreview()
+    },
+  })
+  }
+</script>

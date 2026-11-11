@@ -10,10 +10,12 @@
 
 import en from '../i18n/en.json'
 import de from '../i18n/de.json'
+// French (fr) locale — contributed by Nanostra (Frédéric Dubus)
+import fr from '../i18n/fr.json'
 
 type Dict = Record<string, any>
 
-const dictionaries: Record<string, Dict> = { en, de }
+const dictionaries: Record<string, Dict> = { en, de, fr }
 const FALLBACK = 'en'
 
 let currentLang: string = 'en'
@@ -107,6 +109,14 @@ export function translatePage(): void {
     const key = el.getAttribute('data-i18n-title')
     if (key && el instanceof HTMLElement) {
       el.title = t(key)
+    }
+  })
+
+  // Translate accessible names
+  document.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-aria-label')
+    if (key) {
+      el.setAttribute('aria-label', t(key))
     }
   })
 }

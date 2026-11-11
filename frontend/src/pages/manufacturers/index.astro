@@ -3,51 +3,28 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Manufacturers">
-  <style>
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { background: var(--bg-hover); }
-    .sortable::after { content: ' \2195'; opacity: 0.3; font-size: 0.8em; }
-    .sortable.sort-asc::after { content: ' \2191'; opacity: 1; }
-    .sortable.sort-desc::after { content: ' \2193'; opacity: 1; }
-    .filter-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 16px;
-      align-items: center;
-    }
-    .filter-bar .fm-input-search {
-      flex: 1;
-      min-width: 200px;
-      max-width: 400px;
-    }
-  </style>
-  <style is:global>
-    .pagination-container { display: flex; justify-content: space-between; align-items: center; }
-    .pagination-pages { display: flex; gap: 4px; align-items: center; font-size: 0.8rem; }
-    .pagination-pages a { color: var(--accent); cursor: pointer; padding: 2px 6px; text-decoration: none; border-radius: 3px; }
-    .pagination-pages a:hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
-    .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
-    .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
-  </style>
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700;" data-i18n="manufacturers.title">Manufacturers</h1>
-    <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
-      Add Manufacturer
-    </button>
+  <div class="fm-list-toolbar">
+    <h1 data-i18n="manufacturers.title">Manufacturers</h1>
+    <div class="fm-list-controls">
+      <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
+        Add Manufacturer
+      </button>
+    </div>
   </div>
 
   <div class="filter-bar">
-    <input
-      type="text"
-      id="filter-search"
-      class="fm-input fm-input-search"
-      data-i18n-placeholder="manufacturers.searchPlaceholder"
-      placeholder="Search manufacturers..."
-    />
-    <select id="filter-material" class="fm-select" style="width: auto; min-width: 160px;">
-      <option value="" data-i18n="manufacturers.allMaterials">All Materials</option>
-    </select>
+    <div class="fm-filter-search-wrap">
+      <input
+        type="text"
+        id="filter-search"
+        class="fm-input fm-input-search"
+        data-i18n-placeholder="manufacturers.searchPlaceholder"
+        placeholder="Search manufacturers..."
+      />
+      <button id="filter-search-clear" class="fm-filter-search-clear" type="button" aria-label="Clear search" title="Clear search" data-i18n-aria-label="common.clearSearch" data-i18n-title="common.clearSearch">&times;</button>
+    </div>
+    <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
+    <button id="filter-clear" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearAllFilters">Clear all filters</button>
   </div>
 
   <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
@@ -66,6 +43,7 @@ import Layout from '../../layouts/Layout.astro'
       <thead>
         <tr>
           <th data-i18n="manufacturers.name" data-sort="name" class="sortable col-name">Name</th>
+          <th data-i18n="manufacturers.logo" class="col-logo" style="min-width: 114px;">Logo</th>
           <th data-i18n="manufacturers.url" data-sort="url" class="sortable col-url">URL</th>
           <th data-i18n="manufacturers.filaments" data-sort="filament_count" class="sortable col-filaments">Filaments</th>
           <th data-i18n="manufacturers.spools" data-sort="spool_count" class="sortable col-spools">Spools</th>
@@ -78,154 +56,13 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="manufacturers-table">
         <tr>
-          <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
+          <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
   </div>
 
   <div class="pagination-container" id="pagination" style="margin-top: 16px;"></div>
-
-  <!-- Modal -->
-  <div id="modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
-    <div class="fm-card" style="width: 100%; max-width: 480px; margin: 16px;">
-      <h3 id="modal-title" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;" data-i18n="manufacturers.addManufacturer">Add Manufacturer</h3>
-
-      <!-- Mode toggle: DB lookup vs manual (create mode) -->
-      <div id="mfr-mode-toggle" class="fdb-mode-toggle" style="display: none;">
-        <label>
-          <input type="radio" name="mfr-mode" value="db" />
-          <span data-i18n="filamentdbLookup.fromDatabase">Create from FilaMan Database</span>
-        </label>
-        <label>
-          <input type="radio" name="mfr-mode" value="manual" checked />
-          <span data-i18n="filamentdbLookup.manualEntry">Create manually</span>
-        </label>
-      </div>
-
-      <!-- Edit mode: "Load from FilaManDB" button -->
-      <div id="mfr-edit-lookup-btn" style="display: none; margin-bottom: 12px;">
-        <button type="button" id="mfr-edit-lookup-toggle" class="fm-btn fm-btn-outline" style="width: 100%; font-size: 0.85rem;" data-i18n="filamentdbLookup.loadFromDb">
-          Load from FilaManDB
-        </button>
-      </div>
-
-      <!-- FilamentDB lookup section (hidden by default) -->
-      <div id="mfr-db-lookup" class="fdb-lookup-section" style="display: none;">
-        <div class="fdb-lookup-section-title" data-i18n="filamentdbLookup.loadFromDb">Load from FilaManDB</div>
-        <div id="mfr-lookup-container"></div>
-        <div id="mfr-lookup-toast" style="display: none;"></div>
-      </div>
-
-      <form id="modal-form" style="display: grid; gap: 16px;">
-        <input type="hidden" id="manufacturer-id" />
-        <div>
-          <label for="manufacturer-name" class="fm-label">
-            <span data-i18n="manufacturers.name">Name</span> *
-          </label>
-          <input
-            type="text"
-            id="manufacturer-name"
-            required
-            class="fm-input"
-            data-i18n-placeholder="manufacturers.namePlaceholder"
-            placeholder="e.g. Bambu Lab"
-          />
-        </div>
-        <div>
-          <label for="manufacturer-url" class="fm-label" data-i18n="manufacturers.url">
-            URL
-          </label>
-          <input
-            type="url"
-            id="manufacturer-url"
-            class="fm-input"
-            data-i18n-placeholder="manufacturers.urlPlaceholder"
-            placeholder="e.g. https://bambulab.com"
-          />
-        </div>
-        
-        <!-- Spool Defaults -->
-        <div class="fm-card" style="padding: 16px; margin-top: 8px;">
-          <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);">Spool Defaults</h3>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-            <div>
-              <label for="manufacturer-empty-weight" class="fm-label" data-i18n="spools.emptySpoolWeight">
-                Empty Spool Weight (g)
-              </label>
-              <input
-                type="number"
-                step="1"
-                id="manufacturer-empty-weight"
-                class="fm-input"
-              />
-            </div>
-            <div>
-              <label for="manufacturer-material" class="fm-label" data-i18n="spools.spoolMaterial">
-                Spool Material
-              </label>
-              <select id="manufacturer-material" class="fm-select">
-                <option value="">-</option>
-                <option value="Plastic" data-i18n="spools.spoolMaterialPlastic">Plastic</option>
-                <option value="Cardboard" data-i18n="spools.spoolMaterialCardboard">Cardboard</option>
-                <option value="Metal" data-i18n="spools.spoolMaterialMetal">Metal</option>
-                <option value="Other" data-i18n="spools.spoolMaterialOther">Other</option>
-              </select>
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
-            <div>
-              <label for="manufacturer-outer-diameter" class="fm-label" data-i18n="spools.spoolOuterDiameter">
-                Spool Outer Diameter (mm)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                id="manufacturer-outer-diameter"
-                class="fm-input"
-              />
-            </div>
-            <div>
-              <label for="manufacturer-width" class="fm-label" data-i18n="spools.spoolWidth">
-                Spool Width (mm)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                id="manufacturer-width"
-                class="fm-input"
-              />
-            </div>
-          </div>
-        </div>
-        
-        <div id="modal-error" class="fm-alert-error hidden"></div>
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
-            Save
-          </button>
-          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Info Modal -->
-  <div id="info-modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
-    <div class="fm-card" style="width: 100%; max-width: 480px; margin: 16px;">
-      <h3 id="info-modal-title" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;">Manufacturer Details</h3>
-      <div id="info-modal-content" style="display: grid; gap: 12px;">
-        <!-- Filled via JS -->
-      </div>
-      <div style="margin-top: 24px;">
-        <button type="button" id="info-modal-close" class="fm-btn fm-btn-outline" style="width: 100%;" data-i18n="common.close">
-          Close
-        </button>
-      </div>
-    </div>
-  </div>
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
@@ -234,19 +71,42 @@ import Layout from '../../layouts/Layout.astro'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
+    import {
+      bindTableFilterControls,
+      initHeaderColumnFilters,
+      isColumnFilterActive,
+      matchesColumnFilter,
+      multiColumnFilter,
+      syncHeaderSortButtons,
+      type ColumnFilterValue,
+      type HeaderFilterController,
+      type HeaderFilterOption,
+    } from '../../lib/table-column-filters'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive, fuzzyTokenScore } from '../../lib/filamentdb-lookup'
+    import { checkFilamentDbActive } from '../../lib/filamentdb-lookup'
+    import { createManufacturerDialog, type Manufacturer } from '../../lib/manufacturer-dialog'
+    import type { AppDialogs } from '../../lib/form-dialog'
+    const dialogWindow = window as unknown as AppDialogs
     await initI18n()
     await initCurrency()
 
-    let mfrLookup: LookupInstance | null = null
     const filamentDbActive = await checkFilamentDbActive()
+    const manufacturerDialog = createManufacturerDialog({
+      filamentDbActive,
+      onSaved: () => loadManufacturers(),
+    })
 
-    // Track FilamentDB logo info for download after create
-    let pendingLogoSlug: string | null = null
-    let pendingHasLabelLogo = false
-
-    let manufacturers: any[] = []
+    type ManufacturerRow = Manufacturer & {
+      logo_url?: string | null
+      filament_count: number
+      spool_count: number
+      archived_spool_count: number
+      total_price_available: number
+      total_price_all: number
+      materials: string[]
+      material_types?: string[]
+    }
+    let manufacturers: ManufacturerRow[] = []
     let sortKey: string | null = 'name'
     let sortDirection: 'asc' | 'desc' | null = 'asc'
 
@@ -261,7 +121,6 @@ import Layout from '../../layouts/Layout.astro'
         }
       }
     } catch { /* ignore invalid data */ }
-    let searchTimeout: ReturnType<typeof setTimeout> | null = null
     const allowedPageSizes = [25, 50, 100, 150, 200]
     let pageSize = (() => {
       try {
@@ -271,6 +130,19 @@ import Layout from '../../layouts/Layout.astro'
     })()
     let currentPage = 1
     let isInitialLoad = true
+    let mfrHeaderFilters: HeaderFilterController | null = null
+
+    let savedFilterState: { names?: string[], materials?: string[], columns?: Record<string, ColumnFilterValue> } | null = null
+    try {
+      const sf = localStorage.getItem('filaman-filters-manufacturers')
+      if (sf) savedFilterState = JSON.parse(sf)
+    } catch { /* ignore invalid data */ }
+    let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
+    if (!columnFilters.name) columnFilters.name = multiColumnFilter(savedFilterState?.names || [])
+    if (!columnFilters.materials) columnFilters.materials = multiColumnFilter(savedFilterState?.materials || [])
+    Object.keys(columnFilters).forEach((key) => {
+      if (!isColumnFilterActive(columnFilters[key])) delete columnFilters[key]
+    })
 
     // Restore page from localStorage
     try {
@@ -312,22 +184,24 @@ import Layout from '../../layouts/Layout.astro'
           th.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc')
         }
       })
+      const table = document.querySelector('.fm-table') as HTMLTableElement | null
+      if (table) syncHeaderSortButtons(table, sortKey, sortDirection)
     }
 
-    function getSortValue(item: any, key: string): any {
+    function getSortValue(item: ManufacturerRow, key: string): unknown {
       if (key === 'materials') return item.material_types?.length ?? 0
       return item[key]
     }
 
-    function sortManufacturers(items: any[]): any[] {
+    function sortManufacturers(items: ManufacturerRow[]): ManufacturerRow[] {
       if (!sortKey || !sortDirection) return items
       const sortBy = sortKey
       return [...items].sort((a, b) => {
         const aVal = getSortValue(a, sortBy) ?? ''
         const bVal = getSortValue(b, sortBy) ?? ''
         let cmp = 0
-        if (typeof aVal === 'string') cmp = aVal.localeCompare(bVal)
-        else cmp = aVal - bVal
+        if (typeof aVal === 'string') cmp = aVal.localeCompare(String(bVal))
+        else cmp = Number(aVal) - Number(bVal)
         return sortDirection === 'asc' ? cmp : -cmp
       })
     }
@@ -339,19 +213,15 @@ import Layout from '../../layouts/Layout.astro'
 
     function getFilterValues() {
       const search = (document.getElementById('filter-search') as HTMLInputElement).value.toLowerCase().trim()
-      const material = (document.getElementById('filter-material') as HTMLSelectElement).value
-      return { search, material }
+      return { search }
     }
 
-    function filterManufacturers(items: any[]): any[] {
-      const { search, material } = getFilterValues()
+    function filterManufacturers(items: ManufacturerRow[]): ManufacturerRow[] {
+      const { search } = getFilterValues()
+      const activeFilters = Object.entries(columnFilters).filter(([, value]) => isColumnFilterActive(value))
 
       return items.filter(mf => {
-        // Material filter
-        if (material) {
-          const hasMaterial = mf.materials && mf.materials.some((m: string) => m === material)
-          if (!hasMaterial) return false
-        }
+        if (!activeFilters.every(([key, filter]) => matchesColumnFilter(getManufacturerFilterValue(mf, key), filter))) return false
 
         // Text search across name, url, materials
         if (search) {
@@ -366,34 +236,38 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
 
-    function populateMaterialFilter(items: any[]) {
-      const materialSelect = document.getElementById('filter-material') as HTMLSelectElement
-      const selectedValue = materialSelect.value
-      const defaultOption = materialSelect.querySelector('option[value=""]')?.cloneNode(true) as HTMLOptionElement | null
-      materialSelect.replaceChildren(defaultOption ?? new Option(t('manufacturers.allMaterials'), ''))
+    function getManufacturerFilterValue(manufacturer: ManufacturerRow, key: string): unknown {
+      if (key === 'name') return manufacturer.name
+      if (key === 'url') return manufacturer.url
+      if (key === 'filaments') return manufacturer.filament_count
+      if (key === 'spools') return manufacturer.spool_count
+      if (key === 'materials') return manufacturer.materials || []
+      if (key === 'total_price') return manufacturer.total_price_available
+      if (key === 'archived') return manufacturer.archived_spool_count
+      if (key === 'spool_weight') return manufacturer.empty_spool_weight_g
+      return null
+    }
 
+    function updateHeaderFilterOptions(items: ManufacturerRow[]) {
+      const nameOptions: HeaderFilterOption[] = [...new Set(items.map((mf) => mf.name || '').filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b))
+        .map((name) => ({ value: name, label: name }))
       const materials = new Set<string>()
       items.forEach(mf => {
         if (mf.materials) {
           mf.materials.forEach((m: string) => materials.add(m))
         }
       })
-      const sortedMaterials = [...materials].sort()
-      sortedMaterials.forEach(mat => {
-        const opt = document.createElement('option')
-        opt.value = mat
-        opt.textContent = mat
-        materialSelect.appendChild(opt)
-      })
-
-      materialSelect.value = selectedValue && materials.has(selectedValue) ? selectedValue : ''
+      const materialOptions: HeaderFilterOption[] = [...materials].sort().map((mat) => ({ value: mat, label: mat }))
+      mfrHeaderFilters?.setOptions('name', nameOptions)
+      mfrHeaderFilters?.setOptions('materials', materialOptions)
     }
 
     async function loadManufacturers() {
       try {
-        const data = await cachedFetchAllPages(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
+        const data = await cachedFetchAllPages<ManufacturerRow>(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
         manufacturers = data.items
-        populateMaterialFilter(manufacturers)
+        updateHeaderFilterOptions(manufacturers)
         if (isInitialLoad) {
           isInitialLoad = false
         } else {
@@ -405,7 +279,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load manufacturers:', error)
         document.getElementById('manufacturers-table')!.innerHTML = `
           <tr>
-            <td colspan="9" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
+            <td colspan="10" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
           </tr>
         `
       }
@@ -513,17 +387,18 @@ import Layout from '../../layouts/Layout.astro'
       const tbody = document.getElementById('manufacturers-table')!
       const filtered = filterManufacturers(manufacturers)
       const sorted = sortManufacturers(filtered)
+      localStorage.setItem('filaman-filters-manufacturers', JSON.stringify({ columns: columnFilters }))
 
       // Validate current page
       const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
       if (currentPage > totalPages) currentPage = totalPages
 
       if (sorted.length === 0) {
-        const { search, material } = getFilterValues()
-        const hasFilters = search || material
+        const { search } = getFilterValues()
+        const hasFilters = search || Object.values(columnFilters).some(isColumnFilterActive)
         tbody.innerHTML = `
           <tr>
-            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">
+            <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">
               ${hasFilters ? t('manufacturers.noResults') : t('manufacturers.noManufacturers')}
             </td>
           </tr>
@@ -539,7 +414,8 @@ import Layout from '../../layouts/Layout.astro'
       // Note: escapeHtml() is used for all user-supplied data; URLs use escapeHtml for both href and text
       tbody.innerHTML = paged.map(mf => `
         <tr style="cursor: pointer;" class="manufacturer-row" data-mf='${escapeHtml(JSON.stringify(mf))}'>
-          <td class="col-name" style="font-weight: 500;">${mf.logo_url ? `<span style="display: inline-flex; align-items: center; gap: 8px;">${escapeHtml(mf.name)}<img src="${escapeHtml(mf.logo_url)}" alt="" style="height: 1.4em; width: auto; flex-shrink: 0; background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 4px; padding: 2px;" onerror="this.style.display='none'" /></span>` : escapeHtml(mf.name)}</td>
+          <td class="col-name" style="font-weight: 500;">${escapeHtml(mf.name)}</td>
+          <td class="col-logo" style="padding: 12px; text-align: center;">${mf.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(mf.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-url">${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" class="stop-prop" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-filaments"><a href="/filaments?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
           <td class="col-spools"><a href="/spools?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.spool_count || 0}</a></td>
@@ -559,7 +435,7 @@ import Layout from '../../layouts/Layout.astro'
       document.querySelectorAll('.manufacturer-row').forEach(row => {
         row.addEventListener('click', () => {
           const mf = JSON.parse((row as HTMLElement).dataset.mf!)
-          openInfoModal(mf)
+          manufacturerDialog.open(mf, { mode: 'view' })
         })
       })
 
@@ -571,7 +447,7 @@ import Layout from '../../layouts/Layout.astro'
         btn.addEventListener('click', (e) => {
           const target = e.currentTarget as HTMLButtonElement
           const mf = JSON.parse(target.dataset.mf!)
-          openModal(mf)
+          manufacturerDialog.open(mf)
         })
       })
 
@@ -580,7 +456,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
 
-          if (!(await (window as any).__fmConfirm(t('manufacturers.confirmDelete')))) return
+          if (!(await dialogWindow.__fmConfirm(t('manufacturers.confirmDelete')))) return
 
           try {
             // First attempt to delete normally
@@ -593,7 +469,7 @@ import Layout from '../../layouts/Layout.astro'
 
             // If conflict (409), prompt for cascade delete
             if (response.status === 409) {
-              const confirmCascade = await (window as any).__fmConfirm(
+              const confirmCascade = await dialogWindow.__fmConfirm(
                 t('manufacturers.confirmCascadeDelete'),
                 { 
                   title: t('common.confirmTitle'), 
@@ -615,7 +491,7 @@ import Layout from '../../layouts/Layout.astro'
 
             if (!response.ok) {
               const data = await response.json().catch(() => ({}))
-              await (window as any).__fmAlert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
+              await dialogWindow.__fmAlert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
               return
             }
 
@@ -623,317 +499,118 @@ import Layout from '../../layouts/Layout.astro'
             invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
             loadManufacturers()
           } catch {
-            await (window as any).__fmAlert(t('manufacturers.failedDelete'))
+            await dialogWindow.__fmAlert(t('manufacturers.failedDelete'))
           }
         })
       })
       renderPagination(sorted.length, currentPage)
     }
 
-    function openModal(mf: any = null) {
-      const container = document.getElementById('modal-container')!
-      const title = document.getElementById('modal-title')!
-      const idInput = document.getElementById('manufacturer-id') as HTMLInputElement
-      const nameInput = document.getElementById('manufacturer-name') as HTMLInputElement
-      const urlInput = document.getElementById('manufacturer-url') as HTMLInputElement
-      const emptyWeightInput = document.getElementById('manufacturer-empty-weight') as HTMLInputElement
-      const materialInput = document.getElementById('manufacturer-material') as HTMLSelectElement
-      const outerDiameterInput = document.getElementById('manufacturer-outer-diameter') as HTMLInputElement
-      const widthInput = document.getElementById('manufacturer-width') as HTMLInputElement
-      const error = document.getElementById('modal-error')!
+    document.getElementById('btn-new')?.addEventListener('click', () => manufacturerDialog.open())
 
-      // Mode toggle: show only for create (not edit)
-      const modeToggle = document.getElementById('mfr-mode-toggle')!
-      const dbLookup = document.getElementById('mfr-db-lookup')!
-      const lookupContainer = document.getElementById('mfr-lookup-container')!
-      const lookupToast = document.getElementById('mfr-lookup-toast')!
-      const editLookupBtn = document.getElementById('mfr-edit-lookup-btn')!
-      const editLookupToggle = document.getElementById('mfr-edit-lookup-toggle')!
 
-      // Destroy previous lookup instance
-      if (mfrLookup) { mfrLookup.destroy(); mfrLookup = null }
-
-      // Reset state
-      dbLookup.style.display = 'none'
-      lookupToast.style.display = 'none'
-      pendingLogoSlug = null
-      pendingHasLabelLogo = false
-
-      // Shared renderItem & onSelect for both create & edit
-      const renderMfrItem = (item: any) => {
-        const website = item.website ? `<div class="fdb-lookup-item-sub">${item.website}</div>` : ''
-        const count = item.filament_count ? `<span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 8px;">${item.filament_count} filaments</span>` : ''
-        return `<div class="fdb-lookup-item-name">${item.name}${count}</div>${website}`
-      }
-      const onMfrSelect = (item: any) => {
-        nameInput.value = item.name || ''
-        urlInput.value = item.website || ''
-        pendingLogoSlug = (item.has_web_logo || item.has_label_logo) ? (item.slug || null) : null
-        pendingHasLabelLogo = item.has_label_logo || false
-        lookupToast.className = 'fdb-toast fdb-toast-success'
-        lookupToast.textContent = t('filamentdbLookup.prefillSuccess')
-        lookupToast.style.display = ''
-      }
-
-      if (mf) {
-        // Edit mode: hide create toggle, show lookup directly if FilamentDB active
-        modeToggle.style.display = 'none'
-        editLookupBtn.style.display = 'none'
-
-        if (filamentDbActive) {
-          // Create lookup with initial fuzzy search using current manufacturer name
-          mfrLookup = createFilamentDbLookup({
-            container: lookupContainer,
-            endpoint: '/filamentdb/manufacturers',
-            placeholder: t('filamentdbLookup.searchManufacturer'),
-            renderItem: renderMfrItem,
-            onSelect: onMfrSelect,
-            initialQuery: mf.name,
-            fuzzyScore: (item: any) => fuzzyTokenScore(item.name || '', mf.name || ''),
-          })
-          dbLookup.style.display = ''
-        }
-      } else {
-        // Create mode: show toggle only if FilamentDB plugin is active
-        editLookupBtn.style.display = 'none'
-        modeToggle.style.display = filamentDbActive ? 'flex' : 'none'
-        const manualRadio = modeToggle.querySelector('input[value="manual"]') as HTMLInputElement
-        manualRadio.checked = true
-
-        // Create lookup instance (lazy for create mode)
-        const initLookup = () => {
-          if (mfrLookup) return
-          mfrLookup = createFilamentDbLookup({
-            container: lookupContainer,
-            endpoint: '/filamentdb/manufacturers',
-            placeholder: t('filamentdbLookup.searchManufacturer'),
-            renderItem: renderMfrItem,
-            onSelect: onMfrSelect,
-          })
-        }
-
-        // Mode toggle event
-        modeToggle.querySelectorAll('input[name="mfr-mode"]').forEach(radio => {
-          radio.addEventListener('change', () => {
-            const mode = (modeToggle.querySelector('input[name="mfr-mode"]:checked') as HTMLInputElement).value
-            if (mode === 'db') {
-              initLookup()
-              dbLookup.style.display = ''
-              mfrLookup?.reset()
-            } else {
-              dbLookup.style.display = 'none'
-              pendingLogoSlug = null
-              pendingHasLabelLogo = false
-            }
-            lookupToast.style.display = 'none'
-          })
-        })
-      }
-
-      title.textContent = mf ? t('manufacturers.editManufacturer') : t('manufacturers.addManufacturer')
-      idInput.value = mf ? String(mf.id) : ''
-      nameInput.value = mf ? mf.name : ''
-      urlInput.value = mf && mf.url ? mf.url : ''
-      
-      if (mf) {
-        emptyWeightInput.value = mf.empty_spool_weight_g != null ? String(mf.empty_spool_weight_g) : ''
-        materialInput.value = mf.spool_material || ''
-        outerDiameterInput.value = mf.spool_outer_diameter_mm != null ? String(mf.spool_outer_diameter_mm) : ''
-        widthInput.value = mf.spool_width_mm != null ? String(mf.spool_width_mm) : ''
-      } else {
-        // Default values for new manufacturer
-        emptyWeightInput.value = '250'
-        materialInput.value = ''
-        outerDiameterInput.value = '200'
-        widthInput.value = '65'
-      }
-      
-      error.classList.add('hidden')
-
-      container.style.display = 'flex'
-      nameInput.focus()
+    function setupHeaderFilters() {
+      const table = document.querySelector('.fm-table') as HTMLTableElement | null
+      if (!table) return
+      mfrHeaderFilters = initHeaderColumnFilters(table, [
+        {
+          key: 'name',
+          label: t('manufacturers.name'),
+          columnSelector: 'th.col-name',
+          type: 'multi',
+          options: [],
+          initialValue: columnFilters.name,
+          onApply: (value) => applyColumnFilter('name', value),
+        },
+        {
+          key: 'url',
+          label: t('manufacturers.url'),
+          columnSelector: 'th.col-url',
+          type: 'text',
+          initialValue: columnFilters.url,
+          onApply: (value) => applyColumnFilter('url', value),
+        },
+        {
+          key: 'filaments',
+          label: t('manufacturers.filaments'),
+          columnSelector: 'th.col-filaments',
+          type: 'number',
+          initialValue: columnFilters.filaments,
+          onApply: (value) => applyColumnFilter('filaments', value),
+        },
+        {
+          key: 'spools',
+          label: t('manufacturers.spools'),
+          columnSelector: 'th.col-spools',
+          type: 'number',
+          initialValue: columnFilters.spools,
+          onApply: (value) => applyColumnFilter('spools', value),
+        },
+        {
+          key: 'materials',
+          label: t('manufacturers.materials'),
+          columnSelector: 'th.col-materials',
+          type: 'multi',
+          options: [],
+          initialValue: columnFilters.materials,
+          onApply: (value) => applyColumnFilter('materials', value),
+        },
+        {
+          key: 'total_price',
+          label: t('manufacturers.colTotalPrice'),
+          columnSelector: 'th.col-total_price',
+          type: 'number',
+          initialValue: columnFilters.total_price,
+          onApply: (value) => applyColumnFilter('total_price', value),
+        },
+        {
+          key: 'archived',
+          label: t('manufacturers.colArchived'),
+          columnSelector: 'th.col-archived',
+          type: 'number',
+          initialValue: columnFilters.archived,
+          onApply: (value) => applyColumnFilter('archived', value),
+        },
+        {
+          key: 'spool_weight',
+          label: t('manufacturers.colSpoolWeight'),
+          columnSelector: 'th.col-spool_weight',
+          type: 'number',
+          initialValue: columnFilters.spool_weight,
+          onApply: (value) => applyColumnFilter('spool_weight', value),
+        },
+      ])
+      syncHeaderSortButtons(table, sortKey, sortDirection)
     }
 
-    function closeModal() {
-      document.getElementById('modal-container')!.style.display = 'none'
-      if (mfrLookup) { mfrLookup.destroy(); mfrLookup = null }
-    }
-
-    function openInfoModal(mf: any) {
-      const container = document.getElementById('info-modal-container')!
-      const content = document.getElementById('info-modal-content')!
-      const title = document.getElementById('info-modal-title')!
-
-      title.textContent = ''
-      if (mf.logo_url) {
-        const img = document.createElement('img')
-        img.src = mf.logo_url
-        img.alt = ''
-        img.style.cssText = 'width: 64px; height: 64px; object-fit: contain; vertical-align: middle; margin-right: 12px; background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 6px; padding: 4px;'
-        img.onerror = () => { img.style.display = 'none' }
-        title.appendChild(img)
-      }
-      title.appendChild(document.createTextNode(mf.name))
-
-      content.innerHTML = `
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.filaments')}</div>
-            <div style="font-size: 1.2rem; font-weight: 600;">${mf.filament_count || 0}</div>
-          </div>
-          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.availableSpools')}</div>
-            <div style="font-size: 1.2rem; font-weight: 600;">${mf.spool_count || 0}</div>
-          </div>
-          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.archivedSpools')}</div>
-            <div style="font-size: 1.2rem; font-weight: 600;">${mf.archived_spool_count || 0}</div>
-          </div>
-          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
-             <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.materials')}</div>
-             <div style="font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${(mf.materials || []).join(', ')}">
-               ${(mf.materials || []).join(', ') || '-'}
-             </div>
-          </div>
-        </div>
-
-        <div style="display: grid; gap: 12px; margin-top: 8px;">
-          <div class="fm-card" style="border-left: 4px solid var(--accent); padding: 12px;">
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.totalValueAvailable')}</div>
-            <div style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">${formatPrice(mf.total_price_available, getCurrency())}</div>
-          </div>
-          <div class="fm-card" style="border-left: 4px solid var(--text-muted); padding: 12px;">
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.totalSpentAllTime')}</div>
-            <div style="font-size: 1.4rem; font-weight: 700;">${formatPrice(mf.total_price_all, getCurrency())}</div>
-          </div>
-        </div>
-      `
-
-      container.style.display = 'flex'
-    }
-
-    function closeInfoModal() {
-      document.getElementById('info-modal-container')!.style.display = 'none'
-    }
-
-    document.getElementById('btn-new')?.addEventListener('click', () => openModal())
-    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
-    document.getElementById('info-modal-close')?.addEventListener('click', closeInfoModal)
-
-    // Close modals on backdrop click
-    document.getElementById('modal-container')?.addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) closeModal()
-    })
-    document.getElementById('info-modal-container')?.addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) closeInfoModal()
-    })
-
-    // Close modals on Escape key
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        closeModal()
-        closeInfoModal()
-      }
-    })
-
-    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault()
-
-      const id = (document.getElementById('manufacturer-id') as HTMLInputElement).value
-      const name = (document.getElementById('manufacturer-name') as HTMLInputElement).value
-      const url = (document.getElementById('manufacturer-url') as HTMLInputElement).value || null
-      const emptyWeight = (document.getElementById('manufacturer-empty-weight') as HTMLInputElement).value
-      const material = (document.getElementById('manufacturer-material') as HTMLSelectElement).value || null
-      const outerDiameter = (document.getElementById('manufacturer-outer-diameter') as HTMLInputElement).value
-      const width = (document.getElementById('manufacturer-width') as HTMLInputElement).value
-      const error = document.getElementById('modal-error') as HTMLDivElement
-      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
-
-      const data: Record<string, any> = { 
-        name,
-        url,
-        empty_spool_weight_g: emptyWeight ? parseFloat(emptyWeight) : null,
-        spool_material: material,
-        spool_outer_diameter_mm: outerDiameter ? parseFloat(outerDiameter) : null,
-        spool_width_mm: width ? parseFloat(width) : null
-      }
-
-      error.classList.add('hidden')
-      submitBtn.disabled = true
-      submitBtn.textContent = t('common.saving')
-
-      try {
-        const apiUrl = id ? `/api/v1/manufacturers/${id}` : '/api/v1/manufacturers'
-        const method = id ? 'PATCH' : 'POST'
-
-        const response = await fetch(apiUrl, {
-          method,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': getCsrfToken(),
-          },
-          credentials: 'include',
-          signal: getAbortSignal(),
-          body: JSON.stringify(data),
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.detail?.message || errorData.message || t('manufacturers.failedSave'))
-        }
-
-        // Download logo from FilamentDB if a manufacturer was selected from FilaManDB
-        if (pendingLogoSlug) {
-          try {
-            let manufacturerId = id
-            if (!manufacturerId) {
-              const created = await response.json()
-              manufacturerId = created.id
-            }
-            await fetch(`/api/v1/manufacturers/${manufacturerId}/download-logo`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': getCsrfToken(),
-              },
-              credentials: 'include',
-              body: JSON.stringify({ slug: pendingLogoSlug, has_label_logo: pendingHasLabelLogo }),
-            })
-          } catch {
-            // Logo download failure is non-critical — don't block the save
-            console.warn('Logo download failed (non-critical)')
-          }
-          pendingLogoSlug = null
-          pendingHasLabelLogo = false
-        }
-
-        // Invalidate cache after successful save
-        invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
-        closeModal()
-        loadManufacturers()
-      } catch (err: any) {
-        if (isAbortError(err)) return
-        error.textContent = err.message
-        error.classList.remove('hidden')
-      } finally {
-        submitBtn.disabled = false
-        submitBtn.textContent = t('common.save')
-      }
-    })
-
-    // Wire up filter events
-    document.getElementById('filter-search')?.addEventListener('input', () => {
-      if (searchTimeout) clearTimeout(searchTimeout)
-      searchTimeout = setTimeout(() => {
-        currentPage = 1
-        localStorage.setItem('filaman-page-manufacturers', '1')
-        renderManufacturers()
-      }, 250)
-    })
-    document.getElementById('filter-material')?.addEventListener('change', () => {
+    function applyColumnFilter(key: string, value: ColumnFilterValue) {
+      if (isColumnFilterActive(value)) columnFilters[key] = value
+      else delete columnFilters[key]
       currentPage = 1
       localStorage.setItem('filaman-page-manufacturers', '1')
       renderManufacturers()
+    }
+
+    bindTableFilterControls({
+      onApply: () => {
+        currentPage = 1
+        localStorage.setItem('filaman-page-manufacturers', '1')
+        renderManufacturers()
+      },
+      onClearColumns: () => {
+        columnFilters = {}
+        mfrHeaderFilters?.resetAll()
+        currentPage = 1
+        localStorage.setItem('filaman-page-manufacturers', '1')
+        renderManufacturers()
+      },
+      onClearAll: () => {
+        columnFilters = {}
+        mfrHeaderFilters?.resetAll()
+        currentPage = 1
+        localStorage.setItem('filaman-page-manufacturers', '1')
+        renderManufacturers()
+      },
     })
 
     // ── Column Visibility ──────────────────────────────────────────────
@@ -941,6 +618,7 @@ import Layout from '../../layouts/Layout.astro'
       {
         heading: t('common.columnsStandard'),
         columns: [
+          { key: 'logo', label: t('manufacturers.logo') },
           { key: 'url', label: t('manufacturers.url') },
           { key: 'filaments', label: t('manufacturers.filaments') },
           { key: 'spools', label: t('manufacturers.spools') },
@@ -958,7 +636,7 @@ import Layout from '../../layouts/Layout.astro'
     ]
     initColumnPicker({
       storageKey: 'filaman-columns-manufacturers',
-      defaultVisible: ['url', 'filaments', 'spools', 'materials'],
+      defaultVisible: ['logo', 'url', 'filaments', 'spools', 'materials'],
       groups: mfrColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
@@ -978,6 +656,8 @@ import Layout from '../../layouts/Layout.astro'
       storageKey: 'filaman-column-widths-manufacturers',
     })
     // ── End Column Visibility ──────────────────────────────────────────
+
+    setupHeaderFilters()
 
     setupSortableHeaders()
     if (sortKey && sortDirection) updateSortIndicators()

@@ -1,0 +1,893 @@
+import { bindCanvasTextEditor } from './canvas-text-editor'
+import { redrawSvgGesture } from '../label-svg/browser'
+import { bindElementClipboard } from './element-clipboard'
+import { bindFieldDrawer } from './field-drawer'
+import { bindShapeMenu } from './shape-menu'
+import { bindDesignerTooltips } from './designer-tooltips'
+import { bindImageCropEditor } from './image-crop-editor'
+import { bindLabelInteractions, type InteractFactory, type LabelInteractionController } from './interaction-adapter'
+import { formatDesignerNumber } from './number-format'
+import QRCode from 'qrcode'
+import { buildQrUrl } from '../qr-code'
+import {
+  getQrRecommendedSideMm,
+  QR_QUIET_ZONE_MODULES,
+} from './qr-readability'
+import type { FreeformEditorController } from './editor-state'
+import { elementLabelKeys, elementLabelFallbacks, localizedErrorMessage } from './editor-types'
+import { LABEL_FONT_FAMILIES, LABEL_SHAPES, type LabelDesignElement, type LabelElementType } from './types'
+import {
+  buildFilamentSwatchBackground,
+  getFilamentSwatchColors,
+  getReadableTextColorForColors,
+  type SpoolData,
+} from '../label-template'
+
+export interface BindFreeformEditorDomOptions {
+  root?: ParentNode
+  controller: FreeformEditorController
+  editable?: boolean
+  loadInteract?: () => Promise<InteractFactory>
+  translate?: (key: string, fallback: string) => string
+  getPreviewData?: () => SpoolData | null | undefined
+  getQrEntityIds?: () => Array<string | number>
+  entityPath?: 'spools' | 'filaments'
+}
+
+const elementProperties = [
+  'x', 'y', 'w', 'h', 'template', 'fontSizeMm',
+  'fontWeight', 'assetId', 'mode', 'strokeWidthMm', 'minFontSizeMm',
+] as const
+function isElementProperty(value: string): value is typeof elementProperties[number] {
+  return elementProperties.some(property => property === value)
+}
+
+export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
+  const root = options.root ?? document
+  const controller = options.controller
+  const cleanups: Array<() => void> = []
+  let interaction: LabelInteractionController | null = null
+  let editable = options.editable !== false
+  const translate = options.translate ?? ((_key: string, fallback: string) => fallback)
+
+  const listen = <T extends Event>(
+    target: EventTarget | null | undefined,
+    event: string,
+    listener: (event: T) => void,
+  ) => {
+    if (!target) return
+    const handler = listener as EventListener
+    target.addEventListener(event, handler)
+    cleanups.push(() => target.removeEventListener(event, handler))
+  }
+
+  const query = <T extends Element>(selector: string) => root.querySelector<T>(selector)
+  const queryAll = <T extends Element>(selector: string) => Array.from(root.querySelectorAll<T>(selector))
+  const canvasHost = query<HTMLElement>('#freeform-canvas-host')
+  const activeCanvas = () => canvasHost?.querySelector<HTMLElement>('.label-preview')
+  const canvasRow = query<HTMLElement>('.freeform-canvas-row')
+  const inspector = query<HTMLElement>('#freeform-element-inspector')
+  const layerPosition = query<HTMLElement>('#freeform-layer-position')
+  const workspace = query<HTMLElement>('#freeform-designer-workspace')
+  const outputWarning = query<HTMLElement>('#freeform-output-warning')
+  const outputReason = query<HTMLElement>('#freeform-output-reason')
+  const selectOverflow = query<HTMLButtonElement>('#freeform-select-overflow')
+  const overflowSelector = '[data-label-element-type="text"][data-label-output-error]'
+  if (workspace) cleanups.push(bindDesignerTooltips(workspace, options.getPreviewData))
+  const fieldDrawer = bindFieldDrawer(root)
+  let interactionRoot: HTMLElement | null = null
+  let interactionGeneration = 0
+  let imageSelectionElementId: string | null = null
+  let selectedImageAssetId = ''
+  let syncedInputs = new WeakMap<Element, string | number>()
+  let inputSelection: string | null = null
+  let inputReplacementVersion = controller.getReplacementVersion()
+  const syncInputValue = (input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, value: string | number) => {
+    // Background refreshes keep active drafts; a new selection or model value wins.
+    if (document.activeElement !== input || syncedInputs.get(input) !== value) {
+      input.value = typeof value === 'number' ? formatDesignerNumber(value) : value
+    }
+    syncedInputs.set(input, value)
+  }
+
+  const syncGeometryLayout = () => {
+    if (!canvasRow || !canvasHost) return
+    const rowWidth = canvasRow.clientWidth
+    const labelBounds = canvasHost.querySelector('.label-preview')?.getBoundingClientRect()
+    const labelWidth = labelBounds?.width || canvasHost.getBoundingClientRect().width
+    if (rowWidth <= 0 || labelWidth <= 0) return
+    canvasRow.style.setProperty('--freeform-label-width', `${labelWidth}px`)
+    canvasHost.style.width = `${labelWidth}px`
+    if (labelBounds && labelBounds.height > 0) canvasHost.style.height = `${labelBounds.height}px`
+    const available = (rowWidth - labelWidth) / 2 - 8
+    canvasRow.style.setProperty('--freeform-inspector-width', `${Math.max(170, Math.min(360, available))}px`)
+    const below = available < 104
+    canvasRow.classList.toggle('is-geometry-below', below)
+    canvasRow.classList.toggle('is-geometry-narrow', !below && available < 170)
+  }
+  const geometryObserver = typeof MutationObserver === 'undefined' || !canvasHost
+    ? null
+    : new MutationObserver(records => {
+      // Handles and SVG artwork move inside a fixed-size label.
+      const geometryChanged = records.some(({ target, type }) => target === canvasHost && type === 'childList'
+        || target instanceof Element && (target.classList.contains('label-wrapper')
+          || type === 'attributes' && target.classList.contains('label-preview')))
+      if (geometryChanged) syncGeometryLayout()
+    })
+  if (geometryObserver && canvasHost) geometryObserver.observe(canvasHost, { attributes: true, attributeFilter: ['style'], childList: true, subtree: true })
+  if (geometryObserver) cleanups.push(() => geometryObserver.disconnect())
+  if (canvasRow && typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(syncGeometryLayout)
+    observer.observe(canvasRow)
+    cleanups.push(() => observer.disconnect())
+  } else listen(window, 'resize', syncGeometryLayout)
+
+  const qrCountCache = new Map<string, number>()
+  const syncQrReadability = () => {
+    const recommendation = query<HTMLElement>('#freeform-qr-readability-200')
+    const recommendation300 = query<HTMLElement>('#freeform-qr-readability-300')
+    const warning = query<HTMLElement>('#freeform-qr-readability-warning')
+    const warning300 = query<HTMLElement>('#freeform-qr-readability-warning-300')
+    const note = query<HTMLElement>('#freeform-qr-readability-note')
+    const logo = query<HTMLElement>('#freeform-qr-readability-logo')
+    const boundary = query<HTMLElement>('#freeform-qr-readability-boundary')
+    if (boundary) boundary.hidden = true
+    const readability = query<HTMLElement>('.freeform-qr-readability')
+    const selected = controller.getSelectedElement()
+    if (!recommendation || !recommendation300 || !warning || !warning300) return
+    recommendation300.hidden = true
+    warning300.hidden = true
+    warning300.textContent = ''
+    if (readability) readability.hidden = selected?.type !== 'qr'
+    const markDimension = (property: 'w' | 'h', undersized: boolean) => {
+      const input = query<HTMLInputElement>(`#freeform-element-inspector [data-element-prop="${property}"]`)
+      const label = input?.closest('label')
+      const icon = label?.querySelector<HTMLElement>('[data-qr-size-warning]')
+      label?.classList.toggle('is-qr-undersized', undersized)
+      if (icon) icon.hidden = !undersized
+      if (undersized) {
+        input?.setAttribute('aria-describedby', 'freeform-qr-readability-recommendation freeform-qr-readability-warning')
+      } else {
+        input?.removeAttribute('aria-describedby')
+      }
+    }
+    if (note) {
+      note.textContent = translate(
+        'labelDesigner.qrReadabilityNote',
+        'An automatic {modules}-module white outline surrounds the QR. Print at actual size and test scanning; size guidance is not a guarantee.',
+      ).replace('{modules}', String(QR_QUIET_ZONE_MODULES))
+    }
+    if (logo) {
+      logo.hidden = selected?.type !== 'qr' || selected.mode === 'simple'
+      logo.textContent = translate(
+        'labelDesigner.qrReadabilityLogo',
+        'Center decoration can reduce readability even at the recommended size. Enlarge the code or disable the logo, especially for low-resolution printing.',
+      )
+    }
+    if (selected?.type !== 'qr') {
+      markDimension('w', false)
+      markDimension('h', false)
+      warning.hidden = true
+      warning.textContent = ''
+      return
+    }
+    const qrNodes = queryAll<HTMLElement>('[data-qr-module-count]')
+      .filter(node => node.dataset.labelElementId === selected.id)
+    let moduleCounts = qrNodes
+      .map(node => Number(node.dataset.qrModuleCount))
+      .filter(value => Number.isInteger(value) && value > 0)
+    if (options.getQrEntityIds) {
+      const urls = new Set(options.getQrEntityIds().map(id => buildQrUrl(
+        selected.linkMode, selected.urlTemplate, id, options.entityPath ?? 'spools',
+      )))
+      for (const url of qrCountCache.keys()) if (!urls.has(url)) qrCountCache.delete(url)
+      moduleCounts = []
+      try {
+        for (const url of urls) {
+          const count = qrCountCache.get(url) ?? QRCode.create(url, { errorCorrectionLevel: 'H' }).modules.size
+          qrCountCache.set(url, count)
+          moduleCounts.push(count)
+        }
+      } catch {
+        moduleCounts = []
+      }
+    }
+    const moduleCount = moduleCounts.length ? Math.max(...moduleCounts) : undefined
+    const recommended200 = getQrRecommendedSideMm(moduleCount, 200)
+    const recommended300 = getQrRecommendedSideMm(moduleCount, 300)
+    if (recommended200 === undefined || recommended300 === undefined) {
+      markDimension('w', false)
+      markDimension('h', false)
+      recommendation.textContent = translate(
+        'labelDesigner.qrReadabilityUnavailable',
+        '200 / 300 DPI size guidance appears after the code is rendered.',
+      )
+      warning.hidden = true
+      warning.textContent = ''
+      return
+    }
+    const side = Math.min(selected.w, selected.h)
+    for (const [dpi, size, heading, shortfall] of [
+      [200, recommended200, recommendation, warning],
+      [300, recommended300, recommendation300, warning300],
+    ] as const) {
+      heading.hidden = false
+      heading.textContent = translate('labelDesigner.qrReadabilityRecommendation', '{dpi} DPI: {size} mm recommended (QR only).')
+        .replace('{dpi}', String(dpi)).replace('{size}', formatDesignerNumber(size))
+      shortfall.hidden = side >= size
+      shortfall.textContent = shortfall.hidden ? '' : translate(
+        'labelDesigner.qrReadabilityShortfall', 'Below the size recommendation at {dpi} DPI by {gap} mm.',
+      ).replace('{dpi}', String(dpi)).replace('{gap}', formatDesignerNumber(size - side, 1))
+    }
+    markDimension('w', selected.w < recommended200)
+    markDimension('h', selected.h < recommended200)
+    if (note) {
+      // The least dense code has the largest modules, so needs the widest batch margin.
+      const border = Math.ceil(side / Math.min(...moduleCounts) * QR_QUIET_ZONE_MODULES * 10) / 10
+      note.textContent = translate(
+        'labelDesigner.qrReadabilityBorder',
+        'An automatic white outline extends {size} mm beyond the QR on every side. Print at actual size and test scanning; size guidance is not a guarantee.',
+      ).replace('{size}', formatDesignerNumber(border))
+    }
+    if (boundary) {
+      const border = side / Math.min(...moduleCounts) * QR_QUIET_ZONE_MODULES
+      const label = controller.getLabel()
+      const positions = qrNodes.length ? qrNodes.map(node => ({
+        x: Number.parseFloat(node.style.left || String(selected.x)),
+        y: Number.parseFloat(node.style.top || String(selected.y)),
+      })) : [selected]
+      const epsilon = 1e-6
+      boundary.hidden = positions.every(({ x, y }) => x - border >= -epsilon && y - border >= -epsilon
+        && x + selected.w + border <= label.widthMm + epsilon
+        && y + selected.h + border <= label.heightMm + epsilon)
+      boundary.textContent = translate('labelDesigner.qrReadabilityBoundary', 'The white outline runs off the label edge. Move or shrink the QR to fit it; the outline may use the label margin.')
+    }
+  }
+
+  const syncDom = () => {
+    const selectedId = controller.getSelectedId()
+    const replacementVersion = controller.getReplacementVersion()
+    if (inputSelection !== selectedId || inputReplacementVersion !== replacementVersion) {
+      syncedInputs = new WeakMap()
+      inputSelection = selectedId
+      inputReplacementVersion = replacementVersion
+    }
+    const selected = controller.getSelectedElement()
+    if (inspector) inspector.hidden = !selected
+    const widthInput = query<HTMLInputElement>('[data-element-prop="w"]')
+    const heightLabel = query<HTMLInputElement>('[data-element-prop="h"]')?.closest('label')
+    const widthLabel = query<HTMLElement>('[data-width-label]')
+    const isQr = selected?.type === 'qr'
+    if (heightLabel) heightLabel.hidden = isQr
+    if (widthLabel) widthLabel.textContent = isQr ? translate('labelDesigner.qrSize', 'Side length') : translate('labelPrint.labelWidthShort', 'Width')
+    widthInput?.setAttribute('aria-label', isQr ? translate('labelDesigner.qrSizeMm', 'Side length (mm)') : translate('labelDesigner.widthMm', 'Width (mm)'))
+    if (layerPosition) {
+      const text = selected?.type === 'qr'
+        ? translate('labelDesigner.qrTopLayer', 'QR code: pinned above other content')
+        : selected
+        ? translate('labelDesigner.layerPosition', 'Object at layer {current} of {total}')
+            .replace('{current}', String(selected.z + 1))
+            .replace('{total}', String(controller.getMaxZ() + 1))
+        : ''
+      if (layerPosition.textContent !== text) layerPosition.textContent = text
+    }
+    canvasRow?.classList.toggle('has-geometry-inspector', Boolean(selected) && editable)
+
+    queryAll<HTMLElement>('[data-element-section]').forEach(section => {
+      section.hidden = section.dataset.elementSection !== selected?.type
+    })
+    queryAll<HTMLButtonElement>('[data-element-align], [data-element-vertical-align]').forEach(button => {
+      const horizontal = button.dataset.elementAlign
+      const horizontalElement = selected?.type === 'text' || selected?.type === 'manufacturerLogo'
+      const active = horizontal
+        ? horizontalElement && (selected.align ?? 'center') === horizontal
+        : selected?.type === 'text' && (selected.verticalAlign ?? 'top') === button.dataset.elementVerticalAlign
+      button.setAttribute('aria-pressed', String(active))
+      button.disabled = !editable || (horizontal ? !horizontalElement : selected?.type !== 'text')
+    })
+    queryAll<HTMLButtonElement>('[data-element-toggle]').forEach(button => {
+      const property = button.dataset.elementToggle
+      const active = selected?.type === 'text' && (property === 'wrap' || property === 'fitToWidth')
+        ? Boolean(selected[property])
+        : false
+      button.setAttribute('aria-pressed', String(active))
+      button.disabled = !editable || selected?.type !== 'text'
+    })
+    queryAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('[data-element-prop]').forEach(input => {
+      const property = input.dataset.elementProp
+      if (!selected || !property || !isElementProperty(property)) return
+      const value: unknown = property === 'minFontSizeMm' && selected.type === 'text'
+        ? selected.minFontSizeMm ?? (selected.wrap ? Math.min(2, selected.fontSizeMm) : 0.265)
+        : Reflect.get(selected, property)
+      if (input instanceof HTMLInputElement && input.type === 'radio') {
+        input.checked = input.value === value
+      } else if (typeof value === 'number' || typeof value === 'string') {
+        syncInputValue(input, value)
+      }
+    })
+    const fitSettings = query<HTMLDetailsElement>('#freeform-fit-settings')
+    if (fitSettings && !(selected?.type === 'text' && selected.fitToWidth)) fitSettings.open = false
+    const minimumSize = query<HTMLInputElement>('[data-element-prop="minFontSizeMm"]')
+    if (minimumSize && selected?.type === 'text') minimumSize.max = String(selected.fontSizeMm)
+    const fitWarning = query<HTMLElement>('#freeform-text-fit-warning')
+    const canvas = activeCanvas()
+    if (fitWarning) {
+      const selectedError = selected?.type === 'text'
+        ? canvas?.querySelector<HTMLElement>(`${overflowSelector}[data-label-element-id="${CSS.escape(selected.id)}"]`)
+        : undefined
+      fitWarning.hidden = !selectedError
+      fitWarning.textContent = selectedError?.dataset.labelOutputError ?? ''
+    }
+    if (outputWarning && outputReason && selectOverflow) {
+      const failed = canvas?.querySelector<HTMLElement>(overflowSelector)
+      const reason = workspace?.classList.contains('is-active') ? failed?.dataset.labelOutputError ?? '' : ''
+      outputWarning.hidden = !reason
+      selectOverflow.hidden = !editable
+      if (outputReason.textContent !== reason) outputReason.textContent = reason
+    }
+    const json = query<HTMLTextAreaElement>('#freeform-element-json')
+    const selectedJson = controller.getSelectedJson()
+    // JSON is explicitly applied, so its draft survives focus leaving the textarea.
+    if (json && syncedInputs.get(json) !== selectedJson) syncInputValue(json, selectedJson)
+    const imageSelect = query<HTMLSelectElement>('#freeform-image-asset')
+    if (imageSelect) {
+      const current = selected?.type === 'image' ? selected.assetId : ''
+      const selectedElementId = selected?.type === 'image' ? selected.id : null
+      if (selectedElementId !== imageSelectionElementId) {
+        imageSelectionElementId = selectedElementId
+        selectedImageAssetId = current
+      }
+      if (selectedImageAssetId && !controller.getAssets().some(asset => asset.id === selectedImageAssetId)) {
+        selectedImageAssetId = current
+      }
+      const placeholder = document.createElement('option')
+      placeholder.value = ''
+      placeholder.textContent = translate('labelDesigner.chooseImage', 'Choose an image')
+      placeholder.disabled = true
+      imageSelect.replaceChildren(
+        placeholder,
+        ...controller.getAssets().map(asset => {
+          const option = document.createElement('option')
+          option.value = asset.id
+          option.textContent = asset.display_name
+          option.selected = asset.id === selectedImageAssetId
+          return option
+        }),
+      )
+      imageSelect.value = selectedImageAssetId
+    }
+    queryAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement>([
+      '[data-designer-add]',
+      '[data-shape-menu-trigger]',
+      '[data-designer-shape]',
+      '[data-designer-action]',
+      '[data-element-prop]',
+      '[data-element-toggle]',
+      '[data-field-token]',
+      '#freeform-json-apply',
+      '#freeform-image-upload',
+      '#freeform-image-upload-trigger',
+      '#freeform-image-delete',
+    ].join(',')).forEach(control => { control.disabled = !editable })
+    queryAll<HTMLButtonElement>('[data-requires-selection]').forEach(button => { button.disabled = !editable || !selected })
+    queryAll<HTMLButtonElement>('[data-designer-action="forward"], [data-designer-action="back"]').forEach(button => {
+      button.disabled = !editable || !selected || selected.type === 'qr'
+    })
+    const deletingSelectedImage = controller.isAssetDeleting(selectedImageAssetId)
+    const imageDelete = query<HTMLButtonElement>('#freeform-image-delete')
+    if (imageDelete) imageDelete.disabled = !editable || deletingSelectedImage || selected?.type !== 'image' || !selectedImageAssetId
+    const imageStatus = query<HTMLElement>('#freeform-image-status')
+    if (imageStatus) imageStatus.textContent = controller.getState().assetError ?? ''
+    queryAll<HTMLButtonElement>('[data-designer-action="undo"]').forEach(button => { button.disabled = !editable || !controller.canUndo() })
+    queryAll<HTMLButtonElement>('[data-designer-action="redo"]').forEach(button => { button.disabled = !editable || !controller.canRedo() })
+    canvasHost?.setAttribute('aria-readonly', String(!editable))
+    if (workspace) workspace.dataset.editorEditable = String(editable)
+    const data = options.getPreviewData?.()
+    const colors = getFilamentSwatchColors(data?.['filament.color_hexes'], data?.['filament.color_hex'])
+    const background = buildFilamentSwatchBackground(colors, data?.['filament.multi_color_style'])
+    queryAll<HTMLElement>('[data-text-modifier="colorInverse"]').forEach(button => {
+      button.classList.toggle('has-filament-color', Boolean(background))
+      button.style.background = background
+      button.style.borderColor = colors[0] ?? ''
+      button.style.color = colors.length ? getReadableTextColorForColors(colors) : ''
+    })
+    for (const chrome of queryAll<HTMLElement>('.freeform-toolbar, #freeform-element-inspector, #freeform-field-dock')) {
+      chrome.toggleAttribute('inert', !editable)
+      chrome.toggleAttribute('aria-hidden', !editable)
+    }
+    fieldDrawer.update(selected?.type === 'text' ? selected.id : undefined, editable)
+    syncGeometryLayout()
+    queryAll<HTMLElement>('[data-label-element-id]').forEach(element => {
+      element.classList.toggle('is-selected', editable && element.dataset.labelElementId === selectedId)
+      const type = element.dataset.labelElementType as LabelElementType | undefined
+      if (editable && type && type in elementLabelKeys) {
+        element.tabIndex = 0
+        element.setAttribute('role', 'button')
+        element.setAttribute('aria-label', translate(elementLabelKeys[type], elementLabelFallbacks[type]))
+      } else {
+        element.removeAttribute('tabindex')
+        element.removeAttribute('role')
+        element.removeAttribute('aria-label')
+      }
+    })
+    syncQrReadability()
+    textEditor?.sync()
+    cropEditor?.sync()
+    interaction?.syncSelection()
+  }
+
+  const refreshInteraction = async () => {
+    const canvas = activeCanvas() ?? null
+    if (!canvas || !editable) {
+      interactionGeneration += 1
+      interaction?.destroy()
+      interaction = null
+      interactionRoot = null
+      return
+    }
+    if (interaction && interactionRoot === canvas) {
+      interaction.refresh()
+      return
+    }
+    interaction?.destroy()
+    interaction = null
+    interactionRoot = null
+    const generation = ++interactionGeneration
+    const isCurrent = () => generation === interactionGeneration
+      && editable && !controller.isDestroyed()
+      && canvas === canvasHost?.querySelector('.label-preview')
+    const next = await bindLabelInteractions({
+      root: canvas,
+      getDesign: controller.getDesign,
+      getSelectedId: controller.getSelectedId,
+      getLabel: controller.getLabel,
+      getElement: controller.getElement,
+      getMaxZ: controller.getMaxZ,
+      editable: true,
+      onSelect: elementId => {
+        controller.select(elementId)
+        syncDom()
+      },
+      onGeometryChange: (elementId, geometry) => {
+        if (!controller.updateGesture(elementId, geometry)) return
+        redrawSvgGesture(canvas, controller.getDesign())
+        if (controller.getElement(elementId)?.type === 'qr') syncQrReadability()
+      },
+      onGestureStart: () => {
+        controller.beginGesture()
+        textEditor?.setGestureActive(true)
+      },
+      onGestureEnd: elementId => {
+        const changed = controller.endGesture()
+        textEditor?.setGestureActive(false)
+        syncDom()
+        if (changed && (canvas.hasAttribute('data-label-svg') || controller.getElement(elementId)?.type !== 'shape')) void refresh()
+      },
+      loadInteract: options.loadInteract,
+      shouldInitialize: isCurrent,
+    })
+    if (!isCurrent()) {
+      next.destroy()
+      return
+    }
+    interaction = next
+    interactionRoot = canvas
+  }
+
+  const refresh = async () => {
+    await controller.requestRender()
+    syncDom()
+    await refreshInteraction()
+    syncDom()
+  }
+
+  const focusElement = (elementId: string | null) => {
+    const target = elementId
+      ? activeCanvas()?.querySelector<HTMLElement>(`[data-label-element-id="${CSS.escape(elementId)}"]`)
+      : null
+    ;(target ?? canvasHost)?.focus()
+  }
+
+  listen(selectOverflow, 'click', () => {
+    const id = activeCanvas()?.querySelector<HTMLElement>(overflowSelector)?.dataset.labelElementId
+    if (!editable || !id) return
+    controller.select(id)
+    syncDom()
+    focusElement(id)
+  })
+
+  const mutate = (operation: () => unknown, focusAfter?: 'selected' | 'canvas') => {
+    if (!editable) return
+    operation()
+    syncDom()
+    void refresh().then(() => {
+      if (focusAfter === 'selected') focusElement(controller.getSelectedId())
+      if (focusAfter === 'canvas') focusElement(null)
+    })
+  }
+
+  const changeHistory = (direction: 'undo' | 'redo') => {
+    if (!editable) return
+    controller[direction]()
+    textEditor.restoreHistorySelection()
+  }
+
+  queryAll<HTMLButtonElement>('[data-designer-add]').forEach(button => {
+    listen<MouseEvent>(button, 'click', () => {
+      const type = button.dataset.designerAdd as LabelElementType | undefined
+      if (type) mutate(() => controller.addElement(type))
+    })
+  })
+
+  const shapeMenu = bindShapeMenu(root)
+  queryAll<HTMLButtonElement>('[data-designer-shape]').forEach(button => {
+    listen<MouseEvent>(button, 'click', () => {
+      const shape = LABEL_SHAPES.find(candidate => candidate === button.dataset.designerShape)
+      if (editable && shape) mutate(() => controller.addElement('shape', shape), 'selected')
+    })
+  })
+
+  queryAll<HTMLButtonElement>('[data-designer-action]').forEach(button => {
+    listen<MouseEvent>(button, 'click', () => {
+      switch (button.dataset.designerAction) {
+        case 'undo': changeHistory('undo'); break
+        case 'redo': changeHistory('redo'); break
+        case 'duplicate': mutate(() => controller.duplicateSelected(), 'selected'); break
+        case 'delete': mutate(() => controller.deleteSelected(), 'canvas'); break
+        case 'forward': mutate(() => controller.moveSelected('forward')); break
+        case 'back': mutate(() => controller.moveSelected('back')); break
+      }
+    })
+  })
+
+  queryAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('[data-element-prop]').forEach(input => {
+    listen<Event>(input, 'change', () => {
+      if (!editable || (input instanceof HTMLInputElement && input.type === 'radio' && !input.checked)) return
+      const property = input.dataset.elementProp
+      if (!property || !isElementProperty(property)) return
+      const numeric = ['x', 'y', 'w', 'h', 'fontSizeMm', 'minFontSizeMm', 'fontWeight', 'strokeWidthMm'].includes(property)
+      syncedInputs.delete(input)
+      mutate(() => controller.updateSelected({
+        [property]: numeric ? Number(input.value) : input.value,
+      } as Partial<LabelDesignElement>))
+    })
+  })
+
+  const fontMenu = query<HTMLDetailsElement>('.freeform-font-menu')
+  queryAll<HTMLButtonElement>('[data-font-choice]').forEach(button => {
+    listen(button, 'click', () => {
+      if (!editable) return
+      const family = LABEL_FONT_FAMILIES.find(name => name === button.dataset.fontChoice)
+      if (!family) return
+      if (!textEditor.formatFont(family)) mutate(() => controller.updateSelected({ fontFamily: family }))
+      if (fontMenu) fontMenu.open = false
+    })
+  })
+  listen<PointerEvent>(document, 'pointerdown', event => {
+    if (fontMenu?.open && event.target instanceof Node && !fontMenu.contains(event.target)) fontMenu.open = false
+  })
+  listen<KeyboardEvent>(fontMenu, 'keydown', event => {
+    if (event.key === 'Escape') { fontMenu!.open = false; fontMenu!.querySelector('summary')?.focus() }
+  })
+
+  queryAll<HTMLButtonElement>('[data-element-align], [data-element-vertical-align]').forEach(button => {
+    listen(button, 'click', () => {
+      const align = button.dataset.elementAlign
+      const verticalAlign = button.dataset.elementVerticalAlign
+      const selected = controller.getSelectedElement()
+      if ((selected?.type === 'text' || selected?.type === 'manufacturerLogo') && (align === 'left' || align === 'center' || align === 'right')) {
+        mutate(() => controller.updateSelected({ align }))
+      } else if (selected?.type === 'text' && (verticalAlign === 'top' || verticalAlign === 'middle' || verticalAlign === 'bottom')) {
+        mutate(() => controller.updateSelected({ verticalAlign }))
+      }
+    })
+  })
+
+  queryAll<HTMLButtonElement>('[data-element-toggle]').forEach(button => {
+    listen(button, 'click', () => {
+      const selected = controller.getSelectedElement()
+      const property = button.dataset.elementToggle
+      if (selected?.type !== 'text' || (property !== 'wrap' && property !== 'fitToWidth')) return
+      const active = !selected[property]
+      mutate(() => controller.updateSelected({
+        [property]: active,
+        ...(property === 'fitToWidth' && active
+          ? { minFontSizeMm: selected.minFontSizeMm ?? Math.min(2, selected.fontSizeMm) }
+          : {}),
+      }))
+    })
+  })
+
+  cleanups.push(bindElementClipboard({
+    canvas: canvasHost,
+    isEditable: () => editable,
+    getSelected: controller.getSelectedElement,
+    paste: source => {
+      const inserted = controller.pasteElement(source)
+      if (!inserted) return false
+      syncDom()
+      void refresh().then(() => focusElement(inserted.id))
+      return true
+    },
+  }))
+
+  const template = query<HTMLTextAreaElement>('#freeform-template')
+  const rememberTemplateSelection = () => {
+    if (!template) return
+    controller.setTemplateSelection(
+      template.selectionStart ?? template.value.length,
+      template.selectionEnd ?? template.value.length,
+    )
+  }
+  listen(template, 'select', rememberTemplateSelection)
+  listen(template, 'keyup', rememberTemplateSelection)
+  listen(template, 'click', rememberTemplateSelection)
+
+  const textEditor = bindCanvasTextEditor({
+    root,
+    getPreviewData: options.getPreviewData,
+    getSelected: controller.getSelectedElement,
+    getTemplateRange: controller.getTemplateSelection,
+    setTemplateRange: range => controller.setTemplateSelection(range.start, range.end),
+    resetTemplateRange: () => controller.setTemplateSelection(0, 0),
+    isEditable: () => editable,
+    select: id => {
+      if (controller.getSelectedId() !== id) controller.select(id)
+      syncDom()
+    },
+    updateTemplate: (value, range) => {
+      controller.updateSelected({ template: value }, range)
+    },
+    undo: () => changeHistory('undo'),
+    redo: () => changeHistory('redo'),
+    refresh,
+    refreshInteractions: refreshInteraction,
+  })
+
+  const cropEditor = bindImageCropEditor({
+    root,
+    controller,
+    isEditable: () => editable,
+    onChange: () => { syncDom(); void refresh() },
+    translate,
+  })
+
+  const unitPopup = query<HTMLElement>('#freeform-field-unit-popup')
+  const unitChoice = query<HTMLButtonElement>('[data-field-unit-choice]')
+  let unitInsertion: { id: string; template: string; start: number; end: number; token: string } | undefined
+  const hideUnitPopup = () => { if (unitPopup?.isConnected) unitPopup.hidePopover?.(); unitInsertion = undefined }
+  listen(query('[data-field-unit-dismiss]'), 'click', hideUnitPopup)
+  listen(unitChoice, 'click', () => {
+    const selected = controller.getSelectedElement(), insertion = unitInsertion
+    hideUnitPopup()
+    if (!editable || !insertion || selected?.type !== 'text' || selected.id !== insertion.id || selected.template !== insertion.template) return
+    const replacement = insertion.token.slice(0, -1) + '|unit}'
+    const template = selected.template.slice(0, insertion.start) + replacement + selected.template.slice(insertion.end)
+    if (template.length > 8000) return
+    const end = insertion.start + replacement.length
+    if (!textEditor.insertField(replacement, { start: insertion.start, end: insertion.end })) {
+      mutate(() => controller.updateSelected({ template }, { start: end, end }))
+    }
+  })
+  cleanups.push(hideUnitPopup)
+
+  listen<MouseEvent>(root as ParentNode & EventTarget, 'click', event => {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLButtonElement>('[data-field-token]')
+      : null
+    if (!target || !root.contains(target)) return
+    const token = target.dataset.fieldToken
+    if (!token) return
+    if (!editable) return
+    hideUnitPopup()
+    if (!textEditor.insertField(token)) mutate(() => controller.insertField(token))
+    const unit = target.dataset.fieldUnit, selected = controller.getSelectedElement()
+    if (!unit || !unitPopup || !unitChoice || selected?.type !== 'text') return
+    const end = controller.getTemplateSelection().end, start = end - token.length
+    if (selected.template.slice(start, end) !== token) return
+    unitInsertion = { id: selected.id, template: selected.template, start, end, token }
+    unitChoice.textContent = unit
+    unitChoice.setAttribute('aria-label', `${translate('labelDesigner.includeUnit', 'Include unit')} ${unit}`)
+    unitPopup.showPopover?.()
+    const anchor = target.getBoundingClientRect(), bounds = unitPopup.getBoundingClientRect()
+    const x = event.detail ? event.clientX : anchor.left + anchor.width / 2
+    const y = event.detail ? event.clientY : anchor.top
+    unitPopup.style.left = `${Math.max(8, Math.min(x - bounds.width / 2, window.innerWidth - bounds.width - 8))}px`
+    unitPopup.style.top = `${Math.max(8, y - bounds.height - 8)}px`
+    if (!event.detail) unitChoice.focus({ preventScroll: true })
+  })
+
+  const json = query<HTMLTextAreaElement>('#freeform-element-json')
+  const jsonError = query<HTMLElement>('#freeform-json-error')
+  listen<MouseEvent>(query('#freeform-json-apply'), 'click', () => {
+    if (!editable) return
+    const result = controller.applySelectedJson(json?.value ?? '')
+    if (jsonError) jsonError.textContent = result.error ?? ''
+    if (result.ok) json?.removeAttribute('aria-invalid')
+    else json?.setAttribute('aria-invalid', 'true')
+    if (result.ok) {
+      if (json) syncedInputs.delete(json)
+      syncDom()
+      void refresh()
+    }
+  })
+  listen<MouseEvent>(query('#freeform-json-revert'), 'click', () => {
+    if (json) json.value = controller.getSelectedJson()
+    if (jsonError) jsonError.textContent = ''
+    json?.removeAttribute('aria-invalid')
+  })
+  const upload = query<HTMLInputElement>('#freeform-image-upload')
+  const imageSelect = query<HTMLSelectElement>('#freeform-image-asset')
+  listen<Event>(imageSelect, 'change', () => {
+    const assetId = imageSelect?.value ?? ''
+    if (!editable || !assetId || controller.isAssetDeleting(assetId) || controller.getSelectedElement()?.type !== 'image') {
+      syncDom()
+      return
+    }
+    selectedImageAssetId = assetId
+    mutate(() => controller.updateSelected({ assetId }))
+  })
+  listen<MouseEvent>(query('#freeform-image-upload-trigger'), 'click', () => {
+    if (editable && controller.getSelectedElement()?.type === 'image') upload?.click()
+  })
+  listen<Event>(upload, 'change', () => {
+    if (!editable) return
+    const file = upload?.files?.[0]
+    if (!file) return
+    const target = controller.getSelectedElement()
+    if (target?.type !== 'image') return
+    const finishUpload = controller.beginImageUpload(target.id)
+    void controller.uploadAsset(file).then(asset => {
+      if (controller.isDestroyed() || !editable) return
+      if (finishUpload()) {
+        if (controller.getSelectedId() === target.id) selectedImageAssetId = asset.id
+        controller.updateElement(target.id, { assetId: asset.id })
+        void refresh()
+      }
+      const status = query<HTMLElement>('#freeform-image-status')
+      if (status) status.textContent = ''
+      syncDom()
+    }).catch(error => {
+      const status = query<HTMLElement>('#freeform-image-status')
+      if (status) status.textContent = localizedErrorMessage(
+        error,
+        translate,
+        'labelDesigner.imageUploadFailed',
+        'Upload failed',
+      )
+    }).finally(() => {
+      finishUpload()
+      if (upload) upload.value = ''
+    })
+  })
+  listen<MouseEvent>(query('#freeform-image-delete'), 'click', async () => {
+    if (!editable) return
+    if (controller.getSelectedElement()?.type !== 'image' || !selectedImageAssetId) return
+    const assetId = selectedImageAssetId
+    const assetName = controller.getAssets().find(asset => asset.id === assetId)?.display_name ?? assetId
+    const message = translate(
+      'labelDesigner.confirmDeleteImage',
+      'Delete image "{name}" from the library? This cannot be undone.',
+    ).replace('{name}', assetName)
+    const view = canvasHost?.ownerDocument.defaultView ?? window
+    const dialog = (view as typeof window & {
+      __fmConfirm?: (message: string, options?: { isDanger?: boolean }) => Promise<boolean>
+    }).__fmConfirm
+    const confirmed = dialog ? await dialog(message, { isDanger: true }) : view.confirm(message)
+    if (!confirmed) return
+    void controller.deleteAsset(assetId).then(() => {
+      if (selectedImageAssetId === assetId) selectedImageAssetId = ''
+      syncDom()
+    }).catch(error => {
+      syncDom()
+      const status = query<HTMLElement>('#freeform-image-status')
+      if (status) status.textContent = localizedErrorMessage(
+        error,
+        translate,
+        'labelDesigner.imageDeleteFailed',
+        'Delete failed',
+      )
+    })
+    syncDom()
+  })
+
+  listen<KeyboardEvent>(canvasHost, 'keydown', event => {
+    if (!editable) return
+    if (textEditor?.handleKeydown(event)) return
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return
+    const element = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('[data-label-element-id]')
+      : null
+    if ((event.key === 'Enter' || event.key === ' ') && element?.dataset.labelElementId) {
+      event.preventDefault()
+      controller.select(element.dataset.labelElementId)
+      syncDom()
+      return
+    }
+    const step = event.shiftKey ? 1 : 0.1
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
+      event.preventDefault()
+      mutate(() => controller.duplicateSelected(), 'selected')
+    } else if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault()
+      mutate(() => controller.deleteSelected(), 'canvas')
+    } else if (event.key.startsWith('Arrow')) {
+      event.preventDefault()
+      const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
+      const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
+      mutate(() => controller.nudgeSelected(dx, dy), 'selected')
+    }
+  })
+  listen<KeyboardEvent>(workspace ?? canvasHost, 'keydown', event => {
+    if (!editable || !(event.metaKey || event.ctrlKey)) return
+    const key = event.key.toLowerCase()
+    if (key !== 'z' && key !== 'y') return
+    const target = event.target instanceof Element ? event.target : null
+    if (target && !target.closest('[data-label-text-editing]')
+      && target.closest('input, textarea, select, [contenteditable]')) return
+    event.preventDefault()
+    changeHistory(key === 'y' || event.shiftKey ? 'redo' : 'undo')
+  })
+  listen<FocusEvent>(canvasHost, 'focusin', event => {
+    if (!editable) return
+    const element = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('[data-label-element-id]')
+      : null
+    if (!element?.dataset.labelElementId) return
+    if (controller.getSelectedId() !== element.dataset.labelElementId) controller.select(element.dataset.labelElementId)
+    syncDom()
+  })
+  listen<MouseEvent>(canvasHost, 'click', event => {
+    if (!editable) return
+    const frame = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('[data-label-selection-for]')
+      : null
+    if (frame?.dataset.labelSelectionFor) focusElement(frame.dataset.labelSelectionFor)
+  })
+
+  // Dismiss on the initial press, not release, so dragging outside the label
+  // still finishes normally. Inspector and formatting controls retain selection.
+  listen<PointerEvent>(canvasHost?.ownerDocument, 'pointerdown', event => {
+    if (!editable || !controller.getSelectedId() || !(event.target instanceof Element)) return
+    const target = event.target
+    if (canvasHost?.contains(target) && target.closest('[data-label-element-id], [data-label-selection-for]')) return
+    const editingControl = target.closest('.freeform-command-bar, .freeform-toolbar, #freeform-element-inspector, #freeform-field-dock, .freeform-text-toolbar, .freeform-shape-menu')
+    if (editingControl && root.contains(editingControl)) return
+    const selection = canvasHost?.ownerDocument.getSelection()
+    if (selection?.anchorNode && canvasHost?.contains(selection.anchorNode)) selection.removeAllRanges()
+    const focused = canvasHost?.ownerDocument.activeElement
+    if (focused instanceof HTMLElement && canvasHost?.contains(focused)) focused.blur()
+    controller.clearSelection()
+    syncDom()
+  })
+
+  syncDom()
+  const ready = refresh()
+  void controller.loadAssets().then(syncDom).catch(() => syncDom())
+
+  return {
+    ready,
+    refresh,
+    async refreshInteractions() {
+      await refreshInteraction()
+      syncDom()
+    },
+    sync: syncDom,
+    async setEditable(next: boolean) {
+      editable = next
+      syncDom()
+      await refreshInteraction()
+      syncDom()
+    },
+    destroy() {
+      interactionGeneration += 1
+      textEditor?.destroy()
+      fieldDrawer.destroy()
+      cropEditor?.destroy()
+      shapeMenu.destroy()
+      interaction?.destroy()
+      cleanups.splice(0).forEach(cleanup => cleanup())
+      controller.destroy()
+    },
+  }
+}

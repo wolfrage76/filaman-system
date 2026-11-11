@@ -1,18 +1,44 @@
+from math import isfinite
 from typing import Any
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import (
+    BaseModel,
+    Field,
+    FiniteFloat,
+    computed_field,
+    field_validator,
+    model_validator,
+)
+
+from app.api.v1.schemas_entity_extra_field import (
+    EntityExtraFieldDefinitions,
+    optional_entity_definitions_field,
+)
+from app.services.extra_field_validation import normalize_numeric_range
+from app.services.filamentdb_field_mapping import normalize_spool_image_file
+from app.utils.colors import normalize_hex_color_if_valid
 
 # mypy does not support decorators stacked above @property.
 # pydantic still supports this usage at runtime.
 # mypy: disable-error-code=prop-decorator
 
 
+class NumericRange(BaseModel):
+    min: int | float | None = None
+    max: int | float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize(cls, value: Any) -> dict[str, int | float | None]:
+        return normalize_numeric_range(value)
+
+
 class ManufacturerCreate(BaseModel):
     name: str
     url: str | None = None
-    empty_spool_weight_g: float | None = None
-    spool_outer_diameter_mm: float | None = None
-    spool_width_mm: float | None = None
+    empty_spool_weight_g: FiniteFloat | None = None
+    spool_outer_diameter_mm: FiniteFloat | None = None
+    spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
     custom_fields: dict[str, Any] | None = None
 
@@ -20,9 +46,9 @@ class ManufacturerCreate(BaseModel):
 class ManufacturerUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
-    empty_spool_weight_g: float | None = None
-    spool_outer_diameter_mm: float | None = None
-    spool_width_mm: float | None = None
+    empty_spool_weight_g: FiniteFloat | None = None
+    spool_outer_diameter_mm: FiniteFloat | None = None
+    spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
     custom_fields: dict[str, Any] | None = None
 
@@ -69,16 +95,33 @@ class ManufacturerResponse(ManufacturerSummaryResponse):
     materials: list[str] = []
 
 
+class ColorFilterStop(BaseModel):
+    id: int
+    hex: str
+
+
 class ColorCreate(BaseModel):
     name: str
     hex_code: str
     custom_fields: dict[str, Any] | None = None
+
+    @field_validator("hex_code")
+    @classmethod
+    def validate_hex_code(cls, value: str) -> str:
+        return normalize_hex_color_if_valid(value)
 
 
 class ColorUpdate(BaseModel):
     name: str | None = None
     hex_code: str | None = None
     custom_fields: dict[str, Any] | None = None
+
+    @field_validator("hex_code")
+    @classmethod
+    def validate_hex_code(cls, value: str | None) -> str | None:
+        if value is None:
+            raise ValueError("hex_code cannot be null")
+        return normalize_hex_color_if_valid(value)
 
 
 class ColorResponse(BaseModel):
@@ -90,6 +133,17 @@ class ColorResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CatalogColorResponse(BaseModel):
+    id: int
+    name: str
+    hex_code: str
+    usage_count: int
+
+
+class ColorCatalogSnapshot(BaseModel):
+    items: list[CatalogColorResponse]
 
 
 class FilamentColorEntry(BaseModel):
@@ -121,25 +175,66 @@ class FilamentColorsReplace(BaseModel):
     colors: list[FilamentColorEntry] = []
 
 
-class FilamentCreate(BaseModel):
+class FilamentStandardProperties(BaseModel):
+    filamentdb_spool_profile_id: int | None = Field(None, gt=0, strict=True)
+    filamentdb_spool_image_file: str | None = None
+
+    @field_validator('filamentdb_spool_image_file')
+    @classmethod
+    def validate_spool_image_file(cls, value: str | None) -> str | None:
+        return normalize_spool_image_file(value)
+
+    manufacturer_sku: str | None = None
+    datasheet_url: str | None = None
+    image_url: str | None = None
+    is_discontinued: bool = False
+    drying_temp_c: FiniteFloat | None = None
+    drying_time_hours: FiniteFloat | None = None
+    softening_temp_c: FiniteFloat | None = None
+    cooling_fan_range_percent: NumericRange | None = None
+    chamber_temp_c: FiniteFloat | None = None
+    max_volumetric_speed_mm3_s: FiniteFloat | None = None
+    flow_ratio: FiniteFloat | None = None
+    pressure_advance_k: FiniteFloat | None = None
+    ams_compatibility: list[str] | None = None
+    build_plate_compatibility: list[str] | None = None
+    price_currency: str | None = Field(None, pattern="^[A-Z]{3}$")
+
+    @field_validator("cooling_fan_range_percent")
+    @classmethod
+    def validate_fan_range(cls, value: NumericRange | None) -> NumericRange | None:
+        if value is not None and any(
+            endpoint is not None and not 0 <= endpoint <= 100
+            for endpoint in (value.min, value.max)
+        ):
+            raise ValueError("fan percentage must be between 0 and 100")
+        return value
+
+
+class FilamentCreate(FilamentStandardProperties):
     manufacturer_id: int
     designation: str
     material_type: str
     material_subgroup: str | None = None
-    diameter_mm: float
+    diameter_mm: FiniteFloat
     manufacturer_color_name: str | None = None
     finish_type: str | None = None
-    raw_material_weight_g: float | None = None
-    default_spool_weight_g: float | None = None
-    spool_outer_diameter_mm: float | None = None
-    spool_width_mm: float | None = None
+    raw_material_weight_g: FiniteFloat | None = None
+    default_spool_weight_g: FiniteFloat | None = None
+    spool_outer_diameter_mm: FiniteFloat | None = None
+    spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
-    price: float | None = None
+    price: FiniteFloat | None = None
     shop_url: str | None = None
-    density_g_cm3: float | None = None
+    density_g_cm3: FiniteFloat | None = None
+    extruder_temp_range_c: NumericRange | None = None
+    bed_temp_range_c: NumericRange | None = None
     color_mode: str = "single"
     multi_color_style: str | None = None
     custom_fields: dict[str, Any] | None = None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field()
+    )
     colors: list[FilamentColorEntry] | None = None
 
 
@@ -147,9 +242,25 @@ class ResolveFilamentFromTagRequest(BaseModel):
     brand: str | None = None
     type: str | None = None
     subtype: str | None = None
+    color_hex: str | None = None
     min_temp: int | float | str | None = None
     max_temp: int | float | str | None = None
     diameter: float | str | None = None
+
+    @field_validator("min_temp", "max_temp", "diameter")
+    @classmethod
+    def validate_finite_tag_number(cls, value: float | str | None) -> int | float | str | None:
+        if value is None:
+            return value
+        try:
+            number = float(value)
+        except ValueError:
+            return value
+        except OverflowError as exc:
+            raise ValueError("value must be a finite number") from exc
+        if not isfinite(number):
+            raise ValueError("value must be a finite number")
+        return value
 
 
 class ResolveFilamentFromTagResponse(BaseModel):
@@ -166,28 +277,36 @@ class ResolveFilamentFromTagResponse(BaseModel):
     system_extra_fields_created: list[str] = []
 
 
-class FilamentUpdate(BaseModel):
+class FilamentUpdate(FilamentStandardProperties):
     manufacturer_id: int | None = None
     designation: str | None = None
     material_type: str | None = None
     material_subgroup: str | None = None
-    diameter_mm: float | None = None
+    diameter_mm: FiniteFloat | None = None
     manufacturer_color_name: str | None = None
     finish_type: str | None = None
-    raw_material_weight_g: float | None = None
-    default_spool_weight_g: float | None = None
-    spool_outer_diameter_mm: float | None = None
-    spool_width_mm: float | None = None
+    raw_material_weight_g: FiniteFloat | None = None
+    default_spool_weight_g: FiniteFloat | None = None
+    spool_outer_diameter_mm: FiniteFloat | None = None
+    spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
-    price: float | None = None
+    price: FiniteFloat | None = None
     shop_url: str | None = None
-    density_g_cm3: float | None = None
+    density_g_cm3: FiniteFloat | None = None
+    extruder_temp_range_c: NumericRange | None = None
+    bed_temp_range_c: NumericRange | None = None
     color_mode: str | None = None
     multi_color_style: str | None = None
     custom_fields: dict[str, Any] | None = None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field()
+    )
 
 
-class FilamentResponse(BaseModel):
+class FilamentResponse(FilamentStandardProperties):
+    filamentdb_spool_profile_id: int | None = Field(None, gt=0, strict=True, exclude_if=lambda value: value is None)
+    label_field_aliases: dict[str, str | dict[str, Any]] | None = None
+    filamentdb_spool_image_file: str | None = Field(None, exclude_if=lambda value: value is None)
     id: int
     manufacturer_id: int
     designation: str
@@ -204,9 +323,14 @@ class FilamentResponse(BaseModel):
     price: float | None
     shop_url: str | None
     density_g_cm3: float | None
+    extruder_temp_range_c: NumericRange | None = None
+    bed_temp_range_c: NumericRange | None = None
     color_mode: str
     multi_color_style: str | None
     custom_fields: dict[str, Any] | None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field(omit_none=True)
+    )
 
     class Config:
         from_attributes = True
@@ -215,15 +339,16 @@ class FilamentResponse(BaseModel):
 class FilamentDetailResponse(FilamentResponse):
     manufacturer: ManufacturerSummaryResponse | None = None
     spool_count: int = 0
+    spool_status_ids: list[int] = []
     colors: list[FilamentColorResponse] = []
 
 
 class BulkFilamentUpdateRequest(BaseModel):
     filament_ids: list[int] = Field(..., min_length=1)
-    price: float | None = None
-    diameter_mm: float | None = None
-    default_spool_weight_g: float | None = None
-    density_g_cm3: float | None = None
+    price: FiniteFloat | None = None
+    diameter_mm: FiniteFloat | None = None
+    default_spool_weight_g: FiniteFloat | None = None
+    density_g_cm3: FiniteFloat | None = None
 
 
 class BulkFilamentDeleteRequest(BaseModel):

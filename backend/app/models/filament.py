@@ -1,10 +1,21 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.models.base import Base, TimestampMixin, TZDateTime
+from app.utils.colors import normalize_hex_color_if_valid
 
 
 class Manufacturer(Base, TimestampMixin):
@@ -34,7 +45,7 @@ class Color(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    hex_code: Mapped[str] = mapped_column(String(7), nullable=False)
+    hex_code: Mapped[str] = mapped_column(String(9), nullable=False)
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
     __table_args__ = (UniqueConstraint("name", "hex_code", name="uq_colors_name_hex"),)
@@ -42,6 +53,12 @@ class Color(Base, TimestampMixin):
     filament_colors: Mapped[list["FilamentColor"]] = relationship(
         back_populates="color"
     )
+
+    @validates("hex_code")
+    def _validate_hex_code(self, key: str, value: str | None) -> str:
+        if value is None:
+            raise ValueError("hex_code cannot be null")
+        return normalize_hex_color_if_valid(value)
 
 
 class Filament(Base, TimestampMixin):
@@ -73,15 +90,50 @@ class Filament(Base, TimestampMixin):
     spool_material: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    filamentdb_spool_image_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    filamentdb_spool_profile_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     shop_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     density_g_cm3: Mapped[float | None] = mapped_column(Float, nullable=True)
+    extruder_temp_range_c: Mapped[dict[str, int | float | None] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    bed_temp_range_c: Mapped[dict[str, int | float | None] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    manufacturer_sku: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    datasheet_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_discontinued: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    drying_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    drying_time_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    softening_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cooling_fan_range_percent: Mapped[dict[str, int | float | None] | None] = (
+        mapped_column(JSON, nullable=True)
+    )
+    chamber_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_volumetric_speed_mm3_s: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    flow_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pressure_advance_k: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ams_compatibility: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    build_plate_compatibility: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    price_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
 
     color_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default="single"
     )
+    label_field_aliases: Mapped[dict[str, str | dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     multi_color_style: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    custom_field_definitions: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True
+    )
 
     manufacturer: Mapped["Manufacturer"] = relationship(back_populates="filaments")
     filament_colors: Mapped[list["FilamentColor"]] = relationship(
@@ -95,6 +147,10 @@ class Filament(Base, TimestampMixin):
         back_populates="filament", cascade="all, delete-orphan"
     )
     printer_params: Mapped[list["FilamentPrinterParam"]] = relationship(
+        back_populates="filament", cascade="all, delete-orphan"
+    )
+
+    printer_initializations: Mapped[list["FilamentPrinterInitialization"]] = relationship(
         back_populates="filament", cascade="all, delete-orphan"
     )
 
@@ -214,7 +270,7 @@ class FilamentPrinterProfile(Base, TimestampMixin):
     printer: Mapped["Printer"] = relationship(back_populates="filament_profiles")
 
 
+from app.models.printer import Printer
+from app.models.printer_params import FilamentPrinterInitialization, FilamentPrinterParam
 from app.models.spool import Spool
 from app.models.user import User
-from app.models.printer import Printer
-from app.models.printer_params import FilamentPrinterParam

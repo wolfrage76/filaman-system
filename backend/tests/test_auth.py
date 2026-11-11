@@ -243,6 +243,45 @@ class TestAuthMe:
         assert response.status_code == 401
 
 
+class TestMePreferences:
+    @pytest.mark.asyncio
+    async def test_preferences_roundtrip(self, auth_client):
+        client, csrf = auth_client
+
+        initial = await client.get("/api/v1/me/preferences")
+        assert initial.status_code == 200
+        assert initial.json() == {"dashboard_hidden_widgets": []}
+
+        updated = await client.patch(
+            "/api/v1/me/preferences",
+            json={"dashboard_hidden_widgets": ["filamentStats", "filamentTypes", "filamentStats"]},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["dashboard_hidden_widgets"] == ["filamentStats", "filamentTypes"]
+
+        again = await client.get("/api/v1/me/preferences")
+        assert again.json()["dashboard_hidden_widgets"] == ["filamentStats", "filamentTypes"]
+
+    @pytest.mark.asyncio
+    async def test_preferences_reject_invalid_widget_id(self, auth_client):
+        client, csrf = auth_client
+
+        response = await client.patch(
+            "/api/v1/me/preferences",
+            json={"dashboard_hidden_widgets": ["bad id!"]},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_preferences_unauthenticated(self, client: AsyncClient):
+        response = await client.get("/api/v1/me/preferences")
+
+        assert response.status_code == 401
+
+
 class TestAuthLogout:
     @pytest.mark.asyncio
     async def test_logout_success(self, auth_client, db_session):
@@ -270,14 +309,14 @@ class TestAuthLogout:
 
 class TestCSRF:
     @pytest.mark.asyncio
-    async def test_csrf_required_for_mutating_requests(self, auth_client):
+    @pytest.mark.parametrize("headers", [{}, {"x-filaman-primary-hop": "1"}])
+    async def test_csrf_required_for_mutating_requests(self, auth_client, headers):
         client, _ = auth_client
 
         response = await client.post(
             "/api/v1/locations",
-            json={
-                "name": "Test Location",
-            },
+            json={"name": "Test Location"},
+            headers=headers,
         )
 
         assert response.status_code == 403
@@ -315,6 +354,56 @@ class TestCSRF:
         response = await client.get("/api/v1/locations")
 
         assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_csrf_cookie_renewed_when_session_rolls(
+        self, client: AsyncClient, admin_user, db_session
+    ):
+        """When a rolling session is extended, the CSRF cookie must be renewed
+        with the same value so its lifetime stays in lock-step with the
+        session cookie. Otherwise it expires 30 days after login while the
+        session keeps rolling, producing spurious csrf_failed errors."""
+        # Session that expires in < 15 days -> triggers rolling extension.
+        secret = generate_token_secret()
+        session = UserSession(
+            user_id=admin_user.id,
+            session_token_hash=hash_token(secret),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=10),
+        )
+        db_session.add(session)
+        await db_session.commit()
+        await db_session.refresh(session)
+
+        csrf_token = generate_token_secret()
+        client.cookies.set("session_id", f"sess.{session.id}.{secret}")
+        client.cookies.set("csrf_token", csrf_token)
+
+        response = await client.get("/api/v1/me")
+        assert response.status_code == 200
+
+        set_cookies = [
+            v for k, v in response.headers.multi_items() if k.lower() == "set-cookie"
+        ]
+        # Both cookies must be re-issued together on a rolling extension.
+        assert any(c.startswith("session_id=") for c in set_cookies)
+        csrf_set = [c for c in set_cookies if c.startswith("csrf_token=")]
+        assert csrf_set, "CSRF cookie was not renewed on rolling session extension"
+        # Same token value is reused so in-flight requests keep validating.
+        assert f"csrf_token={csrf_token}" in csrf_set[0]
+
+    @pytest.mark.asyncio
+    async def test_csrf_cookie_not_renewed_without_rolling(self, auth_client):
+        """A healthy session far from expiry must not re-issue the CSRF cookie
+        on every request (only session-rolling triggers renewal)."""
+        client, _ = auth_client
+
+        response = await client.get("/api/v1/me")
+        assert response.status_code == 200
+
+        set_cookies = [
+            v for k, v in response.headers.multi_items() if k.lower() == "set-cookie"
+        ]
+        assert not any(c.startswith("csrf_token=") for c in set_cookies)
 
 
 class TestAuthMiddleware:

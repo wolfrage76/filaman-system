@@ -1,10 +1,36 @@
 import pytest
 from sqlalchemy import select
 
+from app.core.event_bus import event_bus
 from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
 
 
-async def _create_manufacturer(db_session, name: str = "Test Manufacturer", **kwargs) -> Manufacturer:
+@pytest.mark.asyncio
+async def test_named_color_browsing_keeps_exact_names_union_and_pagination(auth_client, db_session):
+    client, _ = auth_client
+    maker = await _create_manufacturer(db_session)
+    colors = [await _create_color(db_session, name=name) for name in ('Red, Silk', 'Blue', 'red, silk')]
+    filaments = [await _create_filament(db_session, maker.id, designation=f'Item {i}') for i in range(4)]
+    for filament, assigned in zip(filaments, ([colors[0], colors[1]], [colors[0]], [colors[2]], [])):
+        for position, color in enumerate(assigned):
+            db_session.add(FilamentColor(filament_id=filament.id, color_id=color.id, position=position))
+    await db_session.commit()
+    params = [('color_name', 'Red, Silk'), ('color_name', 'Blue'), ('page_size', '1'), ('sort_by', 'id')]
+    first = (await client.get('/api/v1/filaments', params=params)).json()
+    second = (await client.get('/api/v1/filaments', params=params + [('page', '2')])).json()
+    assert first['total'] == second['total'] == 2
+    assert [first['items'][0]['id'], second['items'][0]['id']] == [f.id for f in filaments[:2]]
+    combined = (await client.get('/api/v1/filaments', params=[('color_name', 'Red, Silk'), ('color_unassigned', 'true')])).json()
+    assert combined['total'] == 3
+    assert {item['id'] for item in combined['items']} == {filaments[i].id for i in (0, 1, 3)}
+    filtered = (await client.get('/api/v1/filaments', params=[('color_name', 'Red, Silk'), ('search', 'Item 1')])).json()
+    assert filtered['total'] == 1 and filtered['items'][0]['id'] == filaments[1].id
+    assert (await client.get('/api/v1/filaments', params={'color_name': 'Missing'})).json()['total'] == 0
+
+
+async def _create_manufacturer(
+    db_session, name: str = "Test Manufacturer", **kwargs
+) -> Manufacturer:
     manufacturer = Manufacturer(name=name, **kwargs)
     db_session.add(manufacturer)
     await db_session.commit()
@@ -64,6 +90,43 @@ async def _create_spool(db_session, filament_id, status_id, **kwargs) -> Spool:
     await db_session.commit()
     await db_session.refresh(spool)
     return spool
+
+
+@pytest.mark.asyncio
+async def test_filament_catalog_spool_image_survives_weight_overrides_and_can_be_cleared(auth_client, db_session):
+    client, csrf = auth_client
+    manufacturer = await _create_manufacturer(db_session)
+    response = await client.post('/api/v1/filaments', headers={'X-CSRF-Token': csrf}, json={
+        'manufacturer_id': manufacturer.id, 'designation': 'Catalog PLA',
+        'material_type': 'PLA', 'diameter_mm': 1.75,
+        'default_spool_weight_g': 170, 'filamentdb_spool_image_file': '735.png', 'filamentdb_spool_profile_id': 735,
+    })
+    assert response.status_code == 201
+    filament_id = response.json()['id']
+    assert response.json()['filamentdb_spool_image_file'] == '735.png'
+    assert response.json()['filamentdb_spool_profile_id'] == 735
+    response = await client.patch(f'/api/v1/filaments/{filament_id}', headers={'X-CSRF-Token': csrf}, json={'default_spool_weight_g': 164})
+    assert response.json()['filamentdb_spool_image_file'] == '735.png'
+    assert response.json()['filamentdb_spool_profile_id'] == 735
+    status = await _get_status(db_session, 'new')
+    spool = await _create_spool(db_session, filament_id, status.id)
+    response = await client.patch(f'/api/v1/spools/{spool.id}', headers={'X-CSRF-Token': csrf}, json={'empty_spool_weight_g': 200})
+    assert response.status_code == 200
+    response = await client.get(f'/api/v1/spools/{spool.id}')
+    assert response.json()['filament']['filamentdb_spool_image_file'] == '735.png'
+    assert response.json()['filament']['default_spool_weight_g'] == 164
+    response = await client.patch(f'/api/v1/filaments/{filament_id}', headers={'X-CSRF-Token': csrf}, json={'filamentdb_spool_image_file': None, 'filamentdb_spool_profile_id': None})
+    assert response.status_code == 200
+    assert 'filamentdb_spool_image_file' not in response.json()
+    assert 'filamentdb_spool_profile_id' not in response.json()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('filename', ['../735.png', 'a/b.png', 'a\\b.png', 'https://example.com/image.png', 'x" onerror="alert(1).png'])
+async def test_filament_rejects_unsafe_catalog_spool_image_filenames(auth_client, filename):
+    client, csrf = auth_client
+    response = await client.patch('/api/v1/filaments/1', headers={'X-CSRF-Token': csrf}, json={'filamentdb_spool_image_file': filename})
+    assert response.status_code == 422
 
 
 class TestManufacturerCRUD:
@@ -183,11 +246,15 @@ class TestManufacturerCRUD:
         )
 
         assert response.status_code == 204
-        result = await db_session.execute(select(Manufacturer).where(Manufacturer.id == manufacturer.id))
+        result = await db_session.execute(
+            select(Manufacturer).where(Manufacturer.id == manufacturer.id)
+        )
         assert result.scalar_one_or_none() is None
 
     @pytest.mark.asyncio
-    async def test_delete_manufacturer_with_filaments_conflict(self, auth_client, db_session):
+    async def test_delete_manufacturer_with_filaments_conflict(
+        self, auth_client, db_session
+    ):
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session, name="ConflictMaker")
@@ -202,7 +269,9 @@ class TestManufacturerCRUD:
         assert response.json()["detail"]["code"] == "conflict"
 
     @pytest.mark.asyncio
-    async def test_delete_manufacturer_with_filaments_force(self, auth_client, db_session):
+    async def test_delete_manufacturer_with_filaments_force(
+        self, auth_client, db_session
+    ):
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session, name="ForceMaker")
@@ -216,15 +285,52 @@ class TestManufacturerCRUD:
         )
 
         assert response.status_code == 204
-        result = await db_session.execute(select(Manufacturer).where(Manufacturer.id == manufacturer.id))
+        result = await db_session.execute(
+            select(Manufacturer).where(Manufacturer.id == manufacturer.id)
+        )
         assert result.scalar_one_or_none() is None
-        fil_result = await db_session.execute(select(Filament).where(Filament.id == filament.id))
+        fil_result = await db_session.execute(
+            select(Filament).where(Filament.id == filament.id)
+        )
         assert fil_result.scalar_one_or_none() is None
-        spool_result = await db_session.execute(select(Spool).where(Spool.id == spool.id))
+        spool_result = await db_session.execute(
+            select(Spool).where(Spool.id == spool.id)
+        )
         assert spool_result.scalar_one_or_none() is None
 
 
 class TestColorCRUD:
+    @pytest.mark.asyncio
+    async def test_discovery_snapshot_revalidates_the_exact_catalog(self, auth_client, db_session):
+        client, _ = auth_client
+        color = await _create_color(db_session, name="Translucent", hex_code="#11223380")
+        path = "/api/v1/colors/discovery/snapshot"
+        initial = await client.get(path)
+        assert initial.status_code == 200
+        assert initial.headers["cache-control"] == "private, no-cache"
+        assert initial.json()["items"] == [
+            {"id": color.id, "name": "Translucent", "hex_code": "#11223380", "usage_count": 0}
+        ]
+
+        validator = {"If-None-Match": initial.headers["etag"]}
+        unchanged = await client.get(path, headers=validator)
+        assert unchanged.status_code == 304
+        assert unchanged.content == b""
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        db_session.add(FilamentColor(filament_id=filament.id, color_id=color.id, position=1))
+        await db_session.commit()
+
+        changed = await client.get(path, headers=validator)
+        assert changed.status_code == 200
+        assert changed.headers["etag"] != initial.headers["etag"]
+        assert changed.json()["items"][0]["usage_count"] == 1
+
+        client.cookies.clear()
+        denied = await client.get(path, headers={"If-None-Match": changed.headers["etag"]})
+        assert denied.status_code == 401
+
     @pytest.mark.asyncio
     async def test_list_colors_paginated(self, auth_client, db_session):
         client, _ = auth_client
@@ -233,7 +339,9 @@ class TestColorCRUD:
         await _create_color(db_session, name="Azure", hex_code="#0000FF")
         manufacturer = await _create_manufacturer(db_session)
         filament = await _create_filament(db_session, manufacturer.id)
-        db_session.add(FilamentColor(filament_id=filament.id, color_id=color_used.id, position=1))
+        db_session.add(
+            FilamentColor(filament_id=filament.id, color_id=color_used.id, position=1)
+        )
         await db_session.commit()
 
         response = await client.get("/api/v1/colors?page=1&page_size=10")
@@ -261,6 +369,49 @@ class TestColorCRUD:
         data = response.json()
         assert data["name"] == "Green"
         assert data["hex_code"] == "#00FF00"
+
+    @pytest.mark.asyncio
+    async def test_create_color_normalizes_alpha_hex(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/colors",
+            json={"name": "Clear", "hex_code": "00ffffff"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "Clear"
+        assert data["hex_code"] == "#00FFFFFF"
+
+    @pytest.mark.asyncio
+    async def test_create_color_preserves_legacy_non_hex_value(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/colors",
+            json={"name": "Legacy", "hex_code": "legacy"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["hex_code"] == "legacy"
+
+    @pytest.mark.asyncio
+    async def test_update_color_rejects_explicit_null(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        color = await _create_color(db_session, name="Strict", hex_code="#123456")
+
+        response = await client.patch(
+            f"/api/v1/colors/{color.id}",
+            json={"hex_code": None},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
+        await db_session.refresh(color)
+        assert color.hex_code == "#123456"
 
     @pytest.mark.asyncio
     async def test_get_color(self, auth_client, db_session):
@@ -314,7 +465,9 @@ class TestColorCRUD:
         color = await _create_color(db_session, name="Used", hex_code="#654321")
         manufacturer = await _create_manufacturer(db_session)
         filament = await _create_filament(db_session, manufacturer.id)
-        db_session.add(FilamentColor(filament_id=filament.id, color_id=color.id, position=1))
+        db_session.add(
+            FilamentColor(filament_id=filament.id, color_id=color.id, position=1)
+        )
         await db_session.commit()
 
         response = await client.delete(
@@ -338,13 +491,94 @@ class TestFilamentCRUD:
         assert {"PLA", "PETG", "ABS"}.issubset(set(types))
 
     @pytest.mark.asyncio
+    async def test_filter_options_only_include_used_values(
+        self, auth_client, db_session
+    ):
+        client, _ = auth_client
+        used_manufacturer = await _create_manufacturer(db_session, name="Used Maker")
+        await _create_manufacturer(db_session, name="Unused Maker")
+        used_color = await _create_color(
+            db_session, name="Ocean Blue", hex_code="#0066CC"
+        )
+        await _create_color(db_session, name="Unused Orange", hex_code="#FF6600")
+        filament = await _create_filament(
+            db_session,
+            used_manufacturer.id,
+            designation="Blue PETG",
+            material_type="PETG",
+            finish_type="Matte",
+            material_subgroup="PETG-CF",
+        )
+        no_spools = await _create_filament(
+            db_session,
+            used_manufacturer.id,
+            designation="Blue PETG",
+            material_type="PETG",
+            finish_type="Matte",
+            material_subgroup="PETG-CF",
+        )
+        new_status = await _get_status(db_session, "new")
+        await _create_spool(db_session, filament.id, new_status.id)
+        await _create_spool(db_session, filament.id, new_status.id)
+        db_session.add(
+            FilamentColor(filament_id=filament.id, color_id=used_color.id, position=1)
+        )
+        db_session.add(
+            FilamentColor(filament_id=no_spools.id, color_id=used_color.id, position=1)
+        )
+        await db_session.commit()
+
+        response = await client.get("/api/v1/filaments/filter-options")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["manufacturers"] == [
+            {"value": str(used_manufacturer.id), "label": "Used Maker"}
+        ]
+        assert data["types"] == ["PETG"]
+        assert data["designations"] == ["Blue PETG"]
+        assert data["diameters"] == [1.75]
+        assert data["finishes"] == ["Matte"]
+        assert data["subgroups"] == ["PETG-CF"]
+        assert data["spool_counts"] == [0, 2]
+        assert data["colors"] == [
+            {
+                "value": "Ocean Blue", "label": "Ocean Blue", "color_hexes": ["#0066CC"],
+                "color_stops": [{"id": used_color.id, "hex": "#0066CC"}],
+            }
+        ]
+        assert data["has_empty_colors"] is False
+
+        await _create_spool(db_session, filament.id, new_status.id)
+        await event_bus.publish({"event": "spools_changed"})
+        refreshed = await client.get("/api/v1/filaments/filter-options")
+        assert refreshed.json()["spool_counts"] == [0, 3]
+
+    @pytest.mark.asyncio
+    async def test_filter_options_report_filaments_without_colors(
+        self, auth_client, db_session
+    ):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session, name="No Color Maker")
+        await _create_filament(db_session, manufacturer.id, material_type="PLA")
+
+        response = await client.get("/api/v1/filaments/filter-options")
+
+        assert response.status_code == 200
+        assert response.json()["has_empty_colors"] is True
+
+    @pytest.mark.asyncio
     async def test_list_filaments_paginated(self, auth_client, db_session):
         client, _ = auth_client
 
         manufacturer = await _create_manufacturer(db_session, name="Maker F")
         color = await _create_color(db_session, name="White", hex_code="#FFFFFF")
-        filament = await _create_filament(db_session, manufacturer.id, designation="PLA White")
-        db_session.add(FilamentColor(filament_id=filament.id, color_id=color.id, position=1))
+        filament = await _create_filament(
+            db_session, manufacturer.id, designation="PLA White"
+        )
+        db_session.add(
+            FilamentColor(filament_id=filament.id, color_id=color.id, position=1)
+        )
         await db_session.commit()
 
         response = await client.get("/api/v1/filaments?page=1&page_size=10")
@@ -359,14 +593,76 @@ class TestFilamentCRUD:
         assert item["colors"][0]["color_id"] == color.id
 
     @pytest.mark.asyncio
+    async def test_list_filaments_filter_by_multiple_manufacturers(
+        self, auth_client, db_session
+    ):
+        client, _ = auth_client
+
+        manufacturer_a = await _create_manufacturer(db_session, name="FilterMaker A")
+        manufacturer_b = await _create_manufacturer(db_session, name="FilterMaker B")
+        manufacturer_c = await _create_manufacturer(db_session, name="FilterMaker C")
+        filament_a = await _create_filament(
+            db_session, manufacturer_a.id, designation="A PLA", material_type="PLA"
+        )
+        filament_b = await _create_filament(
+            db_session, manufacturer_b.id, designation="B PETG", material_type="PETG"
+        )
+        await _create_filament(
+            db_session, manufacturer_c.id, designation="C ABS", material_type="ABS"
+        )
+
+        response = await client.get(
+            f"/api/v1/filaments?manufacturer_id={manufacturer_a.id}&manufacturer_id={manufacturer_b.id}&page=1&page_size=50"
+        )
+
+        assert response.status_code == 200
+        ids = {item["id"] for item in response.json()["items"]}
+        assert filament_a.id in ids
+        assert filament_b.id in ids
+
+    @pytest.mark.asyncio
+    async def test_list_filaments_filter_by_multiple_types_csv(
+        self, auth_client, db_session
+    ):
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="TypeFilter Maker")
+        pla_filament = await _create_filament(
+            db_session, manufacturer.id, designation="Type PLA", material_type="PLA"
+        )
+        petg_filament = await _create_filament(
+            db_session, manufacturer.id, designation="Type PETG", material_type="PETG"
+        )
+        await _create_filament(
+            db_session, manufacturer.id, designation="Type ABS", material_type="ABS"
+        )
+
+        response = await client.get(
+            "/api/v1/filaments?type=PLA,PETG&page=1&page_size=50"
+        )
+
+        assert response.status_code == 200
+        ids = {item["id"] for item in response.json()["items"]}
+        assert pla_filament.id in ids
+        assert petg_filament.id in ids
+
+    @pytest.mark.asyncio
     async def test_list_filaments_sort_by_spool_count(self, auth_client, db_session):
         client, _ = auth_client
 
         manufacturer = await _create_manufacturer(db_session, name="SortMaker")
-        zero_spools = await _create_filament(db_session, manufacturer.id, designation="Zero Spools")
-        one_spool_a = await _create_filament(db_session, manufacturer.id, designation="One Spool A")
-        one_spool_b = await _create_filament(db_session, manufacturer.id, designation="One Spool B")
-        two_spools = await _create_filament(db_session, manufacturer.id, designation="Two Spools")
+        zero_spools = await _create_filament(
+            db_session, manufacturer.id, designation="Zero Spools"
+        )
+        one_spool_a = await _create_filament(
+            db_session, manufacturer.id, designation="One Spool A"
+        )
+        one_spool_b = await _create_filament(
+            db_session, manufacturer.id, designation="One Spool B"
+        )
+        two_spools = await _create_filament(
+            db_session, manufacturer.id, designation="Two Spools"
+        )
 
         new_status = await _get_status(db_session, "new")
         archived_status = await _get_status(db_session, "archived")
@@ -385,7 +681,8 @@ class TestFilamentCRUD:
         asc_items = [
             item
             for item in asc_response.json()["items"]
-            if item["id"] in {zero_spools.id, one_spool_a.id, one_spool_b.id, two_spools.id}
+            if item["id"]
+            in {zero_spools.id, one_spool_a.id, one_spool_b.id, two_spools.id}
         ]
         assert [(item["id"], item["spool_count"]) for item in asc_items] == [
             (zero_spools.id, 0),
@@ -402,7 +699,8 @@ class TestFilamentCRUD:
         desc_items = [
             item
             for item in desc_response.json()["items"]
-            if item["id"] in {zero_spools.id, one_spool_a.id, one_spool_b.id, two_spools.id}
+            if item["id"]
+            in {zero_spools.id, one_spool_a.id, one_spool_b.id, two_spools.id}
         ]
         assert [(item["id"], item["spool_count"]) for item in desc_items] == [
             (two_spools.id, 2),
@@ -433,9 +731,204 @@ class TestFilamentCRUD:
         assert data["designation"] == "PLA Basic"
         assert data["material_type"] == "PLA"
         assert data["diameter_mm"] == 1.75
+        assert "custom_field_definitions" not in data
 
     @pytest.mark.asyncio
-    async def test_create_filament_cascades_from_manufacturer(self, auth_client, db_session):
+    async def test_create_filament_normalizes_temperature_ranges(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+
+        response = await client.post(
+            "/api/v1/filaments",
+            json={
+                "manufacturer_id": manufacturer.id,
+                "designation": "PLA Temperature",
+                "material_type": "PLA",
+                "diameter_mm": 1.75,
+                "extruder_temp_range_c": 210,
+                "bed_temp_range_c": {"min": 55, "max": 65},
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201, response.text
+        assert response.json()["extruder_temp_range_c"] == {"min": 210, "max": 210}
+        assert response.json()["bed_temp_range_c"] == {"min": 55, "max": 65}
+
+    @pytest.mark.asyncio
+    async def test_create_filament_round_trips_standard_catalog_and_recommendations(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+
+        response = await client.post(
+            "/api/v1/filaments",
+            json={
+                "manufacturer_id": manufacturer.id,
+                "designation": "PLA Complete",
+                "material_type": "PLA",
+                "diameter_mm": 1.75,
+                "manufacturer_sku": "PLA-RED-1000",
+                "datasheet_url": "https://example.com/pla.pdf",
+                "image_url": "https://example.com/pla.png",
+                "is_discontinued": True,
+                "drying_temp_c": 55,
+                "drying_time_hours": 6,
+                "softening_temp_c": 65,
+                "cooling_fan_range_percent": {"min": 40, "max": 80},
+                "chamber_temp_c": 35,
+                "max_volumetric_speed_mm3_s": 18,
+                "flow_ratio": 0.97,
+                "pressure_advance_k": 0.025,
+                "ams_compatibility": ["ams", "ams-2-pro"],
+                "build_plate_compatibility": ["pei", "textured-pei"],
+                "price_currency": "EUR",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201, response.text
+        data = response.json()
+        assert data["manufacturer_sku"] == "PLA-RED-1000"
+        assert data["datasheet_url"] == "https://example.com/pla.pdf"
+        assert data["image_url"] == "https://example.com/pla.png"
+        assert data["is_discontinued"] is True
+        assert data["drying_temp_c"] == 55
+        assert data["drying_time_hours"] == 6
+        assert data["softening_temp_c"] == 65
+        assert data["cooling_fan_range_percent"] == {"min": 40, "max": 80}
+        assert data["chamber_temp_c"] == 35
+        assert data["max_volumetric_speed_mm3_s"] == 18
+        assert data["flow_ratio"] == 0.97
+        assert data["pressure_advance_k"] == 0.025
+        assert data["ams_compatibility"] == ["ams", "ams-2-pro"]
+        assert data["build_plate_compatibility"] == ["pei", "textured-pei"]
+        assert data["price_currency"] == "EUR"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "temperatures",
+        [{"min": 230, "max": 190}, 10**400, {"min": 190, "max": 10**400}],
+        ids=["reversed", "oversized-scalar", "oversized-endpoint"],
+    )
+    async def test_rejects_invalid_temperature_range(
+        self, auth_client, db_session, temperatures
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+
+        response = await client.post(
+            "/api/v1/filaments",
+            json={
+                "manufacturer_id": manufacturer.id,
+                "designation": "PLA Invalid Temperature",
+                "material_type": "PLA",
+                "diameter_mm": 1.75,
+                "extruder_temp_range_c": temperatures,
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_and_clear_filament_specific_field_definition(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        definition = {
+            "drying_temperature": {
+                "label": "Drying temperature",
+                "field_type": "number",
+                "config": {"unit": "°C", "decimal_places": 0},
+            }
+        }
+
+        response = await client.post(
+            "/api/v1/filaments",
+            json={
+                "manufacturer_id": manufacturer.id,
+                "designation": "Typed PLA",
+                "material_type": "PLA",
+                "diameter_mm": 1.75,
+                "custom_fields": {"drying_temperature": 55},
+                "custom_field_definitions": definition,
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["custom_fields"]["drying_temperature"] == 55
+        assert data["custom_field_definitions"] == definition
+
+        legacy_patch_response = await client.patch(
+            f"/api/v1/filaments/{data['id']}",
+            json={"custom_fields": {"drying_temperature": 60}},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert legacy_patch_response.status_code == 200
+        assert legacy_patch_response.json()["custom_fields"]["drying_temperature"] == 60
+        assert legacy_patch_response.json()["custom_field_definitions"] == definition
+
+        clear_response = await client.patch(
+            f"/api/v1/filaments/{data['id']}",
+            json={"custom_field_definitions": None},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert clear_response.status_code == 200
+        assert "custom_field_definitions" not in clear_response.json()
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_filament_specific_field_config(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+
+        response = await client.post(
+            "/api/v1/filaments",
+            json={
+                "manufacturer_id": manufacturer.id,
+                "designation": "Invalid Typed PLA",
+                "material_type": "PLA",
+                "diameter_mm": 1.75,
+                "custom_field_definitions": {
+                    "temperature": {
+                        "field_type": "number",
+                        "config": {"decimal_places": 11},
+                    }
+                },
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
+
+        reserved_key_response = await client.post(
+            "/api/v1/filaments",
+            json={
+                "manufacturer_id": manufacturer.id,
+                "designation": "Unsafe Typed PLA",
+                "material_type": "PLA",
+                "diameter_mm": 1.75,
+                "custom_field_definitions": {
+                    "__proto__.polluted": {"field_type": "text"}
+                },
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert reserved_key_response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_filament_cascades_from_manufacturer(
+        self, auth_client, db_session
+    ):
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(
@@ -466,7 +959,9 @@ class TestFilamentCRUD:
         assert data["spool_material"] == "Plastic"
 
     @pytest.mark.asyncio
-    async def test_resolve_from_tag_creates_manufacturer_filament_and_temps(self, auth_client, db_session):
+    async def test_resolve_from_tag_creates_manufacturer_filament_and_temps(
+        self, auth_client, db_session
+    ):
         client, csrf_token = auth_client
 
         response = await client.post(
@@ -500,12 +995,14 @@ class TestFilamentCRUD:
         )
         filament = filament_result.scalar_one_or_none()
         assert filament is not None
-        assert filament.custom_fields is not None
-        assert filament.custom_fields["min_temp"] == 180
-        assert filament.custom_fields["max_temp"] == 230
+        assert filament.extruder_temp_range_c == {"min": 180, "max": 230}
+        assert not filament.custom_fields
+        assert payload["system_extra_fields_created"] == []
 
     @pytest.mark.asyncio
-    async def test_resolve_from_tag_reuses_existing_records_and_updates_temps(self, auth_client, db_session):
+    async def test_resolve_from_tag_reuses_existing_records_and_updates_temps(
+        self, auth_client, db_session
+    ):
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session, name="Prusament")
@@ -540,9 +1037,183 @@ class TestFilamentCRUD:
         assert payload["max_temp"] == 255
 
         await db_session.refresh(filament)
-        assert filament.custom_fields is not None
-        assert filament.custom_fields["min_temp"] == 225
-        assert filament.custom_fields["max_temp"] == 255
+        assert filament.extruder_temp_range_c == {"min": 225, "max": 255}
+        assert not filament.custom_fields
+        assert payload["system_extra_fields_created"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("legacy", ["unknown", "Infinity", "NaN", float("inf"), float("-inf")])
+    async def test_resolve_from_tag_partial_temp_preserves_other_endpoint_and_invalid_legacy(
+        self, auth_client, db_session, legacy
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session, name="Partial Tag")
+        filament = await _create_filament(
+            db_session,
+            manufacturer.id,
+            designation="Partial Tag PLA",
+            material_type="PLA",
+            custom_fields={"max_temp": legacy},
+        )
+        filament.extruder_temp_range_c = {"min": 190, "max": 230}
+        await db_session.commit()
+
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={"brand": "Partial Tag", "type": "PLA", "min_temp": "200"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        assert (response.json()["min_temp"], response.json()["max_temp"]) == (200, 230)
+        await db_session.refresh(filament)
+        assert filament.extruder_temp_range_c == {"min": 200, "max": 230}
+        assert filament.custom_fields == {"max_temp": legacy}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("promoted", [False, True], ids=["legacy", "promoted"])
+    @pytest.mark.parametrize(
+        "steps",
+        [
+            [
+                ({"min_temp": 240}, (240, 230), True),
+                ({"min_temp": 240}, (240, 230), False),
+                ({}, (240, 230), False),
+                ({"min_temp": 245}, (245, 230), True),
+                ({"max_temp": 0}, (245, 0), True),
+                ({"min_temp": None}, (245, 0), False),
+                ({"min_temp": 0}, (0, 0), True),
+                ({}, (0, 0), False),
+            ],
+            [
+                ({"max_temp": 180}, (190, 180), True),
+                ({"max_temp": 180}, (190, 180), False),
+                ({}, (190, 180), False),
+                ({"max_temp": 175}, (190, 175), True),
+                ({"min_temp": 200}, (200, 175), True),
+                ({"max_temp": None}, (200, 175), False),
+                ({"max_temp": 200}, (200, 200), True),
+                ({}, (200, 200), False),
+            ],
+        ],
+        ids=["minimum", "maximum"],
+    )
+    async def test_resolve_from_tag_preserves_legacy_partial_temperature_updates(
+        self, auth_client, db_session, promoted, steps
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session, name="Partial Tag")
+        initial_range = {"min": 190, "max": 230} if promoted else None
+        filament = await _create_filament(
+            db_session,
+            manufacturer.id,
+            extruder_temp_range_c=initial_range,
+            custom_fields={"note": "keep"} if promoted else {
+                "note": "keep", "min_temp": 190, "max_temp": 230,
+            },
+            label_field_aliases={
+                "min_temp": "extruder_temp_range_c.min",
+                "max_temp": "extruder_temp_range_c.max",
+            } if promoted else None,
+        )
+
+        for patch, expected, updated in steps:
+            response = await client.post(
+                "/api/v1/filaments/resolve-from-tag",
+                json={"brand": "Partial Tag", "type": "PLA", **patch},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+            assert response.status_code == 200
+            payload = response.json()
+            assert (payload["min_temp"], payload["max_temp"]) == expected
+            assert payload["filament_id"] == filament.id
+            assert payload["filament_created"] is False
+            assert payload["manufacturer_created"] is False
+            assert payload["filament_updated"] is updated
+            await db_session.refresh(filament)
+            if expected[0] > expected[1]:
+                assert filament.extruder_temp_range_c == initial_range
+                assert filament.custom_fields == {
+                    "note": "keep", "min_temp": expected[0], "max_temp": expected[1],
+                }
+            else:
+                assert filament.extruder_temp_range_c == {
+                    "min": expected[0], "max": expected[1],
+                }
+                assert filament.custom_fields == {"note": "keep"}
+            # The native detail endpoint still serializes a valid canonical range.
+            assert (await client.get(f"/api/v1/filaments/{filament.id}")).status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_resolve_from_tag_rejects_reversed_temperature_pair(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(
+            db_session, manufacturer.id,
+            extruder_temp_range_c={"min": 190, "max": 230},
+        )
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={"brand": manufacturer.name, "type": "PLA", "min_temp": 240, "max_temp": 230},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 400
+        await db_session.refresh(filament)
+        assert filament.extruder_temp_range_c == {"min": 190, "max": 230}
+        assert not filament.custom_fields
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("temperatures", [{"min": 210.5, "max": 231.5}, {"min": None, "max": 231.5}])
+    @pytest.mark.parametrize("patch", [{}, {"min_temp": 211}])
+    async def test_resolve_from_tag_projects_fractional_temperatures(
+        self, auth_client, db_session, temperatures, patch
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(
+            db_session, manufacturer.id, extruder_temp_range_c=temperatures
+        )
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={"brand": manufacturer.name, "type": "PLA", **patch},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        expected = {**temperatures, **({"min": patch["min_temp"]} if patch else {})}
+        assert response.json()["min_temp"] == (
+            round(expected["min"]) if expected["min"] is not None else None
+        )
+        assert response.json()["max_temp"] == round(expected["max"])
+        await db_session.refresh(filament)
+        assert filament.extruder_temp_range_c == expected
+
+    @pytest.mark.asyncio
+    async def test_promoted_label_aliases_survive_native_edits_and_backup(self, auth_client, db_session):
+        from app.api.v1.system import _deserialize_row, _serialize_row
+
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        aliases = {
+            "my_dryer": {"target": "drying_temp_c", "definition": {
+                "field_type": "number", "config": {"unit": "°C", "decimal_places": 1},
+            }},
+            "old_dryer": "drying_temp_c",
+        }
+        filament = await _create_filament(
+            db_session, manufacturer.id, drying_temp_c=55, label_field_aliases=aliases
+        )
+        response = await client.patch(
+            f"/api/v1/filaments/{filament.id}",
+            json={"drying_temp_c": 65}, headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        assert response.json()["label_field_aliases"] == aliases
+        assert response.json()["drying_temp_c"] == 65
+        await db_session.refresh(filament)
+        restored = _deserialize_row(Filament, "filaments", _serialize_row(filament))
+        assert restored["label_field_aliases"] == aliases
 
     @pytest.mark.asyncio
     async def test_resolve_from_tag_requires_type(self, auth_client):
@@ -558,13 +1229,161 @@ class TestFilamentCRUD:
         assert response.json()["detail"]["code"] == "validation_error"
 
     @pytest.mark.asyncio
+    async def test_resolve_from_tag_matches_color_when_available(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="Bambu Lab")
+        color_white = await _create_color(db_session, name="White", hex_code="#FFFFFF")
+        color_black = await _create_color(db_session, name="Black", hex_code="#000000")
+
+        filament_white = await _create_filament(
+            db_session,
+            manufacturer.id,
+            designation="Bambu Lab PETG Basic White",
+            material_type="PETG",
+        )
+        db_session.add(
+            FilamentColor(
+                filament_id=filament_white.id, color_id=color_white.id, position=1
+            )
+        )
+
+        filament_black = await _create_filament(
+            db_session,
+            manufacturer.id,
+            designation="Bambu Lab PETG Basic Black",
+            material_type="PETG",
+        )
+        db_session.add(
+            FilamentColor(
+                filament_id=filament_black.id, color_id=color_black.id, position=1
+            )
+        )
+        await db_session.commit()
+
+        # Resolve with black color hex (without #)
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={
+                "brand": "Bambu Lab",
+                "type": "PETG",
+                "color_hex": "000000",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["filament_id"] == filament_black.id
+
+    @pytest.mark.asyncio
+    async def test_resolve_from_tag_falls_back_when_color_unmatched(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="Bambu Lab Fallback")
+        color_white = await _create_color(db_session, name="White", hex_code="#FFFFFF")
+        filament_white = await _create_filament(
+            db_session,
+            manufacturer.id,
+            designation="Bambu Lab PETG Basic White",
+            material_type="PETG",
+        )
+        db_session.add(
+            FilamentColor(
+                filament_id=filament_white.id, color_id=color_white.id, position=1
+            )
+        )
+        await db_session.commit()
+
+        # Tag has red color which doesn't exist in DB - should fallback to existing PETG
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={
+                "brand": "Bambu Lab Fallback",
+                "type": "PETG",
+                "color_hex": "FF0000",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["filament_id"] == filament_white.id
+
+    @pytest.mark.asyncio
+    async def test_resolve_from_tag_works_without_color_for_backwards_compat(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="Generic Brand")
+        filament = await _create_filament(
+            db_session, manufacturer.id, designation="Generic PLA", material_type="PLA"
+        )
+        await db_session.commit()
+
+        # No color_hex provided at all
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={
+                "brand": "Generic Brand",
+                "type": "PLA",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["filament_id"] == filament.id
+
+    @pytest.mark.asyncio
+    async def test_resolve_from_tag_creates_filament_with_color(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={
+                "brand": "NewBrand",
+                "type": "TPU",
+                "color_hex": "#00FF00",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["filament_created"] is True
+
+        # Check color relationship was created
+        fc_res = await db_session.execute(
+            select(FilamentColor).where(
+                FilamentColor.filament_id == payload["filament_id"]
+            )
+        )
+        fc = fc_res.scalar_one_or_none()
+        assert fc is not None
+
+        color_res = await db_session.execute(
+            select(Color).where(Color.id == fc.color_id)
+        )
+        color = color_res.scalar_one_or_none()
+        assert color is not None
+        assert color.hex_code == "#00FF00"
+
+    @pytest.mark.asyncio
     async def test_get_filament_detail(self, auth_client, db_session):
         client, _ = auth_client
 
         manufacturer = await _create_manufacturer(db_session, name="DetailMaker")
         color = await _create_color(db_session, name="Detail Red", hex_code="#FF1100")
-        filament = await _create_filament(db_session, manufacturer.id, designation="Detail PLA")
-        db_session.add(FilamentColor(filament_id=filament.id, color_id=color.id, position=1))
+        filament = await _create_filament(
+            db_session, manufacturer.id, designation="Detail PLA"
+        )
+        db_session.add(
+            FilamentColor(filament_id=filament.id, color_id=color.id, position=1)
+        )
         await db_session.commit()
         status = await _get_status(db_session, "new")
         await _create_spool(db_session, filament.id, status.id)
@@ -583,7 +1402,9 @@ class TestFilamentCRUD:
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session)
-        filament = await _create_filament(db_session, manufacturer.id, designation="Old Filament")
+        filament = await _create_filament(
+            db_session, manufacturer.id, designation="Old Filament"
+        )
 
         response = await client.patch(
             f"/api/v1/filaments/{filament.id}",
@@ -601,7 +1422,9 @@ class TestFilamentCRUD:
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session)
-        filament = await _create_filament(db_session, manufacturer.id, designation="Delete Filament")
+        filament = await _create_filament(
+            db_session, manufacturer.id, designation="Delete Filament"
+        )
 
         response = await client.delete(
             f"/api/v1/filaments/{filament.id}",
@@ -609,7 +1432,9 @@ class TestFilamentCRUD:
         )
 
         assert response.status_code == 204
-        result = await db_session.execute(select(Filament).where(Filament.id == filament.id))
+        result = await db_session.execute(
+            select(Filament).where(Filament.id == filament.id)
+        )
         assert result.scalar_one_or_none() is None
 
     @pytest.mark.asyncio
@@ -617,7 +1442,9 @@ class TestFilamentCRUD:
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session)
-        filament = await _create_filament(db_session, manufacturer.id, designation="Conflict Filament")
+        filament = await _create_filament(
+            db_session, manufacturer.id, designation="Conflict Filament"
+        )
         status = await _get_status(db_session, "new")
         await _create_spool(db_session, filament.id, status.id)
 
@@ -634,7 +1461,9 @@ class TestFilamentCRUD:
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session)
-        filament = await _create_filament(db_session, manufacturer.id, designation="Force Filament")
+        filament = await _create_filament(
+            db_session, manufacturer.id, designation="Force Filament"
+        )
         status = await _get_status(db_session, "new")
         spool = await _create_spool(db_session, filament.id, status.id)
 
@@ -644,9 +1473,13 @@ class TestFilamentCRUD:
         )
 
         assert response.status_code == 204
-        fil_result = await db_session.execute(select(Filament).where(Filament.id == filament.id))
+        fil_result = await db_session.execute(
+            select(Filament).where(Filament.id == filament.id)
+        )
         assert fil_result.scalar_one_or_none() is None
-        spool_result = await db_session.execute(select(Spool).where(Spool.id == spool.id))
+        spool_result = await db_session.execute(
+            select(Spool).where(Spool.id == spool.id)
+        )
         assert spool_result.scalar_one_or_none() is None
 
 
@@ -656,8 +1489,12 @@ class TestFilamentBulkOperations:
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session)
-        filament_one = await _create_filament(db_session, manufacturer.id, designation="Bulk A")
-        filament_two = await _create_filament(db_session, manufacturer.id, designation="Bulk B")
+        filament_one = await _create_filament(
+            db_session, manufacturer.id, designation="Bulk A"
+        )
+        filament_two = await _create_filament(
+            db_session, manufacturer.id, designation="Bulk B"
+        )
 
         response = await client.patch(
             "/api/v1/filaments/bulk",
@@ -679,8 +1516,12 @@ class TestFilamentBulkOperations:
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session)
-        filament_one = await _create_filament(db_session, manufacturer.id, designation="Delete A")
-        filament_two = await _create_filament(db_session, manufacturer.id, designation="Delete B")
+        filament_one = await _create_filament(
+            db_session, manufacturer.id, designation="Delete A"
+        )
+        filament_two = await _create_filament(
+            db_session, manufacturer.id, designation="Delete B"
+        )
 
         response = await client.request(
             "DELETE",
@@ -693,23 +1534,34 @@ class TestFilamentBulkOperations:
         payload = response.json()
         assert payload["success"] is True
         assert payload["count"] == 2
-        result = await db_session.execute(select(Filament).where(Filament.id.in_([filament_one.id, filament_two.id])))
+        result = await db_session.execute(
+            select(Filament).where(Filament.id.in_([filament_one.id, filament_two.id]))
+        )
         assert result.scalars().all() == []
 
     @pytest.mark.asyncio
-    async def test_bulk_delete_filaments_with_spools_skips(self, auth_client, db_session):
+    async def test_bulk_delete_filaments_with_spools_skips(
+        self, auth_client, db_session
+    ):
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session)
-        filament_keep = await _create_filament(db_session, manufacturer.id, designation="Keep")
-        filament_delete = await _create_filament(db_session, manufacturer.id, designation="Remove")
+        filament_keep = await _create_filament(
+            db_session, manufacturer.id, designation="Keep"
+        )
+        filament_delete = await _create_filament(
+            db_session, manufacturer.id, designation="Remove"
+        )
         status = await _get_status(db_session, "new")
         await _create_spool(db_session, filament_keep.id, status.id)
 
         response = await client.request(
             "DELETE",
             "/api/v1/filaments/bulk",
-            json={"filament_ids": [filament_keep.id, filament_delete.id], "force": False},
+            json={
+                "filament_ids": [filament_keep.id, filament_delete.id],
+                "force": False,
+            },
             headers={"X-CSRF-Token": csrf_token},
         )
 
@@ -717,8 +1569,12 @@ class TestFilamentBulkOperations:
         payload = response.json()
         assert payload["success"] is True
         assert payload["count"] == 1
-        remaining = await db_session.execute(select(Filament).where(Filament.id == filament_keep.id))
-        deleted = await db_session.execute(select(Filament).where(Filament.id == filament_delete.id))
+        remaining = await db_session.execute(
+            select(Filament).where(Filament.id == filament_keep.id)
+        )
+        deleted = await db_session.execute(
+            select(Filament).where(Filament.id == filament_delete.id)
+        )
         assert remaining.scalar_one_or_none() is not None
         assert deleted.scalar_one_or_none() is None
 
@@ -729,8 +1585,12 @@ class TestFilamentColors:
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session)
-        color_one = await _create_color(db_session, name="Inline Red", hex_code="#FF0000")
-        color_two = await _create_color(db_session, name="Inline Blue", hex_code="#0000FF")
+        color_one = await _create_color(
+            db_session, name="Inline Red", hex_code="#FF0000"
+        )
+        color_two = await _create_color(
+            db_session, name="Inline Blue", hex_code="#0000FF"
+        )
 
         response = await client.post(
             "/api/v1/filaments",
@@ -762,10 +1622,18 @@ class TestFilamentColors:
         client, csrf_token = auth_client
 
         manufacturer = await _create_manufacturer(db_session)
-        color_one = await _create_color(db_session, name="Replace Red", hex_code="#FF1100")
-        color_two = await _create_color(db_session, name="Replace Green", hex_code="#00FF11")
-        filament = await _create_filament(db_session, manufacturer.id, designation="Replace Filament")
-        db_session.add(FilamentColor(filament_id=filament.id, color_id=color_one.id, position=1))
+        color_one = await _create_color(
+            db_session, name="Replace Red", hex_code="#FF1100"
+        )
+        color_two = await _create_color(
+            db_session, name="Replace Green", hex_code="#00FF11"
+        )
+        filament = await _create_filament(
+            db_session, manufacturer.id, designation="Replace Filament"
+        )
+        db_session.add(
+            FilamentColor(filament_id=filament.id, color_id=color_one.id, position=1)
+        )
         await db_session.commit()
 
         response = await client.put(
@@ -806,3 +1674,76 @@ class TestFilamentColors:
 
         assert response.status_code == 404
         assert response.json()["detail"]["code"] == "not_found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('profile_id', [True, 0, -1, '735'])
+async def test_filament_rejects_invalid_catalog_spool_profile_ids(auth_client, profile_id):
+    client, csrf = auth_client
+    response = await client.patch('/api/v1/filaments/1', headers={'X-CSRF-Token': csrf}, json={'filamentdb_spool_profile_id': profile_id})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_inventory_backup_round_trip_retains_spool_type_link(auth_client, db_session, tmp_path, monkeypatch):
+    from app.api.v1 import system
+    monkeypatch.setattr(system, '_get_backup_dir', lambda: tmp_path)
+    manufacturer = await _create_manufacturer(db_session)
+    filament = await _create_filament(db_session, manufacturer.id, filamentdb_spool_profile_id=735, filamentdb_spool_image_file='735.png', default_spool_weight_g=164)
+    filament_id = filament.id
+    client, csrf = auth_client
+    backup = await client.get('/api/v1/admin/system/backup/export-inventory?format=json')
+    assert backup.status_code == 200
+    response = await client.post('/api/v1/admin/system/backup/import-inventory', files={'file': ('backup.json', backup.content, 'application/json')}, headers={'X-CSRF-Token': csrf})
+    assert response.status_code == 200, response.text
+    restored = (await client.get(f'/api/v1/filaments/{filament_id}')).json()
+    assert restored['filamentdb_spool_profile_id'] == 735
+    assert restored['filamentdb_spool_image_file'] == '735.png'
+    assert restored['default_spool_weight_g'] == 164
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload,kind", [
+    ({"slug": "legacy-web"}, "logo"),
+    ({"slug": "label-only", "has_web_logo": False, "has_label_logo": True}, "label-logo"),
+    ({"slug": "legacy-web", "has_web_logo": False, "has_label_logo": False}, "logo"),
+])
+async def test_manufacturer_logo_download_preserves_legacy_and_label_only(auth_client, db_session, monkeypatch, tmp_path, payload, kind):
+    import httpx
+    from app.api.v1 import filaments
+
+    maker = await _create_manufacturer(db_session, "Label only")
+    calls = []
+
+    async def get(self, url, **kwargs):
+        calls.append(url)
+        return httpx.Response(200, content=b"png", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", get)
+    monkeypatch.setattr(filaments, "MANUFACTURER_LOGO_DIR", tmp_path)
+    client, csrf = auth_client
+    label_only = kind == "label-logo"
+    response = await client.post(f"/api/v1/manufacturers/{maker.id}/download-logo", headers={"X-CSRF-Token": csrf}, json=payload)
+    assert response.status_code == 200
+    assert response.json()["logo_url"].endswith(f"/{kind}")
+    asset = await client.request("GET", response.json()["logo_url"])
+    assert asset.status_code == 200 and asset.content == b"png"
+    assert len(calls) == 1 and calls[0].endswith("/label/label-only.png" if label_only else "/web/legacy-web.png")
+    await db_session.refresh(maker)
+    assert maker.logo_file == (None if label_only else f"{maker.id}.png")
+    assert maker.label_logo_file == (f"{maker.id}_label.png" if label_only else None)
+
+
+@pytest.mark.asyncio
+async def test_manufacturer_profile_catalog_roundtrip_keeps_native_shape(auth_client):
+    client, csrf = auth_client
+    metadata = {"note": "Keep Ö & <x>", "manufacturer_profile": {"contact_email": "maker@example.test", "description": "Line 1\n日本語"}, "catalog_sources": {"filamentdb": {"id": 119}, "other": {"id": "brand-1", "future": True}}}
+    response = await client.post("/api/v1/manufacturers", headers={"X-CSRF-Token": csrf}, json={"name": "Maker Ö", "empty_spool_weight_g": 0, "custom_fields": metadata})
+    assert response.status_code == 201
+    created = response.json()
+    response = await client.patch(f"/api/v1/manufacturers/{created['id']}", headers={"X-CSRF-Token": csrf}, json={"name": "Maker edited"})
+    assert response.status_code == 200
+    assert set(response.json()) == set(created)
+    response = await client.get(f"/api/v1/manufacturers/{created['id']}")
+    assert response.json()["custom_fields"] == metadata
+    assert response.json()["empty_spool_weight_g"] == 0

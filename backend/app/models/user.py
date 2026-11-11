@@ -15,6 +15,8 @@ from app.models.base import Base, TimestampMixin, TZDateTime
 
 if TYPE_CHECKING:
     from app.models.filament import FilamentRating
+    from app.models.label_asset import LabelAsset
+    from app.models.label_preset import LabelPreset
     from app.models.rbac import Permission, Role
     from app.models.spool import SpoolEvent
 
@@ -42,6 +44,7 @@ class User(Base, TimestampMixin):
     locked_until: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
 
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    ui_preferences: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
     oauth_identities: Mapped[list["OAuthIdentity"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -61,6 +64,12 @@ class User(Base, TimestampMixin):
     spool_events: Mapped[list["SpoolEvent"]] = relationship(back_populates="user")
     filament_ratings: Mapped[list["FilamentRating"]] = relationship(
         back_populates="user"
+    )
+    label_presets: Mapped[list["LabelPreset"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    label_assets: Mapped[list["LabelAsset"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
 

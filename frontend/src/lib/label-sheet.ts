@@ -1,0 +1,1239 @@
+import type {
+  LabelPdfDocument,
+  LabelPdfPage,
+} from './label-export'
+import { deleteLabelPreset, saveLabelPreset } from './label-preset-storage'
+import {
+  bindFixedPreviewToolbar,
+  prepareLabelOutputClone,
+} from './label-preview-dom'
+import { getTransientPresetCache, setTransientPresetCache } from './freeform-label/editor-storage'
+import type { LabelKind } from './freeform-label/types'
+import { t } from './i18n'
+import { bindSvgClone } from './label-svg/browser'
+
+export const LABEL_SHEET_SETTINGS_KEY = 'filaman-label-sheet-settings-v1'
+export const LABEL_SHEET_PRESETS_KEY = 'filaman-label-sheet-presets-v1'
+export const LABEL_OUTPUT_MODE_KEY = 'filaman-label-output-mode-v1'
+export const LABEL_SHEET_SOURCE_KEY = 'filaman-label-sheet-source-v1'
+
+export type LabelOutputMode = 'individual' | 'sheet'
+export type LabelDesignerPresetSource = LabelKind | 'builtin'
+export interface LabelDesignerPresetRef {
+  source: LabelDesignerPresetSource
+  name: string
+  /** Shown name when it differs from the stable `name` (translated standard presets). */
+  label?: string
+  widthMm?: number
+  heightMm?: number
+}
+export interface LabelDesignerPresetGroup {
+  label: string
+  presets: LabelDesignerPresetRef[]
+}
+export type LabelSheetSource =
+  | { type: 'standard'; presetName?: never }
+  | { type: 'designer'; presetName: string; presetSource?: LabelDesignerPresetSource }
+
+export interface LabelSheetSettings {
+  paperSize: 'a4' | 'letter' | 'custom'
+  customWidthMm: number
+  customHeightMm: number
+  rows: number
+  columns: number
+  marginTopMm: number
+  marginRightMm: number
+  marginBottomMm: number
+  marginLeftMm: number
+  gapHorizontalMm: number
+  gapVerticalMm: number
+  skipCells: number
+  copies: number
+  showGrid: boolean
+  printGrid: boolean
+  fitToCell: boolean
+}
+
+export type LabelSheetPresetSettings = Pick<
+  LabelSheetSettings,
+  | 'paperSize'
+  | 'customWidthMm'
+  | 'customHeightMm'
+  | 'rows'
+  | 'columns'
+  | 'marginTopMm'
+  | 'marginRightMm'
+  | 'marginBottomMm'
+  | 'marginLeftMm'
+  | 'gapHorizontalMm'
+  | 'gapVerticalMm'
+  | 'printGrid'
+  | 'fitToCell'
+>
+
+export interface LabelSheetPreset {
+  id: string
+  name: string
+  /** Translation key for the displayed name of a built-in preset. */
+  nameKey?: string
+  settings: LabelSheetPresetSettings
+  builtin?: boolean
+}
+
+export interface LabelSheetLayout {
+  paperWidthMm: number
+  paperHeightMm: number
+  cellWidthMm: number
+  cellHeightMm: number
+  cellsPerPage: number
+}
+
+export type SheetLabelSetup = LabelSheetSource & {
+  widthMm: number
+  heightMm: number
+  name: string
+}
+
+export interface LabelSheetControls {
+  getOutputMode: () => LabelOutputMode
+  getSettings: () => LabelSheetSettings
+  setOutputMode: (mode: LabelOutputMode, options?: { notify?: boolean }) => void
+  getSource: () => LabelSheetSource
+  setSource: (source: LabelSheetSource) => void
+  setDesignerPresets: (groups: LabelDesignerPresetGroup[], selected?: LabelDesignerPresetRef) => void
+}
+
+export interface LabelSheetPreviewOptions {
+  previewRoot: HTMLElement
+  sourceElements: HTMLElement[]
+  settings: LabelSheetSettings
+  labelWidthMm: number
+  labelHeightMm: number
+}
+
+export interface SyncLabelSheetPreviewOptions {
+  controls: LabelSheetControls
+  previewRoot: HTMLElement
+  sourceElements: HTMLElement[]
+  labelDimensions: { widthMm: number; heightMm: number }
+}
+
+const SOURCE_BIN_CLASS = 'label-sheet-source-bin'
+const SHEET_PAGE_FRAME_CLASS = 'label-sheet-page-frame'
+const SHEET_MODE_CLASS = 'is-label-sheet-mode'
+const SHEET_PREVIEW_STYLE_ID = 'label-sheet-preview-style'
+const CUSTOM_PRESET_ID = '__custom'
+const LARGE_JOB_LABEL_LIMIT = 500
+const LARGE_JOB_PAGE_LIMIT = 50
+const originalPositions = new WeakMap<HTMLElement, { parent: Node; nextSibling: Node | null }>()
+const confirmedLargeJobs = new Set<string>()
+
+function createSelectOption(label: string, value: string) {
+  const option = document.createElement('option')
+  option.textContent = label
+  option.value = value
+  return option
+}
+
+const DEFAULT_SETTINGS: LabelSheetSettings = {
+  paperSize: 'a4',
+  customWidthMm: 210,
+  customHeightMm: 297,
+  rows: 8,
+  columns: 3,
+  marginTopMm: 10,
+  marginRightMm: 10,
+  marginBottomMm: 10,
+  marginLeftMm: 10,
+  gapHorizontalMm: 2,
+  gapVerticalMm: 2,
+  skipCells: 0,
+  copies: 1,
+  showGrid: false,
+  printGrid: false,
+  fitToCell: true,
+}
+
+const PAPER_SIZES = {
+  a4: { widthMm: 210, heightMm: 297 },
+  letter: { widthMm: 215.9, heightMm: 279.4 },
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(max, Math.max(min, numeric))
+}
+
+function normalizeSettings(raw: Partial<LabelSheetSettings> | null | undefined): LabelSheetSettings {
+  const paperSize = raw?.paperSize === 'letter' || raw?.paperSize === 'custom' ? raw.paperSize : 'a4'
+  return {
+    paperSize,
+    customWidthMm: clampNumber(raw?.customWidthMm, 25, 1000, DEFAULT_SETTINGS.customWidthMm),
+    customHeightMm: clampNumber(raw?.customHeightMm, 25, 1000, DEFAULT_SETTINGS.customHeightMm),
+    rows: Math.round(clampNumber(raw?.rows, 1, 30, DEFAULT_SETTINGS.rows)),
+    columns: Math.round(clampNumber(raw?.columns, 1, 10, DEFAULT_SETTINGS.columns)),
+    marginTopMm: clampNumber(raw?.marginTopMm, 0, 100, DEFAULT_SETTINGS.marginTopMm),
+    marginRightMm: clampNumber(raw?.marginRightMm, 0, 100, DEFAULT_SETTINGS.marginRightMm),
+    marginBottomMm: clampNumber(raw?.marginBottomMm, 0, 100, DEFAULT_SETTINGS.marginBottomMm),
+    marginLeftMm: clampNumber(raw?.marginLeftMm, 0, 100, DEFAULT_SETTINGS.marginLeftMm),
+    gapHorizontalMm: clampNumber(raw?.gapHorizontalMm, 0, 50, DEFAULT_SETTINGS.gapHorizontalMm),
+    gapVerticalMm: clampNumber(raw?.gapVerticalMm, 0, 50, DEFAULT_SETTINGS.gapVerticalMm),
+    skipCells: Math.round(clampNumber(raw?.skipCells, 0, 300, DEFAULT_SETTINGS.skipCells)),
+    copies: Math.round(clampNumber(raw?.copies, 1, 500, DEFAULT_SETTINGS.copies)),
+    showGrid: raw?.showGrid === true,
+    printGrid: raw?.printGrid === true,
+    fitToCell: raw?.fitToCell !== false,
+  }
+}
+
+function makePresetSettings(settings: LabelSheetSettings): LabelSheetPresetSettings {
+  return {
+    paperSize: settings.paperSize,
+    customWidthMm: settings.customWidthMm,
+    customHeightMm: settings.customHeightMm,
+    rows: settings.rows,
+    columns: settings.columns,
+    marginTopMm: settings.marginTopMm,
+    marginRightMm: settings.marginRightMm,
+    marginBottomMm: settings.marginBottomMm,
+    marginLeftMm: settings.marginLeftMm,
+    gapHorizontalMm: settings.gapHorizontalMm,
+    gapVerticalMm: settings.gapVerticalMm,
+    printGrid: settings.printGrid,
+    fitToCell: settings.fitToCell,
+  }
+}
+
+function normalizePresetSettings(raw: Partial<LabelSheetPresetSettings> | null | undefined): LabelSheetPresetSettings {
+  return makePresetSettings(normalizeSettings({
+    ...raw,
+    copies: DEFAULT_SETTINGS.copies,
+    showGrid: DEFAULT_SETTINGS.showGrid,
+    skipCells: DEFAULT_SETTINGS.skipCells,
+  }))
+}
+
+const BUILT_IN_SHEET_PRESETS: LabelSheetPreset[] = [
+  {
+    id: 'builtin-a4-3x8',
+    name: 'A4 3 x 8',
+    builtin: true,
+    settings: makePresetSettings(DEFAULT_SETTINGS),
+  },
+  {
+    id: 'builtin-letter-3x10',
+    name: 'Letter 3 x 10 (2.625 x 1 in)',
+    nameKey: 'labelPrint.builtInLetter3x10',
+    builtin: true,
+    settings: normalizePresetSettings({
+      paperSize: 'letter',
+      customWidthMm: 215.9,
+      customHeightMm: 279.4,
+      rows: 10,
+      columns: 3,
+      marginTopMm: 12.7,
+      marginRightMm: 4.7625,
+      marginBottomMm: 12.7,
+      marginLeftMm: 4.7625,
+      gapHorizontalMm: 3.175,
+      gapVerticalMm: 0,
+      printGrid: false,
+      fitToCell: true,
+    }),
+  },
+]
+
+function readStoredSettings(): LabelSheetSettings {
+  try {
+    return normalizeSettings(JSON.parse(localStorage.getItem(LABEL_SHEET_SETTINGS_KEY) || 'null'))
+  } catch {
+    return normalizeSettings(null)
+  }
+}
+
+function readStoredOutputMode(): LabelOutputMode {
+  try {
+    return localStorage.getItem(LABEL_OUTPUT_MODE_KEY) === 'sheet' ? 'sheet' : 'individual'
+  } catch {
+    return 'individual'
+  }
+}
+
+function writeStoredSettings(settings: LabelSheetSettings) {
+  try {
+    localStorage.setItem(LABEL_SHEET_SETTINGS_KEY, JSON.stringify(settings))
+  } catch {
+    // Sheet preview/export still works when storage is blocked.
+  }
+}
+
+function writeStoredOutputMode(mode: LabelOutputMode) {
+  try {
+    localStorage.setItem(LABEL_OUTPUT_MODE_KEY, mode)
+  } catch {
+    // Sheet preview/export still works when storage is blocked.
+  }
+}
+
+function readStoredPresets(): LabelSheetPreset[] {
+  try {
+    const raw = getTransientPresetCache(LABEL_SHEET_PRESETS_KEY)
+      ?? JSON.parse(localStorage.getItem(LABEL_SHEET_PRESETS_KEY) || '[]')
+    if (!Array.isArray(raw)) return []
+    return raw
+      .map((item): LabelSheetPreset | null => {
+        if (!item || typeof item !== 'object') return null
+        const name = typeof item.name === 'string' ? item.name.trim() : ''
+        if (!name) return null
+        return {
+          id: typeof item.id === 'string' && item.id ? item.id : `custom-${Date.now().toString(36)}`,
+          name,
+          settings: normalizePresetSettings(item.settings),
+        }
+      })
+      .filter((item): item is LabelSheetPreset => item !== null)
+  } catch {
+    return []
+  }
+}
+
+async function persistStoredPresetMutation(
+  presets: LabelSheetPreset[],
+  mutateDatabase: () => Promise<boolean>,
+): Promise<boolean> {
+  if (!await mutateDatabase()) return false
+  try {
+    localStorage.setItem(LABEL_SHEET_PRESETS_KEY, JSON.stringify(presets.map(preset => ({
+      id: preset.id,
+      name: preset.name,
+      settings: preset.settings,
+    }))))
+    setTransientPresetCache(LABEL_SHEET_PRESETS_KEY, null)
+  } catch {
+    setTransientPresetCache(LABEL_SHEET_PRESETS_KEY, presets)
+  }
+  return true
+}
+
+function upsertStoredPreset(
+  presets: LabelSheetPreset[],
+  preset: LabelSheetPreset,
+  previousName?: string,
+  createOnly = false,
+) {
+  return persistStoredPresetMutation(
+    presets,
+    () => saveLabelPreset(LABEL_SHEET_PRESETS_KEY, preset, previousName, createOnly),
+  )
+}
+
+function removeStoredPreset(presets: LabelSheetPreset[], name: string) {
+  return persistStoredPresetMutation(
+    presets,
+    () => deleteLabelPreset(LABEL_SHEET_PRESETS_KEY, name),
+  )
+}
+
+function getInput(id: string): HTMLInputElement | null {
+  return document.getElementById(id) as HTMLInputElement | null
+}
+
+function getButton(id: string): HTMLButtonElement | null {
+  return document.getElementById(id) as HTMLButtonElement | null
+}
+
+function getSelect(id: string): HTMLSelectElement | null {
+  return document.getElementById(id) as HTMLSelectElement | null
+}
+
+function setNumberInput(id: string, value: number) {
+  const input = getInput(id)
+  if (input) input.value = String(value)
+}
+
+function readNumberInput(id: string, fallback: number) {
+  return Number(getInput(id)?.value ?? fallback)
+}
+
+function getFirstUsableSlot(settings: LabelSheetSettings, layout = getLabelSheetLayout(settings)) {
+  return Math.min(settings.skipCells, layout.cellsPerPage - 1)
+}
+
+function getLabelSheetJobSize(labelCount: number, settings: LabelSheetSettings) {
+  const layout = getLabelSheetLayout(settings)
+  const labelInstances = labelCount * settings.copies
+  const firstUsableSlot = getFirstUsableSlot(settings, layout)
+  return {
+    labelInstances,
+    pageCount: Math.max(1, Math.ceil((labelInstances + firstUsableSlot) / layout.cellsPerPage)),
+  }
+}
+
+function confirmLargeLabelSheetJob(labelCount: number, settings: LabelSheetSettings) {
+  const job = getLabelSheetJobSize(labelCount, settings)
+  if (job.labelInstances <= LARGE_JOB_LABEL_LIMIT && job.pageCount <= LARGE_JOB_PAGE_LIMIT) return true
+
+  const signature = `${labelCount}:${settings.copies}:${settings.rows}:${settings.columns}:${settings.skipCells}`
+  if (confirmedLargeJobs.has(signature)) return true
+  const ok = window.confirm(t('labelPrint.largeSheetJobWarning', {
+    labels: job.labelInstances,
+    pages: job.pageCount,
+  }))
+  if (ok) confirmedLargeJobs.add(signature)
+  return ok
+}
+
+function applySheetCapacityLimits(settings: LabelSheetSettings) {
+  const layout = getLabelSheetLayout(settings)
+  settings.skipCells = getFirstUsableSlot(settings, layout)
+  const skipCells = getInput('sheet-skip-cells')
+  if (skipCells) {
+    skipCells.max = String(Math.max(0, layout.cellsPerPage - 1))
+    skipCells.value = String(settings.skipCells)
+  }
+  return settings
+}
+
+function applyPresetSettings(current: LabelSheetSettings, preset: LabelSheetPresetSettings) {
+  return applySheetCapacityLimits(normalizeSettings({
+    ...current,
+    ...preset,
+  }))
+}
+
+function formatMm(value: number) {
+  const rounded = Math.round(value * 10) / 10
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+}
+
+function makePresetId() {
+  return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+export function bindLabelSheetControls(
+  onChange: () => void,
+  getTranslation: (key: string, fallback: string) => string = (_key, fallback) => fallback,
+  kind: LabelKind = 'spool',
+  onLayoutChange: () => void = onChange,
+): LabelSheetControls {
+  const outputMode = getSelect('output-mode')
+  const sourceInputs = Array.from(document.querySelectorAll<HTMLInputElement>(
+    'input[name="label-sheet-source"]',
+  ))
+  const designerPreset = getSelect('sheet-designer-preset')
+  const designerSourceControls = document.getElementById('sheet-designer-source-controls')
+  const selectedLabelSize = document.getElementById('sheet-selected-label-size')
+  const editDesigner = getButton('sheet-edit-designer')
+  const createLabel = document.querySelector<HTMLButtonElement>('[data-sheet-create]')
+  const panel = document.getElementById('label-sheet-settings') as HTMLElement | null
+  const presetSelect = getSelect('sheet-preset')
+  const presetName = getInput('sheet-preset-name')
+  const loadPreset = getButton('sheet-load-preset')
+  const updatePreset = getButton('sheet-update-preset')
+  const savePreset = getButton('sheet-save-preset')
+  const deletePreset = getButton('sheet-delete-preset')
+  const layoutSummary = document.getElementById('sheet-layout-summary-value') as HTMLElement | null
+  const paperSize = getSelect('sheet-paper-size')
+  const customSize = document.getElementById('sheet-custom-size') as HTMLElement | null
+  const settings = readStoredSettings()
+  const storedOutputMode = readStoredOutputMode()
+  let customPresets = readStoredPresets()
+  let selectedPresetId = CUSTOM_PRESET_ID
+  let loadedCustomPresetId: string | null = null
+  let presetMutationInFlight = false
+  const presetDisplayName = (preset: LabelSheetPreset) =>
+    preset.nameKey ? getTranslation(preset.nameKey, preset.name) : preset.name
+  const initialPreset = [...BUILT_IN_SHEET_PRESETS, ...customPresets].find(preset =>
+    Object.entries(preset.settings).every(([key, value]) => settings[key as keyof LabelSheetSettings] === value),
+  )
+  let loadedPresetName = initialPreset ? presetDisplayName(initialPreset) : ''
+
+  const readStoredSource = (): LabelSheetSource => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(LABEL_SHEET_SOURCE_KEY) ?? '') as Partial<LabelSheetSource>
+      if (parsed.type === 'designer') {
+        const presetName = typeof parsed.presetName === 'string' ? parsed.presetName : ''
+        const storedPresetSource = String(parsed.presetSource ?? '')
+        const presetSource = storedPresetSource === 'own' ? kind
+          : storedPresetSource === 'cross' ? (kind === 'spool' ? 'filament' : 'spool')
+            : storedPresetSource === 'spool' || storedPresetSource === 'filament' || storedPresetSource === 'builtin'
+              ? storedPresetSource : undefined
+        return presetSource ? { type: 'designer', presetName, presetSource } : { type: 'designer', presetName }
+      }
+    } catch {
+      // Use Standard Label when storage is blocked or malformed.
+    }
+    return { type: 'standard' }
+  }
+  const storedSource = readStoredSource()
+  let selectedDesignerPreset = storedSource.type === 'designer'
+    ? { name: storedSource.presetName, source: storedSource.presetSource }
+    : null
+  const optionPreset = (option?: HTMLOptionElement | null) => {
+    if (!option) return null
+    const source = option.dataset.presetSource as LabelDesignerPresetSource | undefined
+    return { name: option.dataset.presetName ?? option.value, source }
+  }
+  const selectedDesignerOption = () => designerPreset
+    ? Array.from(designerPreset.options).find(option => option.value === designerPreset.value)
+    : undefined
+  const syncSelectedLabelSize = () => {
+    if (!selectedLabelSize) return
+    const option = selectedDesignerOption()
+    const width = Number(option?.dataset.widthMm)
+    const height = Number(option?.dataset.heightMm)
+    selectedLabelSize.textContent = Number.isFinite(width) && Number.isFinite(height)
+      ? getTranslation('labelPrint.selectedLabelSize', 'Selected label size: {width} × {height} mm')
+        .replace('{width}', formatMm(width)).replace('{height}', formatMm(height))
+      : ''
+  }
+
+  const getSource = (): LabelSheetSource => {
+    const type = sourceInputs.find(input => input.checked)?.value
+    if (type !== 'designer') return { type: 'standard' }
+    const preset = optionPreset(selectedDesignerOption()) ?? selectedDesignerPreset
+    if (!preset) return { type: 'designer', presetName: '' }
+    return preset.source
+      ? { type: 'designer', presetName: preset.name, presetSource: preset.source }
+      : { type: 'designer', presetName: preset.name }
+  }
+
+  const syncSourceControls = (persist = true) => {
+    const source = getSource()
+    if (designerSourceControls) designerSourceControls.hidden = source.type !== 'designer'
+    if (designerPreset) designerPreset.disabled = source.type !== 'designer'
+    if (editDesigner) editDesigner.disabled = source.type !== 'designer' || !source.presetName
+    syncSelectedLabelSize()
+    syncCreateButton()
+    if (persist) {
+      try {
+        localStorage.setItem(LABEL_SHEET_SOURCE_KEY, JSON.stringify(source))
+      } catch {
+        // Sheet rendering still works when browser storage is unavailable.
+      }
+    }
+  }
+
+  const setSource = (source: LabelSheetSource) => {
+    sourceInputs.forEach(input => { input.checked = input.value === source.type })
+    if (source.type === 'designer') {
+      selectedDesignerPreset = { name: source.presetName, source: source.presetSource }
+      if (designerPreset) {
+        const option = Array.from(designerPreset.options).find(candidate =>
+          candidate.dataset.presetName === source.presetName
+          && (!source.presetSource || candidate.dataset.presetSource === source.presetSource))
+        if (option) designerPreset.value = option.value
+      }
+    }
+    syncSourceControls()
+    onChange()
+  }
+
+  const setDesignerPresets = (groups: LabelDesignerPresetGroup[], selected?: LabelDesignerPresetRef) => {
+    if (!designerPreset) return
+    const previous = selected ?? optionPreset(selectedDesignerOption()) ?? selectedDesignerPreset
+    const optionGroups = groups.filter(group => group.presets.length > 0).map(group => {
+      const optgroup = document.createElement('optgroup')
+      optgroup.label = group.label
+      group.presets.forEach(preset => {
+        const option = createSelectOption(preset.label ?? preset.name, `${preset.source}:${preset.name}`)
+        option.dataset.presetSource = preset.source
+        option.dataset.presetName = preset.name
+        if (Number.isFinite(preset.widthMm)) option.dataset.widthMm = String(preset.widthMm)
+        if (Number.isFinite(preset.heightMm)) option.dataset.heightMm = String(preset.heightMm)
+        optgroup.appendChild(option)
+      })
+      return optgroup
+    })
+    designerPreset.replaceChildren(...optionGroups)
+    const next = Array.from(designerPreset.options).find(option =>
+      option.dataset.presetName === previous?.name
+      && (!previous?.source || option.dataset.presetSource === previous.source))
+      ?? designerPreset.options[0]
+    selectedDesignerPreset = optionPreset(next)
+    if (next) designerPreset.value = next.value
+    syncSourceControls()
+  }
+
+  const findPreset = (id: string) => [...BUILT_IN_SHEET_PRESETS, ...customPresets].find(preset => preset.id === id)
+  const presetNameFor = (id: string) => {
+    const preset = findPreset(id)
+    return preset ? presetDisplayName(preset) : ''
+  }
+  const canUpdatePreset = () => loadedCustomPresetId !== null
+    && selectedPresetId === loadedCustomPresetId
+    && presetName?.value.trim() === customPresets.find(preset => preset.id === loadedCustomPresetId)?.name
+
+  const syncPresetControls = () => {
+    const preset = findPreset(selectedPresetId)
+    if (loadPreset) loadPreset.disabled = presetMutationInFlight || !preset
+    if (updatePreset) {
+      updatePreset.disabled = presetMutationInFlight || !canUpdatePreset()
+      updatePreset.title = preset?.builtin
+        ? getTranslation('labelDesigner.builtInPresetHint', 'Built-in presets cannot be modified.')
+        : ''
+    }
+    if (savePreset) savePreset.disabled = presetMutationInFlight
+    if (deletePreset) deletePreset.disabled = presetMutationInFlight || !preset || preset.builtin === true
+  }
+
+  const renderPresetOptions = () => {
+    if (!presetSelect) return
+    const previousValue = selectedPresetId
+    presetSelect.replaceChildren()
+
+    const customOption = createSelectOption(getTranslation('labelPrint.currentPaperSetup', 'Current setup'), CUSTOM_PRESET_ID)
+    presetSelect.appendChild(customOption)
+
+    const builtInGroup = document.createElement('optgroup')
+    builtInGroup.label = getTranslation('labelPrint.builtInPaperPresets', 'Built-in presets')
+    BUILT_IN_SHEET_PRESETS.forEach(preset => builtInGroup.appendChild(createSelectOption(presetDisplayName(preset), preset.id)))
+    presetSelect.appendChild(builtInGroup)
+
+    if (customPresets.length > 0) {
+      const savedGroup = document.createElement('optgroup')
+      savedGroup.label = getTranslation('labelPrint.savedPaperPresets', 'Saved presets')
+      customPresets.forEach(preset => savedGroup.appendChild(createSelectOption(preset.name, preset.id)))
+      presetSelect.appendChild(savedGroup)
+    }
+
+    selectedPresetId = findPreset(previousValue) ? previousValue : CUSTOM_PRESET_ID
+    presetSelect.value = selectedPresetId
+    if (presetName) presetName.value = presetNameFor(selectedPresetId)
+    syncPresetControls()
+  }
+
+  const syncCreateButton = () => {
+    const layout = getLabelSheetLayout(readFormSettings())
+    const source = getSource()
+    const standard = source.type === 'standard'
+    const unsupported = layout.cellWidthMm < 20 || layout.cellHeightMm < 10
+      || layout.cellWidthMm > (standard ? 200 : 300) || layout.cellHeightMm > (standard ? 120 : 200)
+    if (createLabel) createLabel.disabled = unsupported || (!standard && !source.presetName)
+    const hint = document.getElementById('sheet-create-size-hint')
+    if (hint) {
+      hint.hidden = !unsupported
+      hint.textContent = getTranslation('labelPrint.sheetSizeUnsupported', 'Editor size limits: Standard 20–200 × 10–120 mm; Designer 20–300 × 10–200 mm.')
+    }
+  }
+
+  const updateLayoutSummary = (next: LabelSheetSettings) => {
+    const layout = getLabelSheetLayout(next)
+    const horizontalPitch = layout.cellWidthMm + next.gapHorizontalMm
+    const verticalPitch = layout.cellHeightMm + next.gapVerticalMm
+    const size = document.querySelector<HTMLElement>('#sheet-label-size .sheet-label-size-value')
+    if (size) size.textContent = `${formatMm(layout.cellWidthMm)} × ${formatMm(layout.cellHeightMm)} mm`
+    syncCreateButton()
+    if (!layoutSummary) return
+    layoutSummary.textContent = getTranslation(
+      'labelPrint.paperLayoutSummary',
+      `Cell ${formatMm(layout.cellWidthMm)} x ${formatMm(layout.cellHeightMm)} mm · Pitch ${formatMm(horizontalPitch)} x ${formatMm(verticalPitch)} mm`,
+    )
+      .replace('{width}', formatMm(layout.cellWidthMm))
+      .replace('{height}', formatMm(layout.cellHeightMm))
+      .replace('{horizontalPitch}', formatMm(horizontalPitch))
+      .replace('{verticalPitch}', formatMm(verticalPitch))
+  }
+
+  const setFormValues = (next: LabelSheetSettings) => {
+    if (paperSize) paperSize.value = next.paperSize
+    setNumberInput('sheet-custom-width', next.customWidthMm)
+    setNumberInput('sheet-custom-height', next.customHeightMm)
+    setNumberInput('sheet-rows', next.rows)
+    setNumberInput('sheet-columns', next.columns)
+    setNumberInput('sheet-margin-top', next.marginTopMm)
+    setNumberInput('sheet-margin-right', next.marginRightMm)
+    setNumberInput('sheet-margin-bottom', next.marginBottomMm)
+    setNumberInput('sheet-margin-left', next.marginLeftMm)
+    setNumberInput('sheet-gap-horizontal', next.gapHorizontalMm)
+    setNumberInput('sheet-gap-vertical', next.gapVerticalMm)
+    setNumberInput('sheet-skip-cells', next.skipCells)
+    setNumberInput('sheet-copies', next.copies)
+    const showGrid = getInput('sheet-show-grid')
+    const printGrid = getInput('sheet-print-grid')
+    const fitToCell = getInput('sheet-fit-to-cell')
+    if (showGrid) showGrid.checked = next.showGrid
+    if (printGrid) printGrid.checked = next.printGrid
+    if (fitToCell) fitToCell.checked = next.fitToCell
+    updateLayoutSummary(next)
+  }
+
+  const readFormSettings = () => applySheetCapacityLimits(normalizeSettings({
+    paperSize: paperSize?.value as LabelSheetSettings['paperSize'],
+    customWidthMm: readNumberInput('sheet-custom-width', settings.customWidthMm),
+    customHeightMm: readNumberInput('sheet-custom-height', settings.customHeightMm),
+    rows: readNumberInput('sheet-rows', settings.rows),
+    columns: readNumberInput('sheet-columns', settings.columns),
+    marginTopMm: readNumberInput('sheet-margin-top', settings.marginTopMm),
+    marginRightMm: readNumberInput('sheet-margin-right', settings.marginRightMm),
+    marginBottomMm: readNumberInput('sheet-margin-bottom', settings.marginBottomMm),
+    marginLeftMm: readNumberInput('sheet-margin-left', settings.marginLeftMm),
+    gapHorizontalMm: readNumberInput('sheet-gap-horizontal', settings.gapHorizontalMm),
+    gapVerticalMm: readNumberInput('sheet-gap-vertical', settings.gapVerticalMm),
+    skipCells: readNumberInput('sheet-skip-cells', settings.skipCells),
+    copies: readNumberInput('sheet-copies', settings.copies),
+    showGrid: getInput('sheet-show-grid')?.checked,
+    printGrid: getInput('sheet-print-grid')?.checked,
+    fitToCell: getInput('sheet-fit-to-cell')?.checked,
+  }))
+
+  const syncVisibility = () => {
+    const isSheet = outputMode?.value === 'sheet'
+    if (panel) panel.style.display = isSheet ? '' : 'none'
+    if (customSize) customSize.style.display = paperSize?.value === 'custom' ? '' : 'none'
+  }
+
+  if (outputMode) outputMode.value = storedOutputMode
+  sourceInputs.forEach(input => { input.checked = input.value === storedSource.type })
+  if (storedSource.type === 'designer' && designerPreset) designerPreset.value = storedSource.presetName
+  setFormValues(applySheetCapacityLimits(settings))
+  renderPresetOptions()
+  syncVisibility()
+  syncSourceControls(false)
+
+  const handleChange = () => {
+    const next = readFormSettings()
+    if (!loadedCustomPresetId) {
+      selectedPresetId = CUSTOM_PRESET_ID
+      loadedPresetName = ''
+    }
+    setFormValues(next)
+    if (loadedCustomPresetId) syncPresetControls()
+    else renderPresetOptions()
+    writeStoredSettings(next)
+    syncVisibility()
+    onLayoutChange()
+  }
+
+  presetSelect?.addEventListener('change', () => {
+    selectedPresetId = presetSelect.value
+    if (presetName) presetName.value = presetNameFor(selectedPresetId)
+    syncPresetControls()
+  })
+  presetName?.addEventListener('input', syncPresetControls)
+
+  loadPreset?.addEventListener('click', () => {
+    const preset = findPreset(selectedPresetId)
+    if (!preset) return
+    loadedPresetName = presetDisplayName(preset)
+    loadedCustomPresetId = preset.builtin ? null : preset.id
+    const next = applyPresetSettings(readFormSettings(), preset.settings)
+    setFormValues(next)
+    writeStoredSettings(next)
+    syncVisibility()
+    syncPresetControls()
+    onLayoutChange()
+  })
+
+  const persistPreset = async (asNew: boolean) => {
+    if (presetMutationInFlight) return
+    const selectedCustomPreset = customPresets.find(preset => preset.id === loadedCustomPresetId)
+    if (!asNew && (!selectedCustomPreset || !canUpdatePreset())) return
+    const fallbackName = selectedCustomPreset?.name || getTranslation('labelPrint.defaultPaperPresetName', 'Custom label paper')
+    const name = (presetName?.value || fallbackName).trim() || fallbackName
+    if (asNew && customPresets.some(preset => preset.name === name)) {
+      window.alert(getTranslation('labelDesigner.presetNameExists', 'That name is already in use. Choose a new name.'))
+      presetName?.focus()
+      return
+    }
+    const preset: LabelSheetPreset = {
+      id: asNew ? makePresetId() : selectedCustomPreset!.id,
+      name,
+      settings: makePresetSettings(readFormSettings()),
+    }
+
+    const nextPresets = asNew
+      ? [...customPresets, preset]
+      : customPresets.map(item => item.id === preset.id ? preset : item)
+    presetMutationInFlight = true
+    syncPresetControls()
+    try {
+      if (!await upsertStoredPreset(nextPresets, preset, undefined, asNew)) {
+        window.alert(getTranslation('labelPrint.paperPresetSaveFailed', 'Paper preset could not be saved to the database. Please try again.'))
+        return
+      }
+      customPresets = nextPresets
+      loadedCustomPresetId = preset.id
+      loadedPresetName = preset.name
+      selectedPresetId = preset.id
+      renderPresetOptions()
+    } finally {
+      presetMutationInFlight = false
+      syncPresetControls()
+    }
+  }
+  updatePreset?.addEventListener('click', () => { void persistPreset(false) })
+  savePreset?.addEventListener('click', () => { void persistPreset(true) })
+
+  deletePreset?.addEventListener('click', async () => {
+    if (presetMutationInFlight) return
+    const preset = findPreset(selectedPresetId)
+    if (!preset || preset.builtin) return
+    const message = getTranslation(
+      'labelPrint.confirmDeletePaperPreset',
+      'Delete paper preset "{name}"? This cannot be undone.',
+    ).replace('{name}', preset.name)
+    const confirm = (window as typeof window & {
+      __fmConfirm?: (message: string, options?: { isDanger?: boolean }) => Promise<boolean>
+    }).__fmConfirm
+    if (!(confirm ? await confirm(message, { isDanger: true }) : window.confirm(message))) return
+    const nextPresets = customPresets.filter(item => item.id !== preset.id)
+    presetMutationInFlight = true
+    syncPresetControls()
+    try {
+      if (!await removeStoredPreset(nextPresets, preset.name)) {
+        window.alert(getTranslation('labelPrint.paperPresetDeleteFailed', 'Paper preset could not be deleted from the database. Please try again.'))
+        return
+      }
+      customPresets = nextPresets
+      if (loadedCustomPresetId === preset.id) {
+        loadedCustomPresetId = null
+        loadedPresetName = ''
+      }
+      selectedPresetId = CUSTOM_PRESET_ID
+      renderPresetOptions()
+    } finally {
+      presetMutationInFlight = false
+      syncPresetControls()
+    }
+  })
+
+  outputMode?.addEventListener('change', () => {
+    writeStoredOutputMode(outputMode.value === 'sheet' ? 'sheet' : 'individual')
+    syncVisibility()
+    onLayoutChange()
+  })
+  sourceInputs.forEach(input => input.addEventListener('change', () => {
+    syncSourceControls()
+    onChange()
+  }))
+  designerPreset?.addEventListener('change', () => {
+    syncSourceControls()
+    onChange()
+  })
+  createLabel?.addEventListener('click', () => {
+    if (createLabel.disabled) return
+    const layout = getLabelSheetLayout(readFormSettings())
+    const dimensions = `${formatMm(layout.cellWidthMm)} × ${formatMm(layout.cellHeightMm)} mm`
+    const name = loadedPresetName ? `${loadedPresetName.slice(0, 90)} — ${dimensions}`
+      : getTranslation('labelPrint.sheetLabelName', '{size} label').replace('{size}', dimensions)
+    createLabel.dispatchEvent(new CustomEvent<SheetLabelSetup>('label-sheet-create', {
+      bubbles: true,
+      detail: { ...getSource(), widthMm: layout.cellWidthMm, heightMm: layout.cellHeightMm, name },
+    }))
+  })
+  editDesigner?.addEventListener('click', () => {
+    const source = getSource()
+    if (source.type !== 'designer' || !source.presetName) return
+    editDesigner.dispatchEvent(new CustomEvent('label-designer-edit', {
+      bubbles: true,
+      detail: { presetName: source.presetName, presetSource: source.presetSource },
+    }))
+  })
+  document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-label-sheet-control]').forEach(control => {
+    control.addEventListener('change', handleChange)
+    if (control instanceof HTMLInputElement && (control.type === 'number' || control.type === 'range')) {
+      control.addEventListener('input', handleChange)
+    }
+  })
+
+  return {
+    getOutputMode: () => outputMode?.value === 'sheet' ? 'sheet' : 'individual',
+    getSettings: readFormSettings,
+    setOutputMode: (mode, options) => {
+      if (outputMode) outputMode.value = mode
+      writeStoredOutputMode(mode)
+      syncVisibility()
+      if (options?.notify !== false) onLayoutChange()
+    },
+    getSource,
+    setSource,
+    setDesignerPresets,
+  }
+}
+
+export function getLabelSheetLayout(settings: LabelSheetSettings): LabelSheetLayout {
+  const preset = settings.paperSize === 'custom' ? null : PAPER_SIZES[settings.paperSize]
+  const paperWidthMm = preset?.widthMm ?? settings.customWidthMm
+  const paperHeightMm = preset?.heightMm ?? settings.customHeightMm
+  const printableWidth = Math.max(1, paperWidthMm - settings.marginLeftMm - settings.marginRightMm - settings.gapHorizontalMm * (settings.columns - 1))
+  const printableHeight = Math.max(1, paperHeightMm - settings.marginTopMm - settings.marginBottomMm - settings.gapVerticalMm * (settings.rows - 1))
+  return {
+    paperWidthMm,
+    paperHeightMm,
+    cellWidthMm: printableWidth / settings.columns,
+    cellHeightMm: printableHeight / settings.rows,
+    cellsPerPage: settings.rows * settings.columns,
+  }
+}
+
+function expandedIndexes(count: number, settings: LabelSheetSettings) {
+  const indexes: number[] = []
+  for (let copy = 0; copy < settings.copies; copy += 1) {
+    for (let index = 0; index < count; index += 1) {
+      indexes.push(index)
+    }
+  }
+  return indexes
+}
+
+function getSourceLabel(source: HTMLElement): HTMLElement | null {
+  if (source.classList.contains('label-preview')) return source
+  return source.querySelector<HTMLElement>('.label-preview')
+}
+
+function ensureSourceBin(previewRoot: HTMLElement) {
+  let bin = previewRoot.querySelector<HTMLElement>(`:scope > .${SOURCE_BIN_CLASS}`)
+  if (!bin) {
+    bin = document.createElement('div')
+    bin.className = SOURCE_BIN_CLASS
+    previewRoot.appendChild(bin)
+  }
+  return bin
+}
+
+function getFixedPreviewToolbarBinding(previewRoot: HTMLElement) {
+  return bindFixedPreviewToolbar({
+    previewRoot,
+    isActive: () => previewRoot.classList.contains(SHEET_MODE_CLASS),
+  })
+}
+
+export function restoreIndividualLabelPreview(previewRoot: HTMLElement, sourceElements: HTMLElement[]) {
+  previewRoot.classList.remove(SHEET_MODE_CLASS)
+  getFixedPreviewToolbarBinding(previewRoot).restore()
+  previewRoot.querySelectorAll(`.${SHEET_PAGE_FRAME_CLASS}`).forEach(frame => frame.remove())
+  previewRoot.querySelectorAll('.label-sheet-page').forEach(page => page.remove())
+  sourceElements.forEach(source => {
+    const position = originalPositions.get(source)
+    if (!position) return
+    const nextSibling = position.nextSibling?.parentNode === position.parent ? position.nextSibling : null
+    position.parent.insertBefore(source, nextSibling)
+    originalPositions.delete(source)
+  })
+  // The active designer label must remain first when parked sources return.
+  const representative = sourceElements.find(source => source.classList.contains('is-designer-representative'))
+  representative?.parentElement?.prepend(representative)
+  previewRoot.querySelector<HTMLElement>(`:scope > .${SOURCE_BIN_CLASS}`)?.remove()
+  clearLabelSheetPreviewStyle()
+}
+
+export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
+  const { previewRoot, sourceElements, settings, labelWidthMm, labelHeightMm } = options
+  if (!confirmLargeLabelSheetJob(sourceElements.length, settings)) {
+    restoreIndividualLabelPreview(previewRoot, sourceElements)
+    return false
+  }
+  previewRoot.classList.add(SHEET_MODE_CLASS)
+  const layout = getLabelSheetLayout(settings)
+  const sourceBin = ensureSourceBin(previewRoot)
+  getFixedPreviewToolbarBinding(previewRoot)
+  previewRoot.querySelectorAll(`.${SHEET_PAGE_FRAME_CLASS}`).forEach(frame => frame.remove())
+  previewRoot.querySelectorAll('.label-sheet-page').forEach(page => page.remove())
+
+  sourceElements.forEach(source => {
+    if (!originalPositions.has(source) && source.parentNode) {
+      originalPositions.set(source, { parent: source.parentNode, nextSibling: source.nextSibling })
+    }
+    sourceBin.appendChild(source)
+  })
+
+  const indexes = expandedIndexes(sourceElements.length, settings)
+  let page: HTMLElement | null = null
+  let grid: HTMLElement | null = null
+  const firstUsableSlot = getFirstUsableSlot(settings, layout)
+
+  indexes.forEach((sourceIndex, itemIndex) => {
+    const absoluteSlot = itemIndex + firstUsableSlot
+    const pageIndex = Math.floor(absoluteSlot / layout.cellsPerPage)
+    const cellIndex = absoluteSlot % layout.cellsPerPage
+    if (!page || Number(page.dataset.pageIndex) !== pageIndex) {
+      const pageFrame = document.createElement('div')
+      pageFrame.className = SHEET_PAGE_FRAME_CLASS
+      pageFrame.dataset.pageIndex = String(pageIndex)
+      page = document.createElement('section')
+      page.className = `label-sheet-page${settings.printGrid ? ' label-sheet-print-grid' : ''}`
+      page.dataset.pageIndex = String(pageIndex)
+      page.style.width = `${layout.paperWidthMm}mm`
+      page.style.height = `${layout.paperHeightMm}mm`
+      page.style.padding = `${settings.marginTopMm}mm ${settings.marginRightMm}mm ${settings.marginBottomMm}mm ${settings.marginLeftMm}mm`
+      grid = document.createElement('div')
+      grid.className = 'label-sheet-grid'
+      grid.style.gridTemplateColumns = `repeat(${settings.columns}, ${layout.cellWidthMm}mm)`
+      grid.style.gridTemplateRows = `repeat(${settings.rows}, ${layout.cellHeightMm}mm)`
+      grid.style.gap = `${settings.gapVerticalMm}mm ${settings.gapHorizontalMm}mm`
+      page.appendChild(grid)
+      pageFrame.appendChild(page)
+      previewRoot.appendChild(pageFrame)
+      for (let i = 0; i < layout.cellsPerPage; i += 1) {
+        const emptyCell = document.createElement('div')
+        emptyCell.className = `label-sheet-cell label-sheet-cell-empty${settings.showGrid || settings.printGrid ? ' label-sheet-cell-grid' : ''}`
+        grid.appendChild(emptyCell)
+      }
+    }
+
+    const cell = grid?.children[cellIndex] as HTMLElement | undefined
+    if (!cell) return
+    cell.className = `label-sheet-cell${settings.showGrid || settings.printGrid ? ' label-sheet-cell-grid' : ''}`
+    cell.replaceChildren()
+    const shell = document.createElement('div')
+    shell.className = 'label-sheet-label-shell'
+    const scale = settings.fitToCell ? Math.min(1, layout.cellWidthMm / labelWidthMm, layout.cellHeightMm / labelHeightMm) : 1
+    shell.style.width = `${labelWidthMm * scale}mm`
+    shell.style.height = `${labelHeightMm * scale}mm`
+
+    const content = document.createElement('div')
+    content.className = 'label-sheet-label-content'
+    content.style.width = `${labelWidthMm}mm`
+    content.style.height = `${labelHeightMm}mm`
+    content.style.transform = `scale(${scale})`
+
+    const source = sourceElements[sourceIndex]
+    const sourceLabel = getSourceLabel(source)
+    if (sourceLabel) {
+      const clone = sourceLabel.cloneNode(true) as HTMLElement
+      bindSvgClone(sourceLabel, clone)
+      prepareLabelOutputClone(clone)
+      clone.style.zoom = '1'
+      clone.style.transform = 'none'
+      clone.style.transformOrigin = 'unset'
+      content.appendChild(clone)
+    }
+    shell.appendChild(content)
+    cell.appendChild(shell)
+  })
+
+  updateLabelSheetPreviewStyle(settings)
+  return true
+}
+
+export function syncLabelSheetPreview(options: SyncLabelSheetPreviewOptions) {
+  const { controls, previewRoot, sourceElements, labelDimensions } = options
+  if (controls.getOutputMode() !== 'sheet') {
+    restoreIndividualLabelPreview(previewRoot, sourceElements)
+    return true
+  }
+  if (sourceElements.length === 0) return true
+  return renderLabelSheetPreview({
+    previewRoot,
+    sourceElements,
+    settings: controls.getSettings(),
+    labelWidthMm: labelDimensions.widthMm,
+    labelHeightMm: labelDimensions.heightMm,
+  })
+}
+
+export function applyLabelSheetPreviewZoom(previewRoot: HTMLElement, zoomPercent: number) {
+  const zoom = Math.min(5, Math.max(0.25, (Number(zoomPercent) || 100) / 100))
+  const previewStyle = getComputedStyle(previewRoot)
+  const availableWidth = Math.max(0, previewRoot.clientWidth - (parseFloat(previewStyle.paddingLeft) || 0) - (parseFloat(previewStyle.paddingRight) || 0))
+  previewRoot.querySelectorAll<HTMLElement>('.label-sheet-page').forEach(page => {
+    const frame = page.parentElement?.classList.contains(SHEET_PAGE_FRAME_CLASS)
+      ? page.parentElement as HTMLElement
+      : null
+    page.style.zoom = '1'
+    page.style.position = 'absolute'
+    page.style.left = '0'
+    page.style.top = '0'
+    page.style.transform = `scale(${zoom})`
+    page.style.transformOrigin = 'top left'
+    if (frame) {
+      const width = page.offsetWidth * zoom
+      frame.style.width = `${width}px`
+      frame.style.height = `${page.offsetHeight * zoom}px`
+      frame.style.marginInline = width <= availableWidth ? 'auto' : '0'
+    }
+  })
+}
+
+export function syncLabelSheetIndividualExportState(
+  controls: LabelSheetControls,
+  buttons: HTMLButtonElement[],
+  getTranslation: (key: string, fallback: string) => string,
+) {
+  const isSheetMode = controls.getOutputMode() === 'sheet'
+  const unavailableText = getTranslation(
+    'labelPrint.individualExportsUnavailableInSheetMode',
+    'Individual PNG and AML exports are not available in label paper mode',
+  )
+
+  buttons.forEach(button => {
+    if (!('labelSheetOriginalTitle' in button.dataset)) {
+      button.dataset.labelSheetOriginalTitle =
+        button.getAttribute('title') ?? ''
+    }
+
+    button.disabled = isSheetMode
+    button.classList.toggle('is-disabled', isSheetMode)
+
+    if (isSheetMode) {
+      button.setAttribute('aria-disabled', 'true')
+      button.setAttribute('title', unavailableText)
+    } else {
+      button.removeAttribute('aria-disabled')
+      const originalTitle = button.dataset.labelSheetOriginalTitle || ''
+      if (originalTitle) button.setAttribute('title', originalTitle)
+      else button.removeAttribute('title')
+    }
+  })
+}
+
+export function updateLabelSheetPreviewStyle(
+  settings: LabelSheetSettings,
+  styleId = SHEET_PREVIEW_STYLE_ID,
+) {
+  const layout = getLabelSheetLayout(settings)
+  let styleEl = document.getElementById(styleId)
+  if (!styleEl) {
+    styleEl = document.createElement('style')
+    styleEl.id = styleId
+    document.head.appendChild(styleEl)
+  }
+
+  styleEl.innerHTML = `
+    .preview-scroll-area.is-label-sheet-mode {
+      align-items: flex-start;
+      flex-direction: column;
+      justify-content: flex-start;
+    }
+    .preview-scroll-area.is-label-sheet-mode > #freeform-designer-workspace {
+      display: none;
+    }
+    .label-sheet-page {
+      box-sizing: border-box;
+      background: white;
+      outline: 0.3mm dashed rgba(0,0,0,0.28);
+      outline-offset: 1.5mm;
+      color: black;
+      display: block;
+      flex: 0 0 auto;
+      overflow: hidden;
+      width: ${layout.paperWidthMm}mm;
+      height: ${layout.paperHeightMm}mm;
+      padding:
+        ${settings.marginTopMm}mm
+        ${settings.marginRightMm}mm
+        ${settings.marginBottomMm}mm
+        ${settings.marginLeftMm}mm;
+    }
+    .${SHEET_PAGE_FRAME_CLASS} {
+      flex: 0 0 auto;
+      margin-inline: auto;
+      position: relative;
+    }
+    .label-sheet-grid {
+      display: grid;
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+    }
+    .label-sheet-cell {
+      align-items: center;
+      box-sizing: border-box;
+      display: flex;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .label-sheet-cell-grid {
+      border: 0.2mm solid #c8c8c8;
+    }
+    .label-sheet-label-shell {
+      flex: 0 0 auto;
+      position: relative;
+    }
+    .label-sheet-label-shell::after {
+      border: 0.3mm dashed rgba(0,0,0,0.28);
+      box-sizing: border-box;
+      content: '';
+      inset: 0;
+      pointer-events: none;
+      position: absolute;
+    }
+    .label-sheet-label-content {
+      transform-origin: top left;
+    }
+    .label-sheet-page .label-preview {
+      box-shadow: none !important;
+    }
+    .${SOURCE_BIN_CLASS} {
+      left: -10000px;
+      pointer-events: none;
+      position: fixed;
+      top: 0;
+      z-index: -1;
+    }
+  `
+}
+
+export function clearLabelSheetPreviewStyle(
+  styleId = SHEET_PREVIEW_STYLE_ID,
+) {
+  document.getElementById(styleId)?.remove()
+}
+
+export async function createLabelSheetPdf(
+  labels: LabelPdfPage[],
+  settings: LabelSheetSettings,
+): Promise<LabelPdfDocument | null> {
+  if (labels.length === 0) return null
+  if (!confirmLargeLabelSheetJob(labels.length, settings)) return null
+
+  const { jsPDF } = await import('jspdf')
+  const layout = getLabelSheetLayout(settings)
+  const pdf = new jsPDF({
+    orientation: layout.paperWidthMm > layout.paperHeightMm ? 'l' : 'p',
+    unit: 'mm',
+    format: [layout.paperWidthMm, layout.paperHeightMm],
+  })
+  const indexes = expandedIndexes(labels.length, settings)
+  const firstUsableSlot = getFirstUsableSlot(settings, layout)
+  const pageCount = Math.max(1, Math.ceil((indexes.length + firstUsableSlot) / layout.cellsPerPage))
+
+  const drawGrid = (pageIndex: number) => {
+    if (!settings.printGrid) return
+    pdf.setPage(pageIndex + 1)
+    pdf.setDrawColor(200, 200, 200)
+    pdf.setLineWidth(0.2)
+    for (let cellIndex = 0; cellIndex < layout.cellsPerPage; cellIndex += 1) {
+      const row = Math.floor(cellIndex / settings.columns)
+      const column = cellIndex % settings.columns
+      const cellX = settings.marginLeftMm + column * (layout.cellWidthMm + settings.gapHorizontalMm)
+      const cellY = settings.marginTopMm + row * (layout.cellHeightMm + settings.gapVerticalMm)
+      pdf.rect(cellX, cellY, layout.cellWidthMm, layout.cellHeightMm)
+    }
+  }
+
+  for (let pageIndex = 1; pageIndex < pageCount; pageIndex += 1) {
+    pdf.addPage([layout.paperWidthMm, layout.paperHeightMm], layout.paperWidthMm > layout.paperHeightMm ? 'l' : 'p')
+  }
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+    drawGrid(pageIndex)
+  }
+
+  indexes.forEach((labelIndex, itemIndex) => {
+    const absoluteSlot = itemIndex + firstUsableSlot
+    const pageIndex = Math.floor(absoluteSlot / layout.cellsPerPage)
+    const cellIndex = absoluteSlot % layout.cellsPerPage
+    pdf.setPage(pageIndex + 1)
+
+    const row = Math.floor(cellIndex / settings.columns)
+    const column = cellIndex % settings.columns
+    const cellX = settings.marginLeftMm + column * (layout.cellWidthMm + settings.gapHorizontalMm)
+    const cellY = settings.marginTopMm + row * (layout.cellHeightMm + settings.gapVerticalMm)
+    const label = labels[labelIndex]
+    const scale = settings.fitToCell ? Math.min(1, layout.cellWidthMm / label.widthMm, layout.cellHeightMm / label.heightMm) : 1
+    const width = label.widthMm * scale
+    const height = label.heightMm * scale
+    const x = cellX + (layout.cellWidthMm - width) / 2
+    const y = cellY + (layout.cellHeightMm - height) / 2
+
+    pdf.saveGraphicsState()
+    pdf.rect(cellX, cellY, layout.cellWidthMm, layout.cellHeightMm, null)
+    pdf.clip()
+    pdf.addImage(label.dataUrl, 'PNG', x, y, width, height, `label-sheet-source-${labelIndex}`, 'FAST')
+    pdf.restoreGraphicsState()
+  })
+
+  return pdf
+}

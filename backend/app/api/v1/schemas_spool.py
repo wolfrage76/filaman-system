@@ -1,7 +1,14 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, FiniteFloat, computed_field
+
+from app.core.config import settings
+
+from .schemas_entity_extra_field import (
+    EntityExtraFieldDefinitions,
+    optional_entity_definitions_field,
+)
 from .schemas_filament import FilamentDetailResponse
 
 
@@ -44,20 +51,24 @@ class SpoolCreate(BaseModel):
     status_id: int | None = None
     lot_number: str | None = None
     rfid_uid: str | None = None
+    rfid_uid_2: str | None = None
     external_id: str | None = None
     location_id: int | None = None
     purchase_date: datetime | None = None
-    purchase_price: float | None = None
+    purchase_price: FiniteFloat | None = None
     stocked_in_at: datetime | None = None
-    initial_total_weight_g: float | None = None
-    empty_spool_weight_g: float | None = None
-    spool_core_weight_g: float | None = None
-    remaining_weight_g: float | None = None
-    spool_outer_diameter_mm: float | None = None
-    spool_width_mm: float | None = None
+    initial_total_weight_g: FiniteFloat | None = None
+    empty_spool_weight_g: FiniteFloat | None = None
+    spool_core_weight_g: FiniteFloat | None = None
+    remaining_weight_g: FiniteFloat | None = None
+    spool_outer_diameter_mm: FiniteFloat | None = None
+    spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
     low_weight_threshold_g: int = 100
     custom_fields: dict[str, Any] | None = None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field()
+    )
 
 
 class SpoolBulkCreate(SpoolCreate):
@@ -68,26 +79,39 @@ class SpoolUpdate(BaseModel):
     status_id: int | None = None
     lot_number: str | None = None
     rfid_uid: str | None = None
+    rfid_uid_2: str | None = None
     external_id: str | None = None
     location_id: int | None = None
     purchase_date: datetime | None = None
-    purchase_price: float | None = None
-    initial_total_weight_g: float | None = None
-    empty_spool_weight_g: float | None = None
-    spool_core_weight_g: float | None = None
-    spool_outer_diameter_mm: float | None = None
-    spool_width_mm: float | None = None
+    purchase_price: FiniteFloat | None = None
+    initial_total_weight_g: FiniteFloat | None = None
+    empty_spool_weight_g: FiniteFloat | None = None
+    spool_core_weight_g: FiniteFloat | None = None
+    spool_outer_diameter_mm: FiniteFloat | None = None
+    spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
     low_weight_threshold_g: int | None = None
     custom_fields: dict[str, Any] | None = None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field()
+    )
+
+
+class SpoolMetrics(BaseModel):
+    remaining_percent: float | None
+    remaining_length_m: float | None
+    effective_remaining_weight_g: float | None
 
 
 class SpoolResponse(BaseModel):
+    metrics: SpoolMetrics | None = Field(None, exclude_if=lambda value: value is None)
+    label_field_aliases: dict[str, str | dict[str, Any]] | None = Field(None, exclude_if=lambda value: value is None)
     id: int
     filament_id: int
     status_id: int
     lot_number: str | None
     rfid_uid: str | None
+    rfid_uid_2: str | None = None
     external_id: str | None
     location_id: int | None
     purchase_date: datetime | None
@@ -104,28 +128,39 @@ class SpoolResponse(BaseModel):
     low_weight_threshold_g: int
     created_at: datetime
     custom_fields: dict[str, Any] | None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field(omit_none=True)
+    )
     filament: FilamentDetailResponse | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def web_url(self) -> str | None:
+        """Detail page in the web UI; null unless PUBLIC_URL is configured."""
+        if not settings.public_url:
+            return None
+        return f"{settings.public_url}/spools/{self.id}"
 
     class Config:
         from_attributes = True
 
 
 class MeasurementRequest(BaseModel):
-    measured_weight_g: float
+    measured_weight_g: FiniteFloat
     event_at: datetime | None = None
     note: str | None = None
 
 
 class AdjustmentRequest(BaseModel):
     adjustment_type: str
-    delta_weight_g: float | None = None
-    measured_weight_g: float | None = None
+    delta_weight_g: FiniteFloat | None = None
+    measured_weight_g: FiniteFloat | None = None
     event_at: datetime | None = None
     note: str | None = None
 
 
 class ConsumptionRequest(BaseModel):
-    delta_weight_g: float
+    delta_weight_g: FiniteFloat
     event_at: datetime | None = None
     note: str | None = None
 
@@ -149,10 +184,10 @@ class BulkSpoolUpdateRequest(BaseModel):
     clear_location: bool = False
     status_id: int | None = None
     low_weight_threshold_g: int | None = None
-    empty_spool_weight_g: float | None = None
-    spool_core_weight_g: float | None = None
+    empty_spool_weight_g: FiniteFloat | None = None
+    spool_core_weight_g: FiniteFloat | None = None
     clear_spool_core_weight: bool = False
-    purchase_price: float | None = None
+    purchase_price: FiniteFloat | None = None
 
 
 class BulkSpoolDeleteRequest(BaseModel):
@@ -163,6 +198,11 @@ class MoveLocationRequest(BaseModel):
     location_id: int | None
     event_at: datetime | None = None
     note: str | None = None
+
+
+class SpoolEventColor(BaseModel):
+    hex_code: str
+    name: str | None = None
 
 
 class SpoolEventResponse(BaseModel):
@@ -181,6 +221,12 @@ class SpoolEventResponse(BaseModel):
     to_location_id: int | None
     note: str | None
     meta: dict[str, Any] | None
+    # Enriched filament context (populated by the all-events listing); may be
+    # null when the spool or its filament has since been deleted.
+    manufacturer_name: str | None = None
+    manufacturer_color_name: str | None = None
+    material_type: str | None = None
+    colors: list[SpoolEventColor] | None = None
 
     class Config:
         from_attributes = True
@@ -189,5 +235,5 @@ class SpoolEventResponse(BaseModel):
 class DeviceMeasurementRequest(BaseModel):
     rfid_uid: str | None = None
     external_id: str | None = None
-    measured_weight_g: float
+    measured_weight_g: FiniteFloat
     event_at: datetime | None = None

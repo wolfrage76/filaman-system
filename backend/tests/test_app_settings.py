@@ -1,5 +1,7 @@
 import pytest
 
+from app.models import AppSettings
+
 
 class TestAppSettingsAdmin:
     @pytest.mark.asyncio
@@ -12,6 +14,49 @@ class TestAppSettingsAdmin:
         assert response.status_code == 200
         data = response.json()
         assert data["login_disabled"] is False
+        assert data["rfid_display_colons"] is False
+        assert data["filament_lookup_source"] == "filamandb"
+
+    @pytest.mark.asyncio
+    async def test_filament_lookup_source_roundtrip_and_public_info(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"filament_lookup_source": "disabled"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["filament_lookup_source"] == "disabled"
+
+        public_response = await client.get("/api/v1/app-settings/public-info")
+        assert public_response.status_code == 200
+        assert public_response.json()["filament_lookup_source"] == "disabled"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("source", ["both", "ofd"], ids=["unknown", "feature-absent"])
+    async def test_filament_lookup_source_rejects_unavailable_values(self, auth_client, source):
+        client, csrf_token = auth_client
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"filament_lookup_source": source},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_legacy_ofd_setting_uses_filamandb_without_overwriting_it(self, auth_client, db_session):
+        client, _ = auth_client
+        db_session.add(AppSettings(id=1, filament_lookup_source="ofd"))
+        await db_session.commit()
+
+        admin_response = await client.get("/api/v1/admin/app-settings/")
+        public_response = await client.get("/api/v1/app-settings/public-info")
+
+        assert admin_response.json()["filament_lookup_source"] == "filamandb"
+        assert public_response.json()["filament_lookup_source"] == "filamandb"
+        assert (await db_session.get(AppSettings, 1)).filament_lookup_source == "ofd"
 
     @pytest.mark.asyncio
     async def test_put_app_settings_creates_row(self, auth_client):
@@ -46,6 +91,44 @@ class TestAppSettingsAdmin:
         assert get_response.status_code == 200
         data = get_response.json()
         assert data["login_disabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_rfid_display_colons_roundtrip_and_public_info(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"rfid_display_colons": False},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        assert response.json()["rfid_display_colons"] is False
+
+        admin_response = await client.get("/api/v1/admin/app-settings/")
+        assert admin_response.json()["rfid_display_colons"] is False
+
+        public_response = await client.get("/api/v1/app-settings/public-info")
+        assert public_response.status_code == 200
+        assert public_response.json()["rfid_display_colons"] is False
+
+    @pytest.mark.asyncio
+    async def test_put_without_display_colons_keeps_default_off(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"currency": "USD"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        assert response.json()["rfid_display_colons"] is False
+
+        enabled = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"rfid_display_colons": True},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert enabled.json()["rfid_display_colons"] is True
 
     @pytest.mark.asyncio
     async def test_put_app_settings_updates_existing(self, auth_client):
@@ -178,6 +261,7 @@ class TestAppSettingsPublic:
         assert response.status_code == 200
         data = response.json()
         assert data["login_disabled"] is False
+        assert data["rfid_display_colons"] is False
 
     @pytest.mark.asyncio
     async def test_public_info_returns_login_disabled_true(self, client, auth_client):
@@ -261,3 +345,13 @@ class TestLoginBypass:
         assert response.status_code == 401
         data = response.json()
         assert data["detail"]["code"] == "invalid_credentials"
+
+    @pytest.mark.asyncio
+    async def test_version_check_accessible_to_authenticated_user(self, auth_client):
+        """GET /api/v1/admin/system/version-check should be accessible to authenticated user."""
+        client, _ = auth_client
+        response = await client.get("/api/v1/admin/system/version-check")
+        assert response.status_code == 200
+        data = response.json()
+        assert "installed_version" in data
+        assert "update_available" in data

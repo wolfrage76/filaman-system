@@ -1,0 +1,1389 @@
+// @vitest-environment happy-dom
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { bindColorFilterButton, initHeaderColumnFilters, type HeaderFilterOption } from './table-column-filters'
+import { setLang } from './i18n'
+
+afterEach(() => {
+  document.body.innerHTML = ''
+  localStorage.removeItem('filaman-color-range-open')
+  localStorage.removeItem('filaman-spool-status-open')
+  setLang('en')
+  vi.restoreAllMocks()
+})
+
+describe('linked harmony results', () => {
+  function mount(options: HeaderFilterOption[]) {
+    document.body.innerHTML = '<table><thead><tr><th>Colors</th></tr></thead></table>'
+    const onApply = vi.fn()
+    const controller = initHeaderColumnFilters(document.querySelector('table')!, [{
+      key: 'colors', label: 'Colors', columnSelector: 'th', type: 'multi', multiDisplay: 'colors', options, onApply,
+    }])
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+    document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+    field('hueFrom', 350)
+    field('hueTo', 10)
+    return { onApply, controller }
+  }
+  function field(name: string, value: number) {
+    const input = document.querySelector<HTMLInputElement>(`[data-color-field="${name}"]`)!
+    input.value = String(value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  function mode(value: string) {
+    document.querySelector<HTMLInputElement>(`[data-color-harmony="${value}"]`)!.click()
+  }
+  const option = (value: string, ...colorHexes: string[]) => ({ value, label: value, colorHexes })
+  const values = (group = 0) => [...document.querySelectorAll<HTMLInputElement>(`[data-color-group="${group}"] input[data-value]`)].map(input => input.dataset.value)
+
+  it('keeps the exact stops selected by a range after an unavailable palette refresh', () => {
+    const { controller, onApply } = mount([{
+      ...option('Silk', '#0066FF', '#FF0000'),
+      colorStops: [{ id: 21, hex: '#FF0000' }, { id: 22, hex: '#0066FF' }],
+    }])
+    const expected = { type: 'multi', values: ['Silk'], colorStopIds: [['Silk', [21]]] }
+    const apply = () => document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')!.click()
+    apply()
+    expect(onApply).toHaveBeenLastCalledWith(expected)
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+    expect(document.querySelector('input[data-value="Silk"]')?.closest('label')?.querySelector('[data-color-hex]')?.getAttribute('data-color-hex')).toBe('#FF0000')
+    controller.setOptions('colors', [])
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+    expect(document.querySelector<HTMLInputElement>('input[data-value="Silk"]')?.checked).toBe(true)
+    expect(document.querySelector('[data-color-marker]')).toBeNull()
+    apply()
+    expect(onApply).toHaveBeenLastCalledWith(expected)
+  })
+
+  it('updates the checked sample when a wheel match is replaced with a named list choice', () => {
+    const { onApply } = mount([{
+      ...option('Silk', '#0066FF', '#FF0000'),
+      colorStops: [{ id: 21, hex: '#FF0000' }, { id: 22, hex: '#0066FF' }],
+    }])
+    const apply = () => document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')!.click()
+    const choice = () => document.querySelector<HTMLInputElement>('input[data-value="Silk"]')!
+    apply()
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+    expect(choice().getAttribute('aria-description')).toBe('#FF0000')
+    choice().click()
+    choice().click()
+    expect(choice().getAttribute('aria-description')).toBe('#0066FF')
+    apply()
+    expect(onApply).toHaveBeenLastCalledWith({ type: 'multi', values: ['Silk'] })
+  })
+
+  it('keeps a range with no matches open without clearing the table filter', () => {
+    const { onApply } = mount([option('Blue', '#0066FF')])
+    const apply = document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')!
+    expect(apply.disabled).toBe(true)
+    apply.click()
+    expect(onApply).not.toHaveBeenCalled()
+    document.querySelector<HTMLButtonElement>('[data-color-preset="blue"]')!.click()
+    expect(apply.disabled).toBe(false)
+  })
+
+  it('lets Enter toggle the wheel disclosure without applying a filter', () => {
+    const { onApply } = mount([option('Red', '#FF0000')])
+    const summary = document.querySelector('.fm-header-color-disclosure summary')!
+    const key = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    summary.dispatchEvent(key)
+    expect(key.defaultPrevented).toBe(false)
+    expect(onApply).not.toHaveBeenCalled()
+  })
+
+  it('updates preview shading without rebuilding results or rewriting inventory dots', () => {
+    mount([option('Red', '#FF0000'), option('Cyan', '#00FFFF')])
+    const tile = document.querySelector('input[data-value="Red"]')!.closest('label')!
+    const dot = document.querySelector<SVGCircleElement>('[data-color-marker="#FF0000"]')!
+    const writes = vi.spyOn(dot, 'setAttribute')
+    field('valuePreview', 60)
+    expect(document.querySelector('.fm-header-color-wheel')?.getAttribute('style')).toContain('--color-wheel-darkness: 0.4')
+    expect(document.querySelector('input[data-value="Red"]')!.closest('label')).toBe(tile)
+    expect(writes).not.toHaveBeenCalled()
+  })
+
+  it('reads the matching cache once per Apply pass rather than once per color option', () => {
+    mount(Array.from({ length: 100 }, (_, i) => option(`Red ${i}`, '#FF0000')))
+    const keys = vi.spyOn(JSON, 'stringify')
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')!.click()
+    expect(keys.mock.calls.length).toBeLessThanOrEqual(3)
+  })
+
+  it('reuses surviving results and keeps delegated selection and popups working after filtering', () => {
+    mount([option('Red', '#FF0000'), option('Cyan', '#00FFFF')])
+    const tile = document.querySelector('input[data-value="Red"]')!.closest('label')!
+    const checkbox = tile.querySelector<HTMLInputElement>('input')!
+    checkbox.focus()
+    mode('complementary')
+    expect(document.querySelector('input[data-value="Red"]')!.closest('label')).toBe(tile)
+    checkbox.click()
+    expect(checkbox.checked).toBe(true)
+    const cyan = document.querySelector('input[data-value="Cyan"]')!.closest('label')!
+    cyan.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('#00FFFF')
+    mode('single')
+    expect(cyan.isConnected).toBe(false)
+    expect(document.querySelector('input[data-value="Red"]')!.closest('label')).toBe(tile)
+    expect(checkbox.checked).toBe(true)
+  })
+
+  it('restores moved-option focus and falls back to search when that option disappears', () => {
+    const { controller } = mount([option('Red', '#FF0000'), option('Green', '#00FF00')])
+    document.querySelector<HTMLButtonElement>('[data-clear-color-range]')!.click()
+    const green = document.querySelector<HTMLInputElement>('input[data-value="Green"]')!
+    const grid = green.closest('.fm-color-grid')!
+    const insert = grid.insertBefore.bind(grid)
+    // Happy DOM does not model Chromium's focus loss when moving an existing node.
+    vi.spyOn(grid, 'insertBefore').mockImplementation((node, before) => {
+      if (node.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+      return insert(node, before)
+    })
+    green.focus()
+    controller.setOptions('colors', [option('Green', '#00FF00')])
+    expect(document.activeElement).toBe(green)
+    controller.setOptions('colors', [])
+    expect(document.activeElement).toBe(document.querySelector('.fm-header-filter-search'))
+  })
+
+  it('shows the displayed hex in popups and keeps names only when hidden or truncated', () => {
+    const width = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280)
+    mount([option('Mixed', '#0000FF', '#00FFFF80'), option('#00FFFF', '#00FFFF')])
+    mode('complementary')
+    document.querySelector<HTMLInputElement>('[data-color-transparent]')!.click()
+    const tile = document.querySelector<HTMLInputElement>('input[data-value="Mixed"]')!.closest<HTMLElement>('label')!
+    const name = tile.querySelector<HTMLElement>('.fm-color-tile-name')!
+    const popup = () => {
+      tile.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+      return document.querySelector('[role="tooltip"]')?.textContent
+    }
+    expect(tile.hasAttribute('title')).toBe(false)
+    expect(tile.querySelector('input')?.getAttribute('aria-description')).toBe('#00FFFF80')
+    expect(popup()).toBe('#00FFFF80')
+    width.mockReturnValue(390)
+    window.dispatchEvent(new Event('resize'))
+    expect(popup()).toBe('Mixed · #00FFFF80')
+    const hexTile = document.querySelector<HTMLInputElement>('input[data-value="#00FFFF"]')!.closest<HTMLElement>('label')!
+    hexTile.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+    expect(hexTile.querySelector('input')?.getAttribute('aria-description')).toBeNull()
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('#00FFFF')
+    width.mockReturnValue(1280)
+    window.dispatchEvent(new Event('resize'))
+    vi.spyOn(name, 'scrollHeight', 'get').mockReturnValue(60)
+    vi.spyOn(name, 'clientHeight', 'get').mockReturnValue(30)
+    expect(popup()).toBe('Mixed · #00FFFF80')
+  })
+
+  it('skips a repeated-name popup for a visible empty swatch but keeps hidden names available', () => {
+    const width = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280)
+    mount([option('Empty')])
+    document.querySelector<HTMLButtonElement>('[data-clear-color-range]')!.click()
+    const tile = document.querySelector<HTMLInputElement>('input[data-value="Empty"]')!.closest<HTMLElement>('label')!
+    const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]')!
+    tile.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+    expect(tooltip.hidden).toBe(true)
+    width.mockReturnValue(390)
+    window.dispatchEvent(new Event('resize'))
+    tile.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+    expect(tooltip.hidden).toBe(false)
+    expect(tooltip.textContent).toBe('Empty')
+  })
+
+  it('links harmony name indicators, copied outlines and matching dots without changing fills', () => {
+    mount([option('Red', '#FF0000'), option('Cyan', '#00FFFF'), option('Green', '#00FF00'), option('Blue', '#0000FF')])
+    for (const harmony of ['complementary', 'triadic']) {
+      const indicator = document.querySelector(`[data-color-harmony="${harmony}"]`)!.parentElement!
+        .querySelector(`[data-color-harmony-tone="${harmony}"]`)
+      expect(indicator?.textContent).toBe(harmony === 'complementary' ? 'Complementary' : 'Triadic')
+      expect(indicator?.getAttribute('aria-hidden')).toBeNull()
+      mode(harmony)
+      const copies = [...document.querySelectorAll<HTMLElement>('[data-color-window]:not([hidden])')].slice(1)
+      expect(copies.every(node => node.dataset.colorHarmonyTone === harmony)).toBe(true)
+      const headings = [...document.querySelectorAll('[data-color-group] h4')].slice(1)
+      expect(headings.every(node => node.querySelector(`[data-color-harmony-tone="${harmony}"]`)?.textContent === node.textContent)).toBe(true)
+      for (const hex of harmony === 'complementary' ? ['#00FFFF'] : ['#00FF00', '#0000FF']) {
+        const dot = document.querySelector<SVGCircleElement>(`[data-color-marker="${hex}"]`)!
+        expect(dot.dataset.colorHarmonyTone).toBe(harmony)
+        expect(dot.getAttribute('fill')).toBe(hex)
+      }
+      document.querySelector<HTMLButtonElement>('[data-color-mode="color"]')!.click()
+      mode(harmony)
+      field('hueFrom', 0)
+      field('hueTo', 360)
+      expect(document.querySelectorAll('[data-color-window][data-color-harmony-tone]')).toHaveLength(0)
+      expect(document.querySelectorAll('[data-color-guide]:not([hidden])')).toHaveLength(0)
+      document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+      field('hueFrom', 350)
+      field('hueTo', 10)
+    }
+    mode('single')
+    expect(document.querySelectorAll('[data-color-marker][data-color-harmony-tone]')).toHaveLength(0)
+    for (const guide of document.querySelectorAll<HTMLElement>('[data-color-guide]:not([hidden])')) {
+      expect(guide.dataset.colorHarmonyTone).toBe(guide.dataset.colorGuide === '180' ? 'complementary' : 'triadic')
+    }
+  })
+
+  it('puts the hue-order caption in the Selected range heading row only', () => {
+    mount([option('Red', '#FF0000'), option('Cyan', '#00FFFF')])
+    mode('complementary')
+    const heading = document.querySelector('[data-color-group="0"] h4')!
+    const caption = document.querySelector('.fm-color-order-caption')!
+    expect(caption.parentElement).toBe(heading.parentElement)
+    expect(caption.closest('[data-color-group]')?.getAttribute('data-color-group')).toBe('0')
+    expect(document.querySelectorAll('.fm-color-order-caption')).toHaveLength(1)
+  })
+
+  it('orders the neutral row, Color button and named presets for visual and keyboard navigation', () => {
+    mount([option('Red', '#FF0000')])
+    expect(document.querySelector('[data-color-mode="color"]')?.parentElement)
+      .toBe(document.querySelector('[data-color-preset="red"]')?.parentElement)
+    expect([...document.querySelectorAll<HTMLElement>('[data-color-neutral], [data-color-mode], [data-color-preset]')]
+      .map(button => button.dataset.colorNeutral || button.dataset.colorMode || button.dataset.colorPreset))
+      .toEqual(['black', 'grey', 'white', 'color', 'red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'])
+  })
+
+  it.each(['single', 'complementary', 'triadic'])('uses compact single-pane results in %s mode and restores wide tiles on resize', (harmony) => {
+    const width = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390)
+    mount([option('Red', '#FF0000'), option('Cyan', '#00FFFF'), option('Green', '#00FF00'), option('Blue', '#0000FF')])
+    mode(harmony)
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel')!
+    expect(panel.classList.contains('fm-header-filter-panel-compact-colors')).toBe(true)
+    expect(document.querySelectorAll('[data-color-group]')).toHaveLength(harmony === 'single' ? 1 : harmony === 'complementary' ? 2 : 3)
+    expect(document.querySelector<HTMLInputElement>('input[data-value="Red"]')?.getAttribute('aria-label')).toBe('Red')
+    const marker = document.querySelector('[data-color-marker]')!
+    width.mockReturnValue(744)
+    window.dispatchEvent(new Event('resize'))
+    expect(panel.classList.contains('fm-header-filter-panel-compact-colors')).toBe(false)
+    expect(document.querySelector('[data-color-marker]')).toBe(marker)
+    width.mockReturnValue(743)
+    window.dispatchEvent(new Event('resize'))
+    expect(panel.classList.contains('fm-header-filter-panel-compact-colors')).toBe(true)
+  })
+
+  it('also compacts a wide results-only pane when the wheel is collapsed', () => {
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280)
+    mount([option('Red', '#FF0000'), option('Cyan', '#00FFFF')])
+    mode('complementary')
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel')!
+    const disclosure = document.querySelector<HTMLDetailsElement>('.fm-header-color-disclosure')!
+    expect(panel.classList.contains('fm-header-filter-panel-compact-colors')).toBe(false)
+    disclosure.open = false
+    disclosure.dispatchEvent(new Event('toggle'))
+    expect(panel.classList.contains('fm-header-filter-panel-compact-colors')).toBe(true)
+    expect(values(1)).toEqual(['Cyan'])
+    disclosure.open = true
+    disclosure.dispatchEvent(new Event('toggle'))
+    expect(panel.classList.contains('fm-header-filter-panel-compact-colors')).toBe(false)
+  })
+
+  it('keeps the focused wheel control in view when the picker reflows', () => {
+    const width = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1000)
+    mount([option('Red', '#FF0000')])
+    const slider = document.querySelector<HTMLInputElement>('[data-color-field="hueTo"]')!
+    slider.focus()
+    const reveal = vi.spyOn(slider, 'scrollIntoView')
+
+    width.mockReturnValue(390)
+    window.dispatchEvent(new Event('resize'))
+
+    expect(document.activeElement).toBe(slider)
+    expect(reveal).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+    reveal.mockClear()
+    window.dispatchEvent(new Event('scroll'))
+    expect(reveal).not.toHaveBeenCalled()
+  })
+
+  it('gives a tall stacked picker the available height after a short-window resize', () => {
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390)
+    const height = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(390)
+    mount([option('Red', '#FF0000')])
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel')!
+    const trigger = document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(new DOMRect(300, 250, 30, 30))
+    vi.spyOn(panel, 'offsetHeight', 'get').mockReturnValue(374)
+    vi.spyOn(panel, 'scrollHeight', 'get').mockReturnValue(850)
+
+    height.mockReturnValue(664)
+    window.dispatchEvent(new Event('resize'))
+
+    expect(panel.style.top).toBe('8px')
+    expect(panel.style.getPropertyValue('--fm-filter-max-height')).toBe('648px')
+  })
+
+  it('marks suggested ranges in Single and active ranges in harmony modes', () => {
+    const { onApply, controller } = mount([option('Red', '#FF0000'), option('Cyan', '#00FFFF'), option('Green', '#00FF00')])
+    const marks = () => [...document.querySelectorAll<HTMLElement>('[data-color-guide]:not([hidden])')]
+      .map(guide => [guide.dataset.colorGuide, guide.style.getPropertyValue('--color-guide-angle')])
+    expect(values()).toEqual(['Red'])
+    expect(document.querySelectorAll('.fm-header-color-wheel-selection:not([hidden])')).toHaveLength(1)
+    expect(marks()).toEqual([['180', '-540deg'], ['120', '-480deg'], ['240', '-600deg']])
+    mode('complementary')
+    expect(values(1)).toEqual(['Cyan'])
+    expect(document.querySelectorAll('.fm-header-color-wheel-selection:not([hidden])')).toHaveLength(2)
+    expect(marks()).toEqual([['0', '-360deg'], ['180', '-540deg']])
+    expect(document.querySelector('[data-color-group="1"] h4')?.textContent).toBe('Complementary')
+    expect(document.querySelector('.fm-header-color-wheel')?.getAttribute('style')).toContain('--color-hue-mask')
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')!.click()
+    expect(onApply).toHaveBeenLastCalledWith({ type: 'multi', values: ['Red', 'Cyan'] })
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+    // Reopening retains the native fresh range / already applied identities behavior.
+    expect(document.querySelector<HTMLInputElement>('[data-color-harmony="single"]')?.checked).toBe(true)
+    document.querySelector<HTMLButtonElement>('[data-clear-color-range]')!.click()
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-outline')!.click()
+    document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+    mode('triadic')
+    field('hueFrom', 350)
+    field('hueTo', 10)
+    expect(marks()).toEqual([['0', '-360deg'], ['120', '-480deg'], ['240', '-600deg']])
+    field('hueTo', 14)
+    expect(marks()).toEqual([['0', '-362deg'], ['120', '-482deg'], ['240', '-602deg']])
+    expect(document.querySelectorAll('.fm-header-color-wheel-selection:not([hidden])')).toHaveLength(3)
+    expect(document.querySelectorAll('[data-color-group]')).toHaveLength(3)
+    expect(values(1)).toEqual(['Green'])
+    expect(document.querySelector('[data-color-group="2"] .fm-header-filter-empty-text')?.textContent).toBe('No matching options')
+    document.querySelector<HTMLButtonElement>('[data-color-neutral="black"]')!.click()
+    expect(marks()).toEqual([])
+    controller.resetAll()
+    expect(document.querySelector<HTMLInputElement>('[data-color-harmony="single"]')?.checked).toBe(true)
+  })
+
+  it('orders wrapped matches by closest hue and displays the winning multi-hex sample', () => {
+    mount([
+      option('red8', '#FF2200'), option('red356', '#FF0011'), option('red0', '#FF0000'),
+      option('cyan172', '#00FFDD'), option('cyan184', '#00EEFF'), option('cyan180', '#00FFFF'),
+      option('mixed', '#0000FF', '#00FFFF'),
+    ])
+    expect(values()).toEqual(['red0', 'red356', 'red8'])
+    mode('complementary')
+    expect(values(1)).toEqual(['cyan180', 'mixed', 'cyan184', 'cyan172'])
+    expect(document.querySelector<HTMLInputElement>('input[data-value="mixed"]')?.nextElementSibling?.getAttribute('style')).toContain('#00FFFF')
+    expect(document.querySelector('.fm-color-order-caption')?.textContent).toBe('Closest hue first')
+    document.querySelector<HTMLButtonElement>('[data-color-mode="color"]')!.click()
+    field('hueFrom', 0)
+    field('hueTo', 360)
+    expect(document.querySelector('.fm-color-order-caption')).toBeNull()
+    expect(document.querySelectorAll('input[data-value]')).toHaveLength(7)
+    mode('triadic')
+    expect(document.querySelectorAll('input[data-value]')).toHaveLength(7)
+  })
+
+  it('keeps square tile names accessible and the list switch, including long names', () => {
+    const long = 'A very long manufacturer color name that needs more than two lines'
+    const unbroken = 'ExtremelyLongUnbrokenColorNameWhichMustNotStretchTheTile'
+    mount([option(long, '#FF0000'), option(unbroken, '#FF0000')])
+    for (const name of [long, unbroken]) {
+      const tile = [...document.querySelectorAll<HTMLElement>('.fm-header-filter-color-option')].find(tile => tile.querySelector('input')?.getAttribute('aria-label') === name)!
+      vi.spyOn(tile.querySelector<HTMLElement>('.fm-color-tile-name')!, 'scrollHeight', 'get').mockReturnValue(90)
+      expect(tile.querySelector('.fm-color-tile-name')?.textContent).toBe(name)
+      expect(tile.querySelector('input')?.getAttribute('aria-label')).toBe(name)
+      tile.querySelector('input')!.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(`${name} · #FF0000`)
+      tile.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(`${name} · #FF0000`)
+    }
+    document.querySelector<HTMLInputElement>('[role="switch"]')!.click()
+    expect(document.querySelectorAll('.fm-header-filter-option')).toHaveLength(2)
+    expect(document.querySelector('.fm-color-tile-name')).toBeNull()
+  })
+
+  it.each([
+    { harmony: 'single', groups: [['Red']] },
+    { harmony: 'complementary', groups: [['Red'], ['Cyan']] },
+    { harmony: 'triadic', groups: [['Red'], ['Green'], ['Blue']] },
+  ])('preserves $harmony groups and applies checked colors in list mode', ({ harmony, groups }) => {
+    const { onApply } = mount([option('Red', '#FF0000'), option('Cyan', '#00FFFF'), option('Green', '#00FF00'), option('Blue', '#0000FF')])
+    const toggle = document.querySelector<HTMLInputElement>('[role="switch"]')!
+    toggle.click()
+    mode(harmony)
+    expect(document.querySelectorAll('[data-color-group]')).toHaveLength(groups.length)
+    expect(groups.map((_, index) => values(index))).toEqual(groups)
+    const selected = groups.at(-1)![0]
+    const checkbox = () => document.querySelector<HTMLInputElement>(`input[data-value="${selected}"]`)!
+    expect(checkbox().closest('.fm-header-filter-option')).not.toBeNull()
+    checkbox().click()
+    toggle.click()
+    expect(checkbox().checked).toBe(true)
+    toggle.click()
+    expect(checkbox().checked).toBe(true)
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')!.click()
+    expect(onApply).toHaveBeenCalledExactlyOnceWith({ type: 'multi', values: [selected] })
+  })
+
+  it('keeps neutral limits and disables hue harmony while remembering the chromatic choice', () => {
+    mount([option('White', '#FFFFFF'), option('Black', '#000000'), option('Grey', '#808080')])
+    mode('triadic')
+    for (const [neutral, low, high, saturation] of [['black', 0, 15, 20], ['white', 85, 100, 10], ['grey', 35, 65, 10]] as const) {
+      document.querySelector<HTMLButtonElement>(`[data-color-neutral="${neutral}"]`)!.click()
+      expect(document.querySelector('.fm-header-color-wheel')?.classList.contains('is-neutral')).toBe(true)
+      expect(document.querySelector<HTMLInputElement>('[data-color-harmony="single"]')?.checked).toBe(true)
+      expect([...document.querySelectorAll<HTMLInputElement>('[data-color-harmony]')].every(input => input.disabled)).toBe(true)
+      expect(document.querySelector<HTMLInputElement>('[data-color-field="hueFrom"]')?.disabled).toBe(true)
+      expect(document.querySelector<HTMLInputElement>('[data-color-field="saturationTo"]')?.disabled).toBe(false)
+      expect(document.querySelector<HTMLInputElement>('[data-color-field="saturationTo"]')?.value).toBe(String(saturation))
+      expect(document.querySelector<HTMLInputElement>('[data-color-field="valueFrom"]')?.value).toBe(String(low))
+      expect(document.querySelector<HTMLInputElement>('[data-color-field="valueTo"]')?.value).toBe(String(high))
+    }
+    document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+    expect(document.querySelector<HTMLInputElement>('[data-color-harmony="triadic"]')?.checked).toBe(true)
+  })
+
+  it('ranks triadic centers, breaks ties stably and never duplicates overlapping options', () => {
+    mount([option('Green next', '#00FF11'), option('Green B', '#00FF00'), option('Green A', '#00FF00'),
+      option('Blue next', '#1100FF'), option('Blue', '#0000FF'), option('Red', '#FF0000')])
+    mode('triadic')
+    expect(values(1)).toEqual(['Green A', 'Green B', 'Green next'])
+    expect(values(2)).toEqual(['Blue', 'Blue next'])
+    // Expand via the normal, non-wrapped slider path.
+    document.querySelector<HTMLButtonElement>('[data-color-mode="color"]')!.click()
+    mode('triadic')
+    field('hueFrom', 0)
+    field('hueTo', 280)
+    expect(document.querySelectorAll('input[data-value]')).toHaveLength(6)
+    const identities = [...document.querySelectorAll<HTMLInputElement>('input[data-value]')].map(input => input.dataset.value)
+    expect(new Set(identities).size).toBe(6)
+    document.querySelector<HTMLInputElement>('input[data-value="Green A"]')!.click()
+    expect(document.querySelectorAll('input[data-value]:checked')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-color-harmony]')).toHaveLength(3)
+    expect([...document.querySelectorAll<HTMLInputElement>('.fm-header-color-controls input[type="checkbox"]')].map(input => input.dataset.colorTransparent)).toEqual([''])
+  })
+
+  it('copies the editable arc and non-hue bounds on keyboard movement and sorts neutrals dark to light', () => {
+    mount([option('Light', '#999999'), option('Dark', '#666666')])
+    mode('complementary')
+    field('saturationFrom', 40)
+    field('valueFrom', 25)
+    const wheel = document.querySelector<HTMLElement>('.fm-header-color-wheel')!
+    wheel.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true, bubbles: true }))
+    expect(document.querySelector<HTMLInputElement>('[data-color-field="hueFrom"]')?.value).toBe('0')
+    expect(document.querySelector<HTMLInputElement>('[data-color-field="hueTo"]')?.value).toBe('20')
+    expect(document.querySelector<HTMLInputElement>('[data-color-field="saturationFrom"]')?.value).toBe('40')
+    expect(document.querySelector<HTMLInputElement>('[data-color-field="valueFrom"]')?.value).toBe('25')
+    expect([...document.querySelectorAll<HTMLElement>('[data-color-window]')].slice(0, 2).map(el => el.style.getPropertyValue('--color-hue-from'))).toEqual(['70deg', '-110deg'])
+    document.querySelector<HTMLButtonElement>('[data-color-neutral="grey"]')!.click()
+    expect(values()).toEqual(['Dark', 'Light'])
+  })
+
+  it('overlays actual source samples and refreshes them without filtering its own source', () => {
+    const { controller } = mount([option('Same name', '#FF0000', '#00FFFF', '#00FFFF80'), option('Second identity', '#FF0000')])
+    const markers = () => [...document.querySelectorAll<SVGCircleElement>('[data-color-marker]')]
+    expect(markers().map(node => node.getAttribute('fill')).sort()).toEqual(['#00FFFF', '#00FFFF80', '#FF0000'])
+    expect(document.querySelector('.fm-header-color-wheel-surface')).not.toBeNull()
+    const marker = (hex: string) => document.querySelector<SVGCircleElement>(`[data-color-marker="${hex}"]`)!
+    const [red, cyan, alpha] = ['#FF0000', '#00FFFF', '#00FFFF80'].map(marker)
+    expect(red.classList.contains('is-matching')).toBe(true)
+    expect(cyan.classList.contains('is-matching')).toBe(false)
+    mode('complementary')
+    expect(marker('#FF0000')).toBe(red)
+    expect(marker('#00FFFF')).toBe(cyan)
+    expect(cyan.classList.contains('is-matching')).toBe(true)
+    expect(alpha.classList.contains('is-matching')).toBe(false)
+    document.querySelector<HTMLInputElement>('[data-color-transparent]')!.click()
+    expect(alpha.classList.contains('is-matching')).toBe(true)
+    const search = document.querySelector<HTMLInputElement>('.fm-header-filter-search')!
+    search.value = 'Second'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(cyan.classList.contains('is-matching')).toBe(true)
+    expect(markers()).toHaveLength(3)
+    controller.setOptions('colors', [option('Green', '#00FF00')])
+    expect(markers().map(node => node.getAttribute('fill'))).toEqual(['#00FF00'])
+    controller.setOptions('colors', [])
+    expect(markers()).toHaveLength(0)
+    expect(document.querySelector('.fm-header-color-wheel-surface')).not.toBeNull()
+  })
+
+  it('hatches every excluded dot below matching dots, including alpha and brightness exclusions inside an exposed sector', () => {
+    mount([option('Red', '#FF0000'), option('Dark red', '#220000'), option('Cyan', '#00FFFF'), option('Transparent cyan', '#00FFFF80')])
+    const dot = (hex: string) => document.querySelector<SVGCircleElement>(`[data-color-marker="${hex}"]`)!
+    const layer = (node: SVGCircleElement) => node.closest<SVGGElement>('[data-color-marker-layer]')?.dataset.colorMarkerLayer
+    const red = dot('#FF0000')
+    const cyan = dot('#00FFFF')
+    const alpha = dot('#00FFFF80')
+    expect(layer(red)).toBe('matching')
+    expect(layer(cyan)).toBe('excluded')
+    expect(layer(dot('#220000'))).toBe('excluded')
+    expect((dot('#220000').nextElementSibling as SVGElement).style.display).not.toBe('none')
+    mode('complementary')
+    expect(dot('#00FFFF')).toBe(cyan)
+    expect(layer(cyan)).toBe('matching')
+    expect(layer(alpha)).toBe('excluded')
+    expect((alpha.nextElementSibling as SVGElement).style.display).not.toBe('none')
+    expect(alpha.getAttribute('fill')).toBe('#00FFFF80')
+    document.querySelector<HTMLInputElement>('[data-color-transparent]')!.click()
+    expect(dot('#00FFFF80')).toBe(alpha)
+    expect(layer(alpha)).toBe('matching')
+    expect((alpha.nextElementSibling as SVGElement).style.display).toBe('none')
+    const layers = [...document.querySelectorAll<SVGGElement>('[data-color-marker-layer]')]
+    expect(layers.map(node => node.dataset.colorMarkerLayer)).toEqual(['excluded', 'matching'])
+    expect(document.querySelectorAll('.fm-header-color-markers pattern[id$="-marker-hatch"]')).toHaveLength(1)
+    document.querySelector<HTMLButtonElement>('[data-clear-color-range]')!.click()
+    expect([...document.querySelectorAll<SVGElement>('.fm-header-color-marker-hatch')].every(node => node.style.display === 'none')).toBe(true)
+  })
+
+  it('backs matching alpha dots so an excluded coincident hatch cannot show through', () => {
+    mount([option('Dark red', '#660000'), option('Transparent red', '#FF000080')])
+    field('valueFrom', 75)
+    document.querySelector<HTMLInputElement>('[data-color-transparent]')!.click()
+    const dot = document.querySelector<SVGCircleElement>('[data-color-marker="#FF000080"]')!
+    const backing = dot.previousElementSibling
+    expect(backing).not.toBeNull()
+    expect(backing?.getAttribute('fill')).toMatch(/^url\(#.*-marker-alpha\)$/)
+    expect(dot.closest<SVGGElement>('[data-color-marker-layer]')?.dataset.colorMarkerLayer).toBe('matching')
+    expect((dot.nextElementSibling as SVGElement).style.display).toBe('none')
+    expect(dot.getAttribute('fill')).toBe('#FF000080')
+  })
+
+  it('keeps a zero-width range narrow when dragging across zero degrees', () => {
+    mount([option('Red', '#FF0000'), option('Cyan', '#00FFFF')])
+    field('hueFrom', 10)
+    field('hueTo', 10)
+    const wheel = document.querySelector<HTMLElement>('.fm-header-color-wheel')!
+    vi.spyOn(wheel, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 180, height: 180 } as DOMRect)
+    const point = { clientX: 180, clientY: 90 + Math.tan(0.2 * Math.PI / 180) * 90 }
+    wheel.dispatchEvent(new PointerEvent('pointerdown', point))
+    wheel.dispatchEvent(new PointerEvent('pointerup', point))
+    expect(document.querySelector<HTMLInputElement>('[data-color-field="hueFrom"]')?.value).toBe('0')
+    expect(document.querySelector<HTMLInputElement>('[data-color-field="hueTo"]')?.value).toBe('0')
+    expect(values()).toEqual(['Red'])
+  })
+
+  it('does not describe a focused color with the shared tooltip of another hovered color', () => {
+    mount([option('Red', '#FF0000'), option('Blue', '#0000FF')])
+    document.querySelector<HTMLButtonElement>('[data-clear-color-range]')!.click()
+    const red = document.querySelector<HTMLInputElement>('input[data-value="Red"]')!
+    red.focus()
+    document.querySelector('input[data-value="Blue"]')!.closest('label')!.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('#0000FF')
+    expect(red.getAttribute('aria-label')).toBe('Red')
+    expect(red.getAttribute('aria-describedby')).toBeNull()
+  })
+
+  it('positions neutral samples by brightness and keeps chromatic samples out of the grey wheel', () => {
+    mount([option('Black', '#000000'), option('White', '#FFFFFF'), option('Grey', '#808080'), option('Red', '#FF0000')])
+    document.querySelector<HTMLButtonElement>('[data-color-neutral="grey"]')!.click()
+    const markers = ['#000000', '#FFFFFF', '#808080', '#FF0000'].map(hex => document.querySelector<SVGCircleElement>(`[data-color-marker="${hex}"]`)!)
+    expect(markers.map(node => node.getAttribute('cx'))).toEqual(['50', '100', String(50 + 50 * 128 / 255), '100'])
+    expect(markers[2].classList.contains('is-matching')).toBe(true)
+    expect(markers[3].style.display).toBe('none')
+    expect(markers[2].getAttribute('fill')).toBe('#808080')
+  })
+
+  it('coalesces wheel moves by frame, reuses markers and flushes the last pending position on release', () => {
+    const callbacks: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { callbacks.push(callback); return callbacks.length })
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    mount([option('Red', '#FF0000'), option('Cyan', '#00FFFF')])
+    mode('complementary')
+    const wheel = document.querySelector<HTMLElement>('.fm-header-color-wheel')!
+    vi.spyOn(wheel, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, top: 0, left: 0, width: 180, height: 180, right: 180, bottom: 180, toJSON: () => ({}) })
+    const marker = document.querySelector('[data-color-marker]')!
+    wheel.dispatchEvent(new PointerEvent('pointerdown', { clientX: 180, clientY: 90 }))
+    wheel.dispatchEvent(new PointerEvent('pointermove', { clientX: 90, clientY: 0 }))
+    wheel.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 90 }))
+    expect(callbacks).toHaveLength(1)
+    expect(wheel.getAttribute('aria-valuenow')).toBe('0')
+    callbacks[0](0)
+    expect(wheel.getAttribute('aria-valuenow')).toBe('180')
+    wheel.dispatchEvent(new PointerEvent('pointermove', { clientX: 90, clientY: 180 }))
+    wheel.dispatchEvent(new PointerEvent('pointerup', { clientX: 90, clientY: 180 }))
+    expect(wheel.getAttribute('aria-valuenow')).toBe('270')
+    expect(document.querySelector('[data-color-marker]')).toBe(marker)
+    expect(marker.getAttribute('fill')).toBe('#FF0000')
+  })
+
+  it('reads the complete standalone catalog again between opens', () => {
+    document.body.innerHTML = '<button>Filter</button>'
+    const trigger = document.querySelector('button')!
+    let catalog = ['#FF0000', '#00FFFF80']
+    bindColorFilterButton(trigger, vi.fn(), () => catalog)
+    trigger.click()
+    expect([...document.querySelectorAll('[data-color-marker]')].map(node => node.getAttribute('fill'))).toEqual(catalog)
+    trigger.click()
+    catalog = ['#00FF00']
+    trigger.click()
+    expect([...document.querySelectorAll('[data-color-marker]')].map(node => node.getAttribute('fill'))).toEqual(catalog)
+  })
+
+  it('keeps a long tooltip inside the narrow viewport at the first tile', () => {
+    mount([option('An exceptionally long color name', '#FF0000')])
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390)
+    const tile = document.querySelector<HTMLElement>('.fm-header-filter-color-option')!
+    const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]')!
+    vi.spyOn(tile, 'getBoundingClientRect').mockReturnValue({ left: 24, top: 20, width: 74, height: 105 } as DOMRect)
+    vi.spyOn(tooltip, 'offsetWidth', 'get').mockReturnValue(300)
+    vi.spyOn(tooltip, 'offsetHeight', 'get').mockReturnValue(40)
+    tile.querySelector('input')!.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    expect(Number.parseFloat(tooltip.style.left) - 150).toBeGreaterThanOrEqual(8)
+    expect(Number.parseFloat(tooltip.style.top) - 40).toBeGreaterThanOrEqual(8)
+  })
+
+  it('explains the complementary and two triadic guides beside Single mode', () => {
+    mount([option('Red', '#FF0000')])
+    const key = document.querySelector<HTMLElement>('.fm-header-color-guide-key')
+    expect(key?.hidden).toBe(false)
+    expect(key?.textContent).toContain('Complementary')
+    expect(key?.textContent).toContain('Triadic (2 marks)')
+    expect(document.querySelector('.fm-header-color-wheel')?.getAttribute('aria-describedby')).toBe(key?.id)
+    mode('complementary')
+    expect(key?.hidden).toBe(true)
+  })
+
+  it('keeps the sidecar inside the viewport when the guide key appears', () => {
+    mount([option('Red', '#FF0000')])
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel')!
+    const sidecar = document.querySelector<HTMLElement>('.fm-header-color-disclosure-panel')!
+    const key = document.querySelector<HTMLElement>('.fm-header-color-guide-key')!
+    const trigger = document.querySelector<HTMLElement>('.fm-header-filter-trigger')!
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(720)
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280)
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ bottom: 200, left: 100, right: 130 } as DOMRect)
+    vi.spyOn(panel, 'offsetHeight', 'get').mockReturnValue(100)
+    vi.spyOn(sidecar, 'scrollHeight', 'get').mockImplementation(() => key.hidden ? 600 : 650)
+    mode('complementary')
+    window.dispatchEvent(new Event('resize'))
+    mode('single')
+    expect(Number.parseFloat(panel.style.top) + Number.parseFloat(sidecar.style.top) + sidecar.scrollHeight).toBeLessThanOrEqual(712)
+  })
+
+  it('sorts tinted neutral matches by brightness', () => {
+    mount([option('White', '#FFFFFF'), option('Tinted white', '#FBEFFB')])
+    document.querySelector<HTMLButtonElement>('[data-color-neutral="white"]')!.click()
+    expect(values()).toEqual(['Tinted white', 'White'])
+  })
+
+  it('preserves ordinary full-circle representatives', () => {
+    mount([option('Mixed', '#FF0000', '#00FFFF'), option('Yellow', '#FFFF00')])
+    document.querySelector<HTMLButtonElement>('[data-color-mode="color"]')!.click()
+    field('hueFrom', 0)
+    field('hueTo', 360)
+    expect(values()).toEqual(['Mixed', 'Yellow'])
+    expect(document.querySelector<HTMLInputElement>('input[data-value="Mixed"]')?.nextElementSibling?.getAttribute('style')).toContain('#FF0000')
+  })
+
+  it('finalizes the release coordinates rather than stopping at the last move', () => {
+    mount([option('Red', '#FF0000')])
+    const wheel = document.querySelector<HTMLElement>('.fm-header-color-wheel')!
+    vi.spyOn(wheel, 'getBoundingClientRect').mockReturnValue({ top: 0, left: 0, width: 180, height: 180 } as DOMRect)
+    wheel.dispatchEvent(new PointerEvent('pointerdown', { clientX: 180, clientY: 90 }))
+    wheel.dispatchEvent(new PointerEvent('pointermove', { clientX: 90, clientY: 0 }))
+    wheel.dispatchEvent(new PointerEvent('pointerup', { clientX: 0, clientY: 90 }))
+    expect(wheel.getAttribute('aria-valuenow')).toBe('180')
+  })
+
+  it('finalizes the hue grab from its release coordinates', () => {
+    mount([option('Red', '#FF0000')])
+    const grab = document.querySelector<HTMLElement>('[data-color-grab="hue"]')!
+    vi.spyOn(grab.parentElement!, 'getBoundingClientRect').mockReturnValue({ width: 377 } as DOMRect)
+    grab.dispatchEvent(new PointerEvent('pointerdown', { clientX: 180 }))
+    grab.dispatchEvent(new PointerEvent('pointermove', { clientX: 200 }))
+    grab.dispatchEvent(new PointerEvent('pointerup', { clientX: 250 }))
+    expect(document.querySelector('.fm-header-color-wheel')?.getAttribute('aria-valuenow')).toBe('70')
+  })
+
+  it('keeps a list-first locked range inactive when its wheel is pressed', () => {
+    mount([option('Red', '#FF0000'), option('Green', '#00FF00')])
+    document.querySelector<HTMLButtonElement>('[data-clear-color-range]')!.click()
+    document.querySelector<HTMLInputElement>('input[data-value="Red"]')!.click()
+    expect(document.querySelector('.fm-header-color-disclosure')?.classList.contains('is-locked')).toBe(true)
+    document.querySelector('.fm-header-color-wheel')!.dispatchEvent(new PointerEvent('pointerdown', { clientX: 180, clientY: 90 }))
+    expect(document.querySelectorAll('.fm-header-color-wheel-selection:not([hidden])')).toHaveLength(0)
+    expect(document.querySelectorAll('input[data-value]:checked')).toHaveLength(1)
+  })
+})
+
+describe('header filter accessibility', () => {
+  it('offers only the native numeric range operators when a column declares them', () => {
+    document.body.innerHTML = '<table><thead><tr><th class="col-metric">Remaining %</th></tr></thead></table>'
+    initHeaderColumnFilters(document.querySelector('table')!, [{
+      key: 'metric', label: 'Remaining %', columnSelector: 'th.col-metric', type: 'number',
+      numberOperators: ['eq', 'gte', 'lte', 'between'], onApply: vi.fn(),
+    }])
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+    expect([...document.querySelectorAll<HTMLOptionElement>('.fm-header-filter-operator option')].map(option => option.value))
+      .toEqual(['eq', 'gte', 'lte', 'between'])
+  })
+  it('localizes accessible names and closes the controlled panel with Escape', () => {
+    setLang('de')
+    document.body.innerHTML = '<table><thead><tr><th class="col-name">Name</th></tr></thead></table>'
+    initHeaderColumnFilters(document.querySelector('table')!, [{
+      key: 'name', label: 'Name', columnSelector: 'th.col-name', type: 'text', onApply: vi.fn(),
+    }])
+
+    const trigger = document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel')!
+    trigger.click()
+
+    expect(trigger.getAttribute('aria-label')).toBe('Name filtern')
+    expect(trigger.getAttribute('aria-controls')).toBe(panel.id)
+    expect(panel.getAttribute('role')).toBe('dialog')
+    expect(document.querySelector('.fm-header-filter-operator')?.getAttribute('aria-label'))
+      .toBe('Filteroperator für Name')
+
+    const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    panel.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(true)
+
+    expect(panel.classList.contains('open')).toBe(false)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('nests a default-open status filter behind the Spools filter', () => {
+    document.body.innerHTML = '<table><thead><tr><th class="col-spools">Spools</th></tr></thead></table>'
+    const onSpools = vi.fn()
+    const onStatus = vi.fn()
+    const controller = initHeaderColumnFilters(document.querySelector('table')!, [
+      {
+        key: 'spools', label: 'Spools', columnSelector: 'th.col-spools', type: 'number', onApply: onSpools,
+      },
+      {
+        key: 'spoolStatus', label: 'Spool Status', columnSelector: 'th.col-spools', type: 'multi',
+        icon: 'gear', disclosureOf: 'spools', disclosureStorageKey: 'filaman-spool-status-open',
+        searchable: false,
+        options: [{ value: 'full', label: 'Full' }, { value: 'empty', label: 'Empty' }], onApply: onStatus,
+      },
+    ])
+
+    expect(document.querySelectorAll('.fm-header-filter-trigger')).toHaveLength(1)
+    const trigger = document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!
+    trigger.click()
+    const rootPanel = document.querySelector<HTMLElement>('.fm-header-filter-panel:not(.fm-header-linked-filter-panel)')!
+    const details = rootPanel.querySelector<HTMLDetailsElement>('.fm-header-filter-disclosure')!
+    const summary = details.querySelector<HTMLElement>('summary')!
+    const statusPanel = details.querySelector<HTMLElement>('.fm-header-linked-filter-panel')!
+
+    expect(details.open).toBe(true)
+    expect(summary.getAttribute('aria-label')).toBe('Filter Spool Status')
+    expect(summary.title).toBe('Filter Spool Status')
+    expect(summary.dataset.tooltip).toBe('Filter Spool Status')
+    expect(summary.querySelector('svg')).not.toBeNull()
+    expect(statusPanel.parentElement).toBe(details)
+    expect(statusPanel.querySelector('.fm-header-filter-search')).toBeNull()
+    expect(statusPanel.querySelector('.fm-btn-primary')).toBeNull()
+    expect(rootPanel.querySelector<HTMLButtonElement>('.fm-header-filter-actions [data-filter-clear]')?.textContent)
+      .toBe('Clear Spools')
+    expect(statusPanel.querySelector<HTMLButtonElement>('[data-filter-clear]')?.textContent).toBe('Clear Spool Status')
+
+    const count = rootPanel.querySelector<HTMLInputElement>('.fm-header-filter-typed-controls .fm-header-filter-value')!
+    count.value = '2'
+    count.dispatchEvent(new Event('input', { bubbles: true }))
+    statusPanel.querySelector<HTMLInputElement>('[data-value="full"]')!.click()
+    rootPanel.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')!.click()
+
+    expect(onSpools).toHaveBeenCalledWith({ type: 'number', operator: 'eq', value: '2', valueTo: '' })
+    expect(onStatus).toHaveBeenCalledWith({ type: 'multi', values: ['full'] })
+    expect(controller.getValue('spoolStatus')).toEqual({ type: 'multi', values: ['full'] })
+    expect(trigger.classList.contains('active')).toBe(true)
+
+    trigger.click()
+    details.open = false
+    details.dispatchEvent(new Event('toggle'))
+    expect(localStorage.getItem('filaman-spool-status-open')).toBe('false')
+  })
+
+  it('offers native text suggestions without restricting free text', () => {
+    document.body.innerHTML = '<table><thead><tr><th class="col-designation">Designation</th></tr></thead></table>'
+    const onApply = vi.fn()
+    const controller = initHeaderColumnFilters(document.querySelector('table')!, [{
+      key: 'designation',
+      label: 'Designation',
+      columnSelector: 'th.col-designation',
+      type: 'text',
+      autocomplete: true,
+      onApply,
+    }])
+
+    controller.setOptions('designation', [
+      { value: 'PLA Basic', label: 'PLA Basic' },
+      { value: 'PETG Matte', label: 'PETG Matte' },
+    ])
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+
+    const input = document.querySelector<HTMLInputElement>('.fm-header-filter-value')!
+    const suggestions = document.getElementById(input.getAttribute('list')!) as HTMLDataListElement
+    expect([...suggestions.options].map((option) => option.value)).toEqual(['PLA Basic', 'PETG Matte'])
+
+    input.value = 'Custom designation'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')!.click()
+    expect(onApply).toHaveBeenCalledWith({ type: 'text', operator: 'contains', value: 'Custom designation' })
+  })
+
+  it('offers integer suggestions without removing numeric operators', () => {
+    document.body.innerHTML = '<table><thead><tr><th class="col-spools">Spools</th></tr></thead></table>'
+    const controller = initHeaderColumnFilters(document.querySelector('table')!, [{
+      key: 'spools',
+      label: 'Spools',
+      columnSelector: 'th.col-spools',
+      type: 'number',
+      autocomplete: true,
+      onApply: vi.fn(),
+    }])
+
+    controller.setOptions('spools', ['0', '1', '3'].map(value => ({ value, label: value })))
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+
+    const inputs = [...document.querySelectorAll<HTMLInputElement>('.fm-header-filter-value')]
+    const suggestions = document.getElementById(inputs[0].getAttribute('list')!) as HTMLDataListElement
+    expect(inputs.map(input => [input.type, input.step, input.getAttribute('list')])).toEqual([
+      ['number', '1', suggestions.id],
+      ['number', '1', suggestions.id],
+    ])
+    expect([...suggestions.options].map(option => option.value)).toEqual(['0', '1', '3'])
+    expect([...document.querySelectorAll<HTMLSelectElement>('.fm-header-filter-operator option')].map(option => option.value))
+      .toContain('gt')
+  })
+})
+
+describe('color range header filter', () => {
+  function mountColorOptions(onApply = vi.fn()) {
+    document.body.innerHTML = '<table><thead><tr><th class="col-colors">Colors</th></tr></thead></table>'
+    initHeaderColumnFilters(document.querySelector('table')!, [{
+      key: 'colors',
+      label: 'Colors',
+      columnSelector: 'th.col-colors',
+      type: 'multi',
+      multiDisplay: 'colors',
+      options: [
+        { value: 'Red', label: 'Red', colorHexes: ['#FF0000'] },
+        { value: 'Green', label: 'Green', colorHexes: ['#00FF00'] },
+        { value: 'Black', label: 'Black', colorHexes: ['#000000'] },
+      ],
+      onApply,
+    }])
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+    return { onApply }
+  }
+
+  it('emits standalone range changes live and exposes only Clear', () => {
+    document.body.innerHTML = '<button id="color-filter">Filter colors</button>'
+    const onChange = vi.fn()
+    const trigger = document.querySelector<HTMLButtonElement>('#color-filter')!
+    bindColorFilterButton(trigger, onChange)
+
+    trigger.click()
+    document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'color', hueFrom: 320, hueTo: 15 }))
+    expect(trigger.classList.contains('active')).toBe(true)
+    expect(document.querySelector('.fm-header-filter-actions .fm-btn-primary')).toBeNull()
+
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-outline')!.click()
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'none' }))
+    expect(trigger.classList.contains('active')).toBe(false)
+  })
+
+  it('lets the host clear a standalone color filter after selection', () => {
+    document.body.innerHTML = '<button id="color-filter">Filter colors</button>'
+    const trigger = document.querySelector<HTMLButtonElement>('#color-filter')!
+    const onApply = vi.fn()
+    const clearFilter = bindColorFilterButton(trigger, onApply)
+
+    trigger.click()
+    document.querySelector<HTMLButtonElement>('[data-color-neutral="black"]')!.click()
+    clearFilter()
+
+    expect(onApply).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'none' }))
+    expect(trigger.classList.contains('active')).toBe(false)
+  })
+
+  it('keeps a standalone color filter beside a left-side trigger', () => {
+    document.body.innerHTML = '<button id="color-filter">Filter colors</button>'
+    const trigger = document.querySelector<HTMLButtonElement>('#color-filter')!
+    bindColorFilterButton(trigger, vi.fn())
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel')!
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1024)
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(768)
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      bottom: 250, height: 30, left: 120, right: 150, top: 220, width: 30,
+      x: 120, y: 220, toJSON: () => ({}),
+    })
+    vi.spyOn(panel, 'offsetWidth', 'get').mockReturnValue(300)
+    vi.spyOn(panel, 'offsetHeight', 'get').mockReturnValue(170)
+
+    trigger.click()
+
+    expect(panel.style.left).toBe('120px')
+  })
+
+  it('stacks a standalone color filter above its modal host', () => {
+    document.body.innerHTML = '<div class="fm-modal-overlay"><button id="color-filter">Filter colors</button></div>'
+    const trigger = document.querySelector<HTMLButtonElement>('#color-filter')!
+
+    bindColorFilterButton(trigger, vi.fn())
+
+    expect(document.querySelector('.fm-header-filter-panel')?.classList
+      .contains('fm-header-filter-panel-modal')).toBe(true)
+  })
+
+  it('opens one grid-first Colors popover with a remembered range disclosure', () => {
+    mountColorOptions()
+
+    expect(document.querySelectorAll('.fm-header-filter-trigger')).toHaveLength(1)
+    expect(document.querySelector('.fm-header-filter-list')?.classList.contains('fm-color-grid')).toBe(true)
+    const details = document.querySelector<HTMLDetailsElement>('.fm-header-color-disclosure')!
+    expect(details.open).toBe(true)
+    expect(details.querySelector('summary')?.getAttribute('aria-label')).toBe('Color filter')
+    expect(details.querySelector('summary .fm-header-color-wheel-icon')).not.toBeNull()
+    expect(details.querySelector('.fm-header-color-disclosure-panel')?.parentElement).toBe(details)
+    expect(details.closest('.fm-header-filter-panel')?.classList.contains('fm-header-filter-panel-color')).toBe(true)
+    expect(details.querySelector('.fm-header-color-controls')?.classList.contains('is-inactive')).toBe(true)
+
+    details.open = false
+    details.dispatchEvent(new Event('toggle'))
+    expect(localStorage.getItem('filaman-color-range-open')).toBe('false')
+  })
+
+  it('shifts a tall color sidecar up before constraining its height', () => {
+    mountColorOptions()
+    const trigger = document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel')!
+    const sidecar = document.querySelector<HTMLElement>('.fm-header-color-disclosure-panel')!
+    trigger.click()
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1024)
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(768)
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      bottom: 250, height: 30, left: 870, right: 900, top: 220, width: 30,
+      x: 870, y: 220, toJSON: () => ({}),
+    })
+    vi.spyOn(panel, 'offsetWidth', 'get').mockReturnValue(360)
+    vi.spyOn(panel, 'offsetHeight', 'get').mockReturnValue(170)
+    vi.spyOn(sidecar, 'offsetWidth', 'get').mockReturnValue(360)
+    vi.spyOn(sidecar, 'offsetHeight', 'get').mockReturnValue(600)
+    vi.spyOn(sidecar, 'scrollHeight', 'get').mockReturnValue(600)
+
+    trigger.click()
+
+    expect(panel.style.top).toBe('256px')
+    expect(panel.style.getPropertyValue('--fm-filter-max-height')).toBe('504px')
+    expect(sidecar.style.top).toBe('-96px')
+    expect(sidecar.style.maxHeight).toBe('752px')
+  })
+
+  it('shifts the filter panel upward just enough to keep it in the viewport', () => {
+    mountColorOptions()
+    const trigger = document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel')!
+    trigger.click()
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1024)
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(768)
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      bottom: 650, height: 30, left: 400, right: 430, top: 620, width: 30,
+      x: 400, y: 620, toJSON: () => ({}),
+    })
+    vi.spyOn(panel, 'offsetWidth', 'get').mockReturnValue(360)
+    vi.spyOn(panel, 'offsetHeight', 'get').mockReturnValue(300)
+
+    trigger.click()
+
+    expect(panel.style.top).toBe('460px')
+    expect(panel.style.getPropertyValue('--fm-filter-max-height')).toBe('300px')
+  })
+
+  it.each(['search', 'selection'] as const)('locks an inactive range after %s starts first', (action) => {
+    mountColorOptions()
+    const search = document.querySelector<HTMLInputElement>('.fm-header-filter-search')!
+    if (action === 'search') {
+      search.value = 'red'
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    } else {
+      document.querySelector<HTMLInputElement>('[data-value="Red"]')!.click()
+    }
+
+    expect(document.querySelector('.fm-header-color-disclosure')?.classList.contains('is-locked')).toBe(true)
+    document.querySelector<HTMLButtonElement>('[data-clear-list-filter]')!.click()
+    expect(search.value).toBe('')
+    expect(document.querySelector('.fm-header-color-disclosure')?.classList.contains('is-locked')).toBe(false)
+  })
+
+  it('explains a restored list filter and only enables range clearing for an active range', () => {
+    const { onApply } = mountColorOptions()
+    const clearList = document.querySelector<HTMLButtonElement>('[data-clear-list-filter]')!
+    expect(clearList.disabled).toBe(true)
+    document.querySelector<HTMLInputElement>('[data-value="Red"]')!.click()
+    expect(clearList.disabled).toBe(false)
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')!.click()
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+
+    const clearRange = document.querySelector<HTMLButtonElement>('[data-clear-color-range]')!
+    expect(clearRange.disabled).toBe(true)
+    const status = document.querySelector<HTMLElement>('.fm-header-color-list-status')!
+    expect(status.textContent).toContain('List filter active')
+    expect(status.textContent).toContain('Clear it to use the wheel')
+
+    clearList.focus()
+    clearList.click()
+    expect(clearList.disabled).toBe(true)
+    expect(document.activeElement).toBe(document.querySelector('.fm-header-filter-search'))
+    expect(status.textContent).toBe('')
+    expect(clearRange.disabled).toBe(true)
+    expect(onApply).toHaveBeenCalledExactlyOnceWith({ type: 'multi', values: ['Red'] })
+
+    document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+    expect(clearRange.disabled).toBe(false)
+    clearRange.focus()
+    clearRange.click()
+    expect(clearRange.disabled).toBe(true)
+    expect(document.activeElement).toBe(document.querySelector('.fm-header-filter-search'))
+  })
+
+  it('filters candidates live when the range activates first and still allows text refinement', () => {
+    mountColorOptions()
+    document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+    expect([...document.querySelectorAll<HTMLInputElement>('[data-value]')].map((input) => input.dataset.value))
+      .toEqual(['Red'])
+
+    const search = document.querySelector<HTMLInputElement>('.fm-header-filter-search')!
+    search.value = 'missing'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(document.querySelector('.fm-header-filter-empty-text')).not.toBeNull()
+
+    document.querySelector<HTMLButtonElement>('[data-clear-color-range]')!.click()
+    expect(document.querySelector('[data-color-mode="color"]')?.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('activates an inactive color range and centers it where the wheel is clicked', () => {
+    mountColorOptions()
+    const wheel = document.querySelector<HTMLElement>('.fm-header-color-wheel')!
+    vi.spyOn(wheel, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 180, height: 180 } as DOMRect)
+
+    wheel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 180, clientY: 90, pointerId: 1 }))
+    wheel.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 180, clientY: 90, pointerId: 1 }))
+
+    expect(document.querySelector('[data-color-mode="color"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(document.querySelector('.fm-header-color-controls')?.classList.contains('is-inactive')).toBe(false)
+    expect([
+      document.querySelector<HTMLInputElement>('[data-color-field="hueFrom"]')?.value,
+      document.querySelector<HTMLInputElement>('[data-color-field="hueTo"]')?.value,
+    ]).toEqual(['343', '18'])
+    expect([...document.querySelectorAll<HTMLInputElement>('[data-value]')].map(input => input.dataset.value))
+      .toEqual(['Red'])
+  })
+
+  it.each([
+    { action: 'checked', expected: ['Red'] },
+    { action: 'text', expected: ['Red'] },
+    { action: 'range', expected: ['Red'] },
+    { action: 'unfiltered', expected: [] },
+  ] as const)('applies $action color values once', ({ action, expected }) => {
+    const { onApply } = mountColorOptions()
+    if (action === 'checked') document.querySelector<HTMLInputElement>('[data-value="Red"]')!.click()
+    if (action === 'text') {
+      const search = document.querySelector<HTMLInputElement>('.fm-header-filter-search')!
+      search.value = 'red'
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    if (action === 'range') document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')!.click()
+    expect(onApply).toHaveBeenCalledTimes(1)
+    expect(onApply).toHaveBeenCalledWith({ type: 'multi', values: expected })
+  })
+
+  it('keeps the indicator applied-only and discards staged choices when closed', () => {
+    const { onApply } = mountColorOptions()
+    const trigger = document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!
+    document.querySelector<HTMLInputElement>('[data-value="Red"]')!.click()
+    expect(trigger.classList.contains('pending')).toBe(false)
+
+    document.body.click()
+    trigger.click()
+    expect(document.querySelector<HTMLInputElement>('[data-value="Red"]')!.checked).toBe(false)
+    expect(onApply).not.toHaveBeenCalled()
+  })
+
+  it('applies visible colors with Enter', () => {
+    const { onApply } = mountColorOptions()
+    const search = document.querySelector<HTMLInputElement>('.fm-header-filter-search')!
+    search.value = 'red'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    search.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+    expect(onApply).toHaveBeenCalledWith({ type: 'multi', values: ['Red'] })
+  })
+
+  it('uses neutral and ROYGBIV presets while keeping their ranges editable', () => {
+    document.body.innerHTML = '<button id="color-filter">Filter colors</button>'
+    const onApply = vi.fn()
+    const trigger = document.querySelector<HTMLButtonElement>('#color-filter')!
+    bindColorFilterButton(trigger, onApply)
+    trigger.click()
+    const hueFrom = document.querySelector<HTMLInputElement>('[data-color-field="hueFrom"]')!
+    const hueTo = document.querySelector<HTMLInputElement>('[data-color-field="hueTo"]')!
+    const saturationFrom = document.querySelector<HTMLInputElement>('[data-color-field="saturationFrom"]')!
+    const saturationTo = document.querySelector<HTMLInputElement>('[data-color-field="saturationTo"]')!
+    const valueFrom = document.querySelector<HTMLInputElement>('[data-color-field="valueFrom"]')!
+    const valueTo = document.querySelector<HTMLInputElement>('[data-color-field="valueTo"]')!
+    const valuePreview = document.querySelector<HTMLInputElement>('[data-color-field="valuePreview"]')!
+    const transparent = document.querySelector<HTMLInputElement>('[data-color-transparent]')!
+    const color = document.querySelector<HTMLButtonElement>('[data-color-mode="color"]')!
+    const red = document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!
+    const green = document.querySelector<HTMLButtonElement>('[data-color-preset="green"]')!
+    const black = document.querySelector<HTMLButtonElement>('[data-color-neutral="black"]')!
+    const white = document.querySelector<HTMLButtonElement>('[data-color-neutral="white"]')!
+    const grey = document.querySelector<HTMLButtonElement>('[data-color-neutral="grey"]')!
+    color.click()
+    expect(hueFrom.type).toBe('range')
+    expect(hueFrom.parentElement).toBe(hueTo.parentElement)
+    expect(hueFrom.parentElement?.classList.contains('fm-header-color-dual-range')).toBe(true)
+    expect([hueFrom.min, hueFrom.max, hueTo.min, hueTo.max]).toEqual(['0', '360', '0', '360'])
+    expect(saturationFrom.type).toBe('range')
+    expect(valueTo.type).toBe('range')
+    expect(valuePreview.type).toBe('range')
+    expect(valuePreview.parentElement).toBe(valueTo.parentElement)
+    expect(valuePreview.classList.contains('fm-header-color-preview-range')).toBe(true)
+    const previewGrab = document.querySelector<HTMLElement>('.fm-header-color-preview-grab')!
+    expect(previewGrab.querySelector('svg')).not.toBeNull()
+    expect(previewGrab.getAttribute('aria-hidden')).toBe('true')
+    expect(document.querySelector('.fm-header-color-title')?.textContent).toBe('Color filter')
+    expect(color.querySelector('.fm-header-color-wheel-icon')).not.toBeNull()
+    expect(color.getAttribute('aria-pressed')).toBe('true')
+    expect([...document.querySelectorAll<HTMLButtonElement>('[data-color-preset], [data-color-neutral]')]
+      .map((button) => button.textContent)).toEqual([
+      'Black', 'Grey', 'White', 'Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Violet',
+    ])
+    expect(red.getAttribute('aria-pressed')).toBe('false')
+    expect([...document.querySelectorAll<HTMLInputElement>('[data-color-field]')].every((input) => !input.disabled)).toBe(true)
+    expect([black.type, white.type, grey.type]).toEqual(['button', 'button', 'button'])
+    expect(transparent.type).toBe('checkbox')
+    expect(transparent.parentElement?.textContent).toContain('Include transparent hex')
+    expect(document.querySelector('.fm-header-color-wheel')).not.toBeNull()
+
+    red.click()
+    expect(red.getAttribute('aria-pressed')).toBe('true')
+    expect([hueFrom.value, hueTo.value]).toEqual(['320', '15'])
+    expect([...document.querySelectorAll<HTMLInputElement>('[data-color-field]')].every((input) => !input.disabled)).toBe(true)
+
+    black.click()
+    expect(black.getAttribute('aria-pressed')).toBe('true')
+    expect(red.getAttribute('aria-pressed')).toBe('false')
+    expect(document.querySelector<HTMLElement>('.fm-header-color-wheel-selection')!.hidden).toBe(false)
+    expect(hueFrom.disabled).toBe(true)
+    expect(saturationFrom.disabled).toBe(true)
+    expect(valueTo.disabled).toBe(false)
+    expect(document.querySelector('[data-color-range-label="saturationFrom"]')?.textContent).toBe('Color tolerance')
+    expect(document.querySelector('[data-color-output="saturationFrom"]')?.closest('.fm-header-color-range')?.classList.contains('is-muted')).toBe(false)
+    expect(document.querySelector('[data-color-output="valueFrom"]')?.closest('.fm-header-color-range')?.classList.contains('is-muted')).toBe(false)
+    white.click()
+    expect(black.getAttribute('aria-pressed')).toBe('false')
+    expect(white.getAttribute('aria-pressed')).toBe('true')
+    white.click()
+    expect(white.getAttribute('aria-pressed')).toBe('true')
+    grey.click()
+    expect(grey.getAttribute('aria-pressed')).toBe('true')
+    green.click()
+    expect(grey.getAttribute('aria-pressed')).toBe('false')
+    expect(green.getAttribute('aria-pressed')).toBe('true')
+    expect([hueFrom.value, hueTo.value]).toEqual(['90', '180'])
+    expect(document.querySelector('[data-color-range-label="saturationFrom"]')?.textContent).toBe('Saturation range')
+
+    const hueReset = document.querySelector<HTMLButtonElement>('[data-color-range-reset="hueFrom"]')!
+    const saturationReset = document.querySelector<HTMLButtonElement>('[data-color-range-reset="saturationFrom"]')!
+    const valueReset = document.querySelector<HTMLButtonElement>('[data-color-range-reset="valueFrom"]')!
+    hueFrom.value = '120'
+    hueFrom.dispatchEvent(new Event('input', { bubbles: true }))
+    saturationFrom.value = '40'
+    saturationFrom.dispatchEvent(new Event('input', { bubbles: true }))
+    valueTo.value = '75'
+    valueTo.dispatchEvent(new Event('input', { bubbles: true }))
+    hueReset.click()
+    expect([hueFrom.value, hueTo.value]).toEqual(['10', '45'])
+    expect([saturationFrom.value, saturationTo.value]).toEqual(['40', '100'])
+    saturationReset.click()
+    expect([saturationFrom.value, saturationTo.value]).toEqual(['10', '100'])
+    expect(valueTo.value).toBe('75')
+    valueReset.click()
+    expect([valueFrom.value, valueTo.value, valuePreview.value]).toEqual(['16', '100', '100'])
+    expect(document.querySelector<HTMLElement>('.fm-header-color-wheel-selection')!.hidden).toBe(false)
+    expect([...document.querySelectorAll<HTMLInputElement>('[data-color-field]')].every((input) => !input.disabled)).toBe(true)
+
+    hueFrom.value = '330'
+    hueFrom.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(hueFrom.value).toBe('45')
+    expect(grey.getAttribute('aria-pressed')).toBe('false')
+    hueFrom.value = '30'
+    hueFrom.dispatchEvent(new Event('input', { bubbles: true }))
+    hueTo.value = '20'
+    hueTo.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(hueTo.value).toBe('30')
+    hueTo.value = '45'
+    hueTo.dispatchEvent(new Event('input', { bubbles: true }))
+    expect([hueFrom.min, hueFrom.max, hueTo.min, hueTo.max]).toEqual(['0', '360', '0', '360'])
+    const wheel = document.querySelector<HTMLElement>('.fm-header-color-wheel')!
+    expect(wheel.style.getPropertyValue('--color-hue-from')).toBe('45deg')
+    expect(wheel.style.getPropertyValue('--color-hue-span')).toBe('15deg')
+    saturationFrom.value = '40'
+    saturationFrom.dispatchEvent(new Event('input', { bubbles: true }))
+    valueTo.value = '75'
+    valueTo.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(valuePreview.value).toBe('75')
+    valuePreview.value = '60'
+    valuePreview.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(wheel.style.getPropertyValue('--color-wheel-darkness')).toBe('0.4')
+    transparent.click()
+    valuePreview.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+
+    expect(onApply).toHaveBeenCalledWith({
+      type: 'color',
+      mode: 'color',
+      harmony: 'single',
+      hueFrom: 30,
+      hueTo: 45,
+      saturationFrom: 40,
+      saturationTo: 100,
+      valueFrom: 16,
+      valueTo: 75,
+      valuePreview: 60,
+      includeTransparent: true,
+    })
+  })
+
+  it('shows, edits, and resets neutral brightness and tint presets', () => {
+    document.body.innerHTML = '<button id="color-filter">Filter colors</button>'
+    const trigger = document.querySelector<HTMLButtonElement>('#color-filter')!
+    bindColorFilterButton(trigger, vi.fn())
+    trigger.click()
+    const wheel = document.querySelector<HTMLElement>('.fm-header-color-wheel')!
+    const surface = document.querySelector<HTMLElement>('.fm-header-color-wheel-surface')!
+    const selection = document.querySelector<HTMLElement>('.fm-header-color-wheel-selection')!
+    const hueFrom = document.querySelector<HTMLInputElement>('[data-color-field="hueFrom"]')!
+    const saturationFrom = document.querySelector<HTMLInputElement>('[data-color-field="saturationFrom"]')!
+    const saturationTo = document.querySelector<HTMLInputElement>('[data-color-field="saturationTo"]')!
+    const valueFrom = document.querySelector<HTMLInputElement>('[data-color-field="valueFrom"]')!
+    const valueTo = document.querySelector<HTMLInputElement>('[data-color-field="valueTo"]')!
+    const valuePreview = document.querySelector<HTMLInputElement>('[data-color-field="valuePreview"]')!
+    const hueReset = document.querySelector<HTMLButtonElement>('[data-color-range-reset="hueFrom"]')!
+    const saturationReset = document.querySelector<HTMLButtonElement>('[data-color-range-reset="saturationFrom"]')!
+    const valueReset = document.querySelector<HTMLButtonElement>('[data-color-range-reset="valueFrom"]')!
+
+    document.querySelector<HTMLButtonElement>('[data-color-neutral="black"]')!.click()
+    expect(wheel.classList.contains('is-neutral')).toBe(true)
+    expect(wheel.dataset.neutralMode).toBe('black')
+    expect(surface.hidden).toBe(false)
+    expect(selection.hidden).toBe(false)
+    expect([valueFrom.value, valueTo.value]).toEqual(['0', '15'])
+    expect([saturationFrom.value, saturationTo.value]).toEqual(['0', '20'])
+    expect([hueFrom.disabled, saturationFrom.disabled, valueFrom.disabled, valueTo.disabled, valuePreview.disabled])
+      .toEqual([true, true, false, false, true])
+    expect(saturationTo.disabled).toBe(false)
+    expect(wheel.style.getPropertyValue('--color-neutral-saturation')).toBe('0.2')
+    expect(hueReset.hidden).toBe(true)
+    expect(saturationReset.hidden).toBe(false)
+    expect(valueReset.hidden).toBe(false)
+
+    saturationTo.value = '14'
+    saturationTo.dispatchEvent(new Event('input', { bubbles: true }))
+    valueTo.value = '22'
+    valueTo.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(document.querySelector('[data-color-neutral="black"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(document.querySelector<HTMLOutputElement>('[data-color-output="saturationFrom"]')?.textContent).toBe('0%–14%')
+    expect(document.querySelector<HTMLOutputElement>('[data-color-output="valueFrom"]')?.textContent).toBe('0%–22%')
+    saturationReset.click()
+    expect([saturationFrom.value, saturationTo.value]).toEqual(['0', '20'])
+    expect([valueFrom.value, valueTo.value]).toEqual(['0', '22'])
+    valueReset.click()
+    expect([valueFrom.value, valueTo.value]).toEqual(['0', '15'])
+
+    document.querySelector<HTMLButtonElement>('[data-color-neutral="grey"]')!.click()
+    expect([valueFrom.value, valueTo.value]).toEqual(['35', '65'])
+    document.querySelector<HTMLButtonElement>('[data-color-neutral="white"]')!.click()
+    expect([valueFrom.value, valueTo.value]).toEqual(['85', '100'])
+
+    document.querySelector<HTMLButtonElement>('[data-color-preset="orange"]')!.click()
+    expect(wheel.classList.contains('is-neutral')).toBe(false)
+    expect(surface.hidden).toBe(false)
+    expect([saturationFrom.value, saturationTo.value, valueFrom.value, valueTo.value]).toEqual(['10', '100', '16', '100'])
+    expect([hueReset.hidden, saturationReset.hidden, valueReset.hidden]).toEqual([false, false, false])
+  })
+
+  it.each([
+    ['hueFrom', '50'],
+    ['saturationFrom', '20'],
+    ['valueTo', '80'],
+  ])('switches a named chromatic preset to Color when %s is adjusted', (field, next) => {
+    document.body.innerHTML = '<button id="color-filter">Filter colors</button>'
+    bindColorFilterButton(document.querySelector<HTMLButtonElement>('#color-filter')!, vi.fn())
+    document.querySelector<HTMLButtonElement>('#color-filter')!.click()
+    const color = document.querySelector<HTMLButtonElement>('[data-color-mode="color"]')!
+    const yellow = document.querySelector<HTMLButtonElement>('[data-color-preset="yellow"]')!
+    yellow.click()
+
+    const input = document.querySelector<HTMLInputElement>(`[data-color-field="${field}"]`)!
+    input.value = next
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(yellow.getAttribute('aria-pressed')).toBe('false')
+    expect(color.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('moves the complete hue arc from the wheel and its middle grab handle', () => {
+    document.body.innerHTML = '<button id="color-filter">Filter colors</button>'
+    const trigger = document.querySelector<HTMLButtonElement>('#color-filter')!
+    bindColorFilterButton(trigger, vi.fn())
+    trigger.click()
+    const color = document.querySelector<HTMLButtonElement>('[data-color-mode="color"]')!
+    const yellow = document.querySelector<HTMLButtonElement>('[data-color-preset="yellow"]')!
+    yellow.click()
+    const wheel = document.querySelector<HTMLElement>('.fm-header-color-wheel')!
+    const hueFrom = document.querySelector<HTMLInputElement>('[data-color-field="hueFrom"]')!
+    const hueTo = document.querySelector<HTMLInputElement>('[data-color-field="hueTo"]')!
+    const grab = document.querySelector<HTMLElement>('[data-color-grab="hue"]')!
+    const slider = grab.parentElement!
+    expect(grab.getAttribute('role')).toBe('slider')
+    expect(grab.querySelectorAll('.fm-header-color-range-grab-dot')).toHaveLength(3)
+    expect(grab.textContent).toBe('')
+    expect(grab.style.left).toBe('calc(18.7500% + 5.3125px)')
+    vi.spyOn(wheel, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 180, height: 180 } as DOMRect)
+    vi.spyOn(slider, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 360, height: 20 } as DOMRect)
+
+    wheel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 0, clientY: 90, pointerId: 1 }))
+    expect([hueFrom.value, hueTo.value]).toEqual(['158', '203'])
+    expect(yellow.getAttribute('aria-pressed')).toBe('false')
+    expect(color.getAttribute('aria-pressed')).toBe('true')
+    wheel.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 90, clientY: 180, pointerId: 1 }))
+    wheel.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 90, clientY: 180, pointerId: 1 }))
+    expect([hueFrom.value, hueTo.value]).toEqual(['248', '293'])
+
+    grab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 270, pointerId: 2 }))
+    grab.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 290, pointerId: 2 }))
+    grab.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 290, pointerId: 2 }))
+    expect([hueFrom.value, hueTo.value]).toEqual(['269', '314'])
+    grab.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }))
+    expect([hueFrom.value, hueTo.value]).toEqual(['270', '315'])
+    grab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 270, pointerId: 4 }))
+    grab.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: -1102, pointerId: 4 }))
+    grab.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: -1102, pointerId: 4 }))
+    expect([hueFrom.value, hueTo.value]).toEqual(['270', '315'])
+
+    wheel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 180, clientY: 90, pointerId: 3 }))
+    wheel.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 180, clientY: 90, pointerId: 3 }))
+    expect([hueFrom.value, hueTo.value]).toEqual(['338', '23'])
+    expect(grab.hidden).toBe(true)
+    hueFrom.value = '350'
+    hueFrom.dispatchEvent(new Event('input', { bubbles: true }))
+    hueTo.value = '25'
+    hueTo.dispatchEvent(new Event('input', { bubbles: true }))
+    expect([hueFrom.value, hueTo.value]).toEqual(['350', '25'])
+  })
+
+  it('keeps a full hue circle intact when its midpoint control moves', () => {
+    document.body.innerHTML = '<button id="color-filter">Filter colors</button>'
+    const trigger = document.querySelector<HTMLButtonElement>('#color-filter')!
+    bindColorFilterButton(trigger, vi.fn())
+    trigger.click()
+    document.querySelector<HTMLButtonElement>('[data-color-mode="color"]')!.click()
+    const hueFrom = document.querySelector<HTMLInputElement>('[data-color-field="hueFrom"]')!
+    const hueTo = document.querySelector<HTMLInputElement>('[data-color-field="hueTo"]')!
+    hueFrom.value = '0'
+    hueFrom.dispatchEvent(new Event('input', { bubbles: true }))
+    hueTo.value = '360'
+    hueTo.dispatchEvent(new Event('input', { bubbles: true }))
+    const grab = document.querySelector<HTMLElement>('[data-color-grab="hue"]')!
+    vi.spyOn(grab.parentElement!, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 360, height: 20 } as DOMRect)
+    grab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 180, pointerId: 1 }))
+    grab.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 200, pointerId: 1 }))
+    expect([
+      hueFrom.value,
+      hueTo.value,
+    ]).toEqual(['0', '360'])
+  })
+
+})

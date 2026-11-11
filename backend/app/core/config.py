@@ -28,11 +28,8 @@ class Settings(BaseSettings):
     @classmethod
     def resolve_relative_db_path(cls, v: str) -> str:
         """Resolve relative sqlite paths against PROJECT_ROOT."""
-        if v and (v.startswith("sqlite:///") or v.startswith("sqlite+aiosqlite:///")):
-            # Check for relative path indicator ./
-            if "/./" in v:
-                # Replace /./ with /<PROJECT_ROOT>/
-                return v.replace("/./", f"/{PROJECT_ROOT}/")
+        if v and v.startswith(("sqlite:///", "sqlite+aiosqlite:///")) and "/./" in v:
+            return v.replace("/./", f"/{PROJECT_ROOT}/")
         return v
 
     admin_email: str | None = None
@@ -54,6 +51,18 @@ class Settings(BaseSettings):
 
     # FilamentDB community database URL for lookup/autocomplete
     filamentdb_url: str = "https://db.filaman.app"
+
+    # Public base URL of the web UI (e.g. https://filaman.example.com or
+    # https://example.com/filaman). Used for web_url in API responses; empty = null.
+    public_url: str = ""
+
+    @field_validator("public_url", mode="before")
+    @classmethod
+    def normalize_public_url(cls, v: str | None) -> str:
+        v = (v or "").strip().rstrip("/")
+        if v and not v.startswith(("http://", "https://")):
+            raise ValueError("PUBLIC_URL must start with http:// or https://")
+        return v
 
 
 settings = Settings()

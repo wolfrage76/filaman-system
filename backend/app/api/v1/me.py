@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep
+from app.core.csrf import maybe_attach_csrf_cookie
 from app.core.security import hash_password_async, verify_password_async
 from app.models import User, Role, Permission, UserRole, RolePermission
 
@@ -29,6 +34,17 @@ class MeUpdate(BaseModel):
     language: str | None = None
 
 
+WidgetId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
+
+
+class PreferencesResponse(BaseModel):
+    dashboard_hidden_widgets: list[str] = []
+
+
+class PreferencesUpdate(BaseModel):
+    dashboard_hidden_widgets: Annotated[list[WidgetId], Field(max_length=50)] | None = None
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -36,6 +52,7 @@ class ChangePasswordRequest(BaseModel):
 
 @router.get("", response_model=MeResponse)
 async def get_me(
+    request: Request,
     principal: PrincipalDep,
     db: DBSession,
 ):
@@ -57,7 +74,7 @@ async def get_me(
         p.key for r in user.roles for p in r.permissions
     ))
 
-    return MeResponse(
+    payload = MeResponse(
         id=user.id,
         email=user.email,
         display_name=user.display_name,
@@ -66,6 +83,9 @@ async def get_me(
         roles=roles,
         permissions=permissions,
     )
+    response = JSONResponse(content=jsonable_encoder(payload))
+    maybe_attach_csrf_cookie(request, response)
+    return response
 
 
 @router.patch("", response_model=MeResponse)
@@ -109,6 +129,47 @@ async def update_me(
         roles=roles,
         permissions=permissions,
     )
+
+
+def _preferences_payload(user: User) -> PreferencesResponse:
+    prefs = user.ui_preferences or {}
+    return PreferencesResponse(
+        dashboard_hidden_widgets=list(prefs.get("dashboard_hidden_widgets") or [])
+    )
+
+
+@router.get("/preferences", response_model=PreferencesResponse)
+async def get_preferences(principal: PrincipalDep, db: DBSession):
+    user = await db.get(User, principal.user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "User not found"},
+        )
+    return _preferences_payload(user)
+
+
+@router.patch("/preferences", response_model=PreferencesResponse)
+async def update_preferences(
+    data: PreferencesUpdate,
+    principal: PrincipalDep,
+    db: DBSession,
+):
+    user = await db.get(User, principal.user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "User not found"},
+        )
+
+    # Reassign a new dict so SQLAlchemy detects the JSON change.
+    prefs = dict(user.ui_preferences or {})
+    if data.dashboard_hidden_widgets is not None:
+        prefs["dashboard_hidden_widgets"] = sorted(set(data.dashboard_hidden_widgets))
+    user.ui_preferences = prefs
+
+    await db.commit()
+    return _preferences_payload(user)
 
 
 @router.post("/change-password")

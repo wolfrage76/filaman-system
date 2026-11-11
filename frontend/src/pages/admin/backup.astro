@@ -1,17 +1,14 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import AdminHeader from '../../components/AdminHeader.astro'
+import FormSection from '../../components/FormSection.astro'
 ---
 
 <Layout title="FilaMan - Database Backup">
-  <div style="margin-bottom: 24px;">
-    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
-  </div>
-  
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="admin.databaseBackup">Database Backup & Restore</h1>
-  
+  <div class="fm-admin-page fm-admin-page-compact fm-admin-stack">
+  <AdminHeader titleKey="admin.databaseBackup" title="Database Backup &amp; Restore" />
   <!-- Export Section -->
-  <div class="fm-card" style="padding: 24px; margin-bottom: 24px;">
-    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.backupExport">Export Backup</h2>
+  <FormSection titleKey="admin.backupExport" title="Export Backup">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.backupExportDesc">
       Create a complete backup of all data (users, spools, filaments, settings, etc.) as JSON file.
     </p>
@@ -25,11 +22,10 @@ import Layout from '../../layouts/Layout.astro'
     <button id="btn-export-backup" class="fm-btn fm-btn-primary" data-i18n="admin.backupExportBtn">
       Export Backup
     </button>
-  </div>
+  </FormSection>
 
   <!-- Import Section -->
-  <div class="fm-card" style="padding: 24px;">
-    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.backupImport">Import Backup</h2>
+  <FormSection titleKey="admin.backupImport" title="Import Backup">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.backupImportDesc">
       Restore a previously exported backup. This will replace all existing data.
     </p>
@@ -40,15 +36,15 @@ import Layout from '../../layouts/Layout.astro'
         <span data-i18n="admin.backupDangerText">This will DELETE ALL existing data! An automatic backup will be created first.</span>
       </div>
     </div>
-    <div style="display: flex; gap: 12px; align-items: end; margin-bottom: 16px;">
-      <div style="flex: 1;">
+    <div class="fm-backup-file-row">
+      <div>
         <label style="display: block; margin-bottom: 4px; font-weight: 500; font-size: 0.875rem;">
           <span data-i18n="admin.backupImportFile">Select Backup File</span>
         </label>
         <input 
           type="file" 
           id="backup-file-input" 
-          accept=".json"
+          accept=".json,.jsonl,application/json,application/x-ndjson"
           style="display: block; width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);"
         />
       </div>
@@ -62,14 +58,13 @@ import Layout from '../../layouts/Layout.astro'
       </div>
       <p id="import-status" style="margin-top: 8px; font-size: 0.875rem; color: var(--text-muted);"></p>
     </div>
-  </div>
+  </FormSection>
 
   <!-- Inventory Backup Section -->
-  <h2 style="font-size: 1.5rem; font-weight: 700; margin: 48px 0 16px; font-family: var(--font-serif);" data-i18n="admin.inventoryBackup">Inventory Data Only</h2>
+  <h2 style="font-size: 1.5rem; font-weight: 700; margin: 12px 0 0; font-family: var(--font-serif);" data-i18n="admin.inventoryBackup">Inventory Data Only</h2>
   
   <!-- Inventory Export Section -->
-  <div class="fm-card" style="padding: 24px; margin-bottom: 24px;">
-    <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.inventoryExport">Export Inventory</h3>
+  <FormSection titleKey="admin.inventoryExport" title="Export Inventory">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.inventoryExportDesc">
       Export only inventory data (manufacturers, filaments, spools, printers). No users, passwords, or API keys.
     </p>
@@ -83,11 +78,10 @@ import Layout from '../../layouts/Layout.astro'
     <button id="btn-export-inventory" class="fm-btn fm-btn-primary" data-i18n="admin.inventoryExportBtn">
       Export Inventory
     </button>
-  </div>
+  </FormSection>
 
   <!-- Inventory Import Section -->
-  <div class="fm-card" style="padding: 24px;">
-    <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.inventoryImport">Import Inventory</h3>
+  <FormSection titleKey="admin.inventoryImport" title="Import Inventory">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.inventoryImportDesc">
       Import inventory data from another FilaMan instance. Users and settings are preserved.
     </p>
@@ -98,15 +92,15 @@ import Layout from '../../layouts/Layout.astro'
         <span data-i18n="admin.inventoryWarningText">This will DELETE existing inventory data! Users and settings remain unchanged.</span>
       </div>
     </div>
-    <div style="display: flex; gap: 12px; align-items: end; margin-bottom: 16px;">
-      <div style="flex: 1;">
+    <div class="fm-backup-file-row">
+      <div>
         <label style="display: block; margin-bottom: 4px; font-weight: 500; font-size: 0.875rem;">
           <span data-i18n="admin.backupImportFile">Select Backup File</span>
         </label>
         <input 
           type="file" 
           id="inventory-file-input" 
-          accept=".json"
+          accept=".json,.jsonl,application/json,application/x-ndjson"
           style="display: block; width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);"
         />
       </div>
@@ -120,19 +114,18 @@ import Layout from '../../layouts/Layout.astro'
       </div>
       <p id="inventory-import-status" style="margin-top: 8px; font-size: 0.875rem; color: var(--text-muted);"></p>
     </div>
-  </div>
+  </FormSection>
 
   <!-- SQLite Backup Files Section -->
-  <div id="sqlite-backups-section" class="fm-card" style="padding: 24px; margin-top: 24px; display: none;">
-    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.sqliteBackups">SQLite Backups</h2>
+  <div id="sqlite-backups-section" style="display:none"><FormSection titleKey="admin.sqliteBackups" title="SQLite Backups">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.sqliteBackupsDesc">
       Automatic SQLite database backups. These are created daily and before updates.
     </p>
     <div id="sqlite-backups-loading" style="text-align: center; padding: 24px; color: var(--text-muted);" data-i18n="common.loading">Loading...</div>
     <div id="sqlite-backups-empty" style="display: none; text-align: center; padding: 24px; color: var(--text-muted);" data-i18n="admin.sqliteBackupsEmpty">No backup files found.</div>
     <div id="sqlite-backups-table-wrap" style="display: none; overflow-x: auto;">
-      <table class="fm-table">
-        <thead style="background: var(--bg-soft);">
+      <table class="fm-table fm-admin-table">
+        <thead>
           <tr>
             <th data-i18n="admin.sqliteBackupFile">File</th>
             <th data-i18n="admin.sqliteBackupDate">Date</th>
@@ -143,12 +136,19 @@ import Layout from '../../layouts/Layout.astro'
         <tbody id="sqlite-backups-tbody"></tbody>
       </table>
     </div>
-  </div>
+  </FormSection></div>
 
+  </div>
   <script>
     import { initI18n, t } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     initI18n()
+
+    const dialogWindow = window as unknown as {
+      __fmAlert: (message: string) => Promise<boolean>
+      __fmConfirm: (message: string) => Promise<boolean>
+      __fmSuccess: (message: string) => Promise<boolean>
+    }
 
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -172,7 +172,7 @@ import Layout from '../../layouts/Layout.astro'
       btnExportBackup.textContent = t('admin.backupExporting') || 'Exporting...'
 
       try {
-        const response = await fetch('/api/v1/admin/system/backup/export', {
+        const response = await fetch('/api/v1/admin/system/backup/export?format=auto', {
           credentials: 'include',
           headers: { 'X-CSRF-Token': getCsrfToken() },
           signal: getAbortSignal(),
@@ -185,7 +185,7 @@ import Layout from '../../layouts/Layout.astro'
 
         const blob = await response.blob()
         const contentDisposition = response.headers.get('Content-Disposition')
-        let filename = 'filaman_backup.json'
+        let filename = 'filaman_backup.jsonl'
         if (contentDisposition) {
           const match = contentDisposition.match(/filename="(.+)"/)
           if (match) filename = match[1]
@@ -200,11 +200,11 @@ import Layout from '../../layouts/Layout.astro'
         window.URL.revokeObjectURL(url)
         document.body.removeChild(a)
 
-        await (window as any).__fmSuccess(t('admin.backupExportSuccess') || 'Backup exported successfully')
-      } catch (err: any) {
+        await dialogWindow.__fmSuccess(t('admin.backupExportSuccess') || 'Backup exported successfully')
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Export failed:', err)
-        await (window as any).__fmAlert(t('admin.backupExportFailed') || `Export failed: ${err.message}`)
+        await dialogWindow.__fmAlert(t('admin.backupExportFailed') || `Export failed: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
         btnExportBackup.disabled = false
         btnExportBackup.textContent = originalText
@@ -218,7 +218,7 @@ import Layout from '../../layouts/Layout.astro'
       const confirmMsg = t('admin.backupImportConfirm') || 
         'Are you sure you want to import this backup?\n\nThis will DELETE ALL existing data!\n\nAn automatic backup will be created first.'
       
-      const confirmed = await (window as any).__fmConfirm(confirmMsg)
+      const confirmed = await dialogWindow.__fmConfirm(confirmMsg)
       if (!confirmed) return
 
       btnImportBackup.disabled = true
@@ -257,8 +257,8 @@ import Layout from '../../layouts/Layout.astro'
         importProgressBar.style.width = '100%'
         importStatus.textContent = t('admin.backupImportComplete') || 'Import complete!'
 
-        await (window as any).__fmSuccess(
-          (t('admin.backupImportSuccess') || 'Backup imported successfully!') + '\n\n' + result.message
+        await dialogWindow.__fmSuccess(
+          [t('admin.backupImportSuccess'), result.message, ...(result.plugins_warnings ?? [])].join('\n\n')
         )
 
         backupFileInput.value = ''
@@ -268,12 +268,12 @@ import Layout from '../../layouts/Layout.astro'
           window.location.reload()
         }, 2000)
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Import failed:', err)
         importStatus.textContent = ''
-        await (window as any).__fmAlert(
-          (t('admin.backupImportFailed') || 'Import failed:') + '\n\n' + err.message
+        await dialogWindow.__fmAlert(
+          (t('admin.backupImportFailed') || 'Import failed:') + '\n\n' + (err instanceof Error ? err.message : String(err))
         )
       } finally {
         setTimeout(() => {
@@ -304,7 +304,7 @@ import Layout from '../../layouts/Layout.astro'
       btnExportInventory.textContent = t('admin.inventoryExporting') || 'Exporting...'
 
       try {
-        const response = await fetch('/api/v1/admin/system/backup/export-inventory', {
+        const response = await fetch('/api/v1/admin/system/backup/export-inventory?format=auto', {
           credentials: 'include',
           headers: { 'X-CSRF-Token': getCsrfToken() },
           signal: getAbortSignal(),
@@ -317,7 +317,7 @@ import Layout from '../../layouts/Layout.astro'
 
         const blob = await response.blob()
         const contentDisposition = response.headers.get('Content-Disposition')
-        let filename = 'filaman_inventory.json'
+        let filename = 'filaman_inventory.jsonl'
         if (contentDisposition) {
           const match = contentDisposition.match(/filename="(.+)"/)
           if (match) filename = match[1]
@@ -332,11 +332,11 @@ import Layout from '../../layouts/Layout.astro'
         window.URL.revokeObjectURL(url)
         document.body.removeChild(a)
 
-        await (window as any).__fmSuccess(t('admin.inventoryExportSuccess') || 'Inventory exported successfully')
-      } catch (err: any) {
+        await dialogWindow.__fmSuccess(t('admin.inventoryExportSuccess') || 'Inventory exported successfully')
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Inventory export failed:', err)
-        await (window as any).__fmAlert(t('admin.inventoryExportFailed') || `Export failed: ${err.message}`)
+        await dialogWindow.__fmAlert(t('admin.inventoryExportFailed') || `Export failed: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
         btnExportInventory.disabled = false
         btnExportInventory.textContent = originalText
@@ -350,7 +350,7 @@ import Layout from '../../layouts/Layout.astro'
       const confirmMsg = t('admin.inventoryImportConfirm') || 
         'Are you sure you want to import this inventory?\n\nThis will DELETE ALL existing inventory data!\n\nUsers and settings will be preserved.\n\nAn automatic backup will be created first.'
       
-      const confirmed = await (window as any).__fmConfirm(confirmMsg)
+      const confirmed = await dialogWindow.__fmConfirm(confirmMsg)
       if (!confirmed) return
 
       btnImportInventory.disabled = true
@@ -389,7 +389,7 @@ import Layout from '../../layouts/Layout.astro'
         inventoryImportProgressBar.style.width = '100%'
         inventoryImportStatus.textContent = t('admin.inventoryImportComplete') || 'Import complete!'
 
-        await (window as any).__fmSuccess(
+        await dialogWindow.__fmSuccess(
           (t('admin.inventoryImportSuccess') || 'Inventory imported successfully!') + '\n\n' + result.message
         )
 
@@ -400,12 +400,12 @@ import Layout from '../../layouts/Layout.astro'
           window.location.reload()
         }, 2000)
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Inventory import failed:', err)
         inventoryImportStatus.textContent = ''
-        await (window as any).__fmAlert(
-          (t('admin.inventoryImportFailed') || 'Import failed:') + '\n\n' + err.message
+        await dialogWindow.__fmAlert(
+          (t('admin.inventoryImportFailed') || 'Import failed:') + '\n\n' + (err instanceof Error ? err.message : String(err))
         )
       } finally {
         setTimeout(() => {
@@ -496,7 +496,7 @@ import Layout from '../../layouts/Layout.astro'
         'Are you sure you want to restore the backup "{filename}"?\n\nThe current database will be replaced. An automatic backup will be created first.')
         .replace('{filename}', filename)
 
-      const confirmed = await (window as any).__fmConfirm(confirmMsg)
+      const confirmed = await dialogWindow.__fmConfirm(confirmMsg)
       if (!confirmed) return
 
       try {
@@ -517,18 +517,18 @@ import Layout from '../../layouts/Layout.astro'
         }
 
         const result = await resp.json()
-        await (window as any).__fmSuccess(
+        await dialogWindow.__fmSuccess(
           (t('admin.sqliteRestoreSuccess') || 'Database restored successfully!') +
           '\n\n' + result.message
         )
 
         setTimeout(() => window.location.reload(), 2000)
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Restore failed:', err)
-        await (window as any).__fmAlert(
-          (t('admin.sqliteRestoreFailed') || 'Restore failed:') + '\n\n' + err.message
+        await dialogWindow.__fmAlert(
+          (t('admin.sqliteRestoreFailed') || 'Restore failed:') + '\n\n' + (err instanceof Error ? err.message : String(err))
         )
       }
     }
@@ -538,7 +538,7 @@ import Layout from '../../layouts/Layout.astro'
         'Are you sure you want to delete the backup "{filename}"?')
         .replace('{filename}', filename)
 
-      const confirmed = await (window as any).__fmConfirm(confirmMsg)
+      const confirmed = await dialogWindow.__fmConfirm(confirmMsg)
       if (!confirmed) return
 
       try {
@@ -556,11 +556,11 @@ import Layout from '../../layouts/Layout.astro'
 
         await loadSqliteBackups()
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Delete failed:', err)
-        await (window as any).__fmAlert(
-          (t('admin.sqliteDeleteFailed') || 'Delete failed:') + '\n\n' + err.message
+        await dialogWindow.__fmAlert(
+          (t('admin.sqliteDeleteFailed') || 'Delete failed:') + '\n\n' + (err instanceof Error ? err.message : String(err))
         )
       }
     }

@@ -16,20 +16,42 @@ FilaMan ist ein umfassendes System zur Verwaltung von 3D-Druck-Filamenten. Es hi
 ### Dokumentation
 Das vollständige Handbuch ist verfügbar unter **[docu.filaman.app](https://docu.filaman.app)**.
 
+Informationen zur Suche, Installation und Einreichung von Plugins stehen im [Plugin-Katalog](plugin-catalog/README.md).
+
 ### 💡 Hardware-Erweiterung: FilaMan ESP32-Waage
 Um das volle Potenzial dieses Systems auszuschöpfen, empfehlen wir unser zugehöriges Hardware-Projekt:
 **[FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)**
 Mit dieser ESP32-basierten smarten Waage samt RFID-Integration kannst du deine Spulen auflegen, das Restgewicht automatisch messen und die Daten via RFID-Tag direkt mit dieser Software synchronisieren!
 
 ### 🏠 Home Assistant Integration
-Für Nutzer von Home Assistant gibt es ein extrem praktisches Add-on:
-**[ha-filaman-system](https://github.com/netscout2001/ha-filaman-system)**
-Damit lässt sich das FilaMan System mit wenigen Klicks direkt in deiner Home Assistant Umgebung installieren und betreiben.
+Für Nutzer von Home Assistant gibt es ein eigenes Add-on-Repository:
+**[Fire-Devils/filaman-ha-app](https://github.com/Fire-Devils/filaman-ha-app)**
+Diese URL unter Einstellungen → Add-ons → Add-on-Store → ⋮ → Repositories hinzufügen, danach FilaMan installieren und direkt in der Home-Assistant-Umgebung betreiben.
+
+### 🎋 Bambuddy Integration
+Verbinde FilaMan über das
+**[Bambuddy Treiber-Plugin](https://github.com/Fire-Devils/filaman-bambuddy-plugin)**
+mit Bambu Lab Druckern und AMS-Einheiten.
+Die Integration hält Spulen- und AMS-Informationen synchron, unterstützt die
+automatische Zuweisung nach dem Wiegen und Einlegen einer Spule und meldet den
+Filamentverbrauch zurück an FilaMan.
+
+Zusammen mit Bambuddy kann FilaMan außerdem deine eigenen, über die Bambu Cloud
+synchronisierten Slicer-Profile automatisch anwenden, sobald eine Spule in einen
+AMS-Slot eingelegt wird. Das passende Materialprofil steht dann sowohl im AMS als
+auch in Bambu Studio bereit. Damit erhalten eigene und Drittanbieter-Filamente
+nahezu denselben nahtlosen Ablauf wie eine originale Bambu RFID-Spule.
 
 ## Features
-- **Spulen-Verwaltung:** Tracking von Restgewicht, Lagerort und Status.
+- **Spulen-Verwaltung:** Restgewicht, geschätzte Restlänge und Restmenge in Prozent, Lagerort und Status verfolgen.
+- **Filament- und Spulendetails:** Einheitliche, responsive Seiten mit Schnellaktionen und Bearbeitung direkt auf der Detailseite.
+- **Standard-Filamenteigenschaften:** Temperaturbereiche, Trocknungsempfehlungen, Druckeinstellungen und Abmessungen neben typisierten Zusatzfeldern.
+- **Kataloge und Import:** Filamentdaten in FilaManDB suchen und vorhandenen Bestand aus Spoolman importieren.
+- **Zwei RFID-Tags:** Zwei RFID-Tag-UIDs pro Spule speichern, sodass eine Spule mit Tags auf beiden Seiten über jede Seite als derselbe Bestandseintrag erkannt wird.
 - **Mandantenfähigkeit:** Multi-User-Unterstützung mit Rollensystem.
 - **Drucker-Integration:** Plugin-System zur Anbindung von 3D-Druckern und AMS-Einheiten.
+- **Bambuddy Integration:** Spulenbestand und AMS-Zuweisungen synchronisieren, Filamentverbrauch erfassen und eigene Bambu Cloud Slicer-Profile automatisch anwenden.
+- **Druckbare Labels:** Spulen- und Filament-Labels mit QR-Codes, eigenen Layouts, gruppierten und durchsuchbaren Feld-Tokens sowie Etikettenbogen-Ausgabe drucken und exportieren.
 - **Datenbank-Support:** Kompatibel mit SQLite (Standard), MySQL und PostgreSQL.
 - **Responsive UI:** Modernes Design (Hell, Dunkel und Brand-Theme).
 - **OIDC (OAuth2) Login:** Single Sign-On (SSO) über OpenID Connect für bestehende Benutzer.
@@ -38,7 +60,6 @@ Damit lässt sich das FilaMan System mit wenigen Klicks direkt in deiner Home As
 Wir haben spannende Pläne für die Zukunft von FilaMan:
 - **Drucker-Plugins:** Entwicklung von Plugins für die Verbindung zu verschiedenen 3D-Druckern (Beiträge durch die Community sind sehr willkommen!).
 - **Mobile Apps:** Native Apps für iOS und Android.
-- **Spulen-Labels:** Generieren und Drucken von Etiketten/Labels für Spulen.
 
 ## Installation
 
@@ -59,6 +80,14 @@ Die Anwendung ist anschließend unter `http://localhost:8083` erreichbar.
 - **Standard E-Mail:** `admin@example.com`
 - **Standard Passwort:** `admin123`
 
+Labels verwenden den gemeinsamen SVG/WASM-Renderer für Designer, Export und
+API. Das Image enthält Node 20 und Schriftarten; Chromium ist nicht erforderlich.
+SVG ist der einzige Label-Renderer; eine Renderer-Auswahl oder ein Fallback
+ist nicht erforderlich.
+Container-Prüfungen auf nativem ARM64 sowie emuliertem AMD64/ARMv7 sind bestanden;
+die Abnahme durch echte Druck- und Scan-Tests steht noch aus.
+Siehe [API-Dokumentation](docs/label-api.md).
+
 ### Docker Container selber bauen
 
 #### Voraussetzungen
@@ -69,11 +98,14 @@ Die Anwendung ist anschließend unter `http://localhost:8083` erreichbar.
 ```bash
 git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
 
+# .env bei Bedarf erstellen und anschließend konfigurieren.
+test -e .env || cp .env.example .env
+
 # Image bauen
 docker build -t filaman-system:latest .
 
-# Oder mit docker-compose
-docker-compose up --build
+# Oder Docker Compose verwenden (vorher den Daten-Volume-Pfad anpassen)
+PORT=8083 docker compose -f docker-compose.build.yml up --build
 
 # Container starten
 docker run -d \
@@ -93,7 +125,7 @@ docker run -d \
 
 #### Voraussetzungen
 - Python 3.11+
-- Node.js 18+
+- Node.js 20.3+
 - uv (Python Package Manager)
 
 #### Backend starten
@@ -115,7 +147,7 @@ Das Frontend ist unter `http://localhost:4321` verfügbar.
 #### Frontend für Produktion bauen
 ```bash
 cd frontend
-npm run build
+BUILD_MODE=static npx astro build
 ```
 Die statischen Dateien liegen in `frontend/dist/`.
 
@@ -128,10 +160,10 @@ Erstelle eine `.env` Datei im Projektverzeichnis. Verwende `.env.example` als Vo
 DATABASE_URL=sqlite+aiosqlite:///./filaman.db
 
 # MySQL:
-# DATABASE_URL=aiomysql://username:password@hostname:3306/database
+# DATABASE_URL=mysql+aiomysql://username:password@hostname:3306/database
 
 # PostgreSQL:
-# DATABASE_URL=asyncpg://username:password@hostname:5432/database
+# DATABASE_URL=postgresql+asyncpg://username:password@hostname:5432/database
 ```
 
 #### Secrets generieren
@@ -153,6 +185,14 @@ Um OIDC (OpenID Connect) Login zu aktivieren, setze folgende Umgebungsvariable:
 OIDC_ENC_KEY=dein-fernet-key
 ```
 
+#### Worker-Prozesse
+Das Docker-Image startet standardmäßig 4 Worker-Prozesse. Jeder hält eine vollständige Kopie der Anwendung (etwa 90 MB), auf einem kleinen Rechner wie einem Raspberry Pi können es also weniger sein:
+
+```bash
+# Standard: 4. Ein einzelner Worker führt die Druckertreiber selbst, nichts wird weitergeleitet.
+WEB_CONCURRENCY=1
+```
+
 **Hinweis:** Bei Verwendung von MySQL oder PostgreSQL muss das Backup vom Administrator extern verwaltet werden. Das automatische SQLite-Backup ist in diesem Fall deaktiviert.
 
 ## Projektstruktur
@@ -162,7 +202,8 @@ OIDC_ENC_KEY=dein-fernet-key
 ├── backend/
 │   ├── app/
 │   │   ├── core/          # Konfiguration, Datenbank, Sicherheit
-│   │   ├── modules/       # Domain-Module
+│   │   ├── models/        # Datenbankmodelle
+│   │   ├── services/      # Gemeinsame Fachlogik
 │   │   └── plugins/       # Drucker-Plugins
 │   ├── alembic/           # Datenbank-Migrationen
 │   └── tests/             # Backend-Tests
@@ -172,7 +213,7 @@ OIDC_ENC_KEY=dein-fernet-key
 │   │   ├── layouts/       # Seiten-Layouts
 │   │   └── components/    # UI-Komponenten
 │   └── dist/              # Produktions-Build
-└── spec/                  # Projektspezifikationen
+└── docs/                  # Projektdokumentation
 ```
 
 ## Technologie
@@ -184,7 +225,7 @@ OIDC_ENC_KEY=dein-fernet-key
 
 **Frontend:**
 - Astro + Tailwind CSS
-- Statischer Build
+- Statischer Docker-Build; Node-Server-Ausgabe bei Quellcode-Builds
 
 ## Lizenz
 MIT

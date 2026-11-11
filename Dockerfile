@@ -9,7 +9,7 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 
 # Install dependencies
-RUN npm install --production
+RUN npm ci
 
 # Copy frontend source
 COPY frontend/ ./
@@ -18,10 +18,11 @@ COPY frontend/ ./
 COPY version.txt ./
 
 # Build the frontend
-RUN BUILD_MODE=static npm run build
+RUN BUILD_MODE=static npm run build \
+    && mv dist/plugin-view/_shell/index.html plugin-shell.html
 
 # --- Backend Build Stage ---
-FROM python:3.11-slim AS backend-builder
+FROM python:3.11-slim-trixie AS backend-builder
 
 WORKDIR /app/backend
 
@@ -29,8 +30,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
     libffi-dev \
+    libfreetype6-dev \
     default-libmysqlclient-dev \
     libpq-dev \
+    libjpeg-dev \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -46,7 +50,7 @@ RUN uv pip install --system --no-cache -r pyproject.toml
 COPY backend/ ./
 
 # --- Final Image Stage ---
-FROM python:3.11-slim
+FROM python:3.11-slim-trixie
 
 WORKDIR /app
 
@@ -56,23 +60,32 @@ ENV PYTHONUNBUFFERED=1
 
 # Disable in-app migrations because the entrypoint handles them
 ENV RUN_MIGRATIONS_IN_APP=false
+ENV LABEL_RENDER_USER=label-render
+ENV LABEL_RENDER_NODE_EXECUTABLE=/usr/local/bin/node
 
-# Install uv, cron, and nginx in the final image
-RUN pip install uv && apt-get update && apt-get install -y cron nginx && rm -rf /var/lib/apt/lists/*
+# Install uv, services, and the Pillow runtime libraries used by ARMv7 source builds.
+RUN pip install uv && apt-get update && apt-get install -y cron nginx libjpeg62-turbo libfreetype6 libstdc++6 libatomic1 && rm -rf /var/lib/apt/lists/*
+RUN groupadd --system label-render \
+    && useradd --system --gid label-render --no-create-home --shell /usr/sbin/nologin label-render
 
 # Copy installed dependencies from backend-builder
 COPY --from=backend-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=backend-builder /usr/local/bin /usr/local/bin
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=frontend-builder /usr/local/LICENSE /usr/local/share/licenses/node/LICENSE
 
 # Copy backend application
 COPY --from=backend-builder /app/backend /app
 
 # Copy the generated .env file for production
 COPY .env /app/.env
+RUN chmod 600 /app/.env
 
 # Copy built frontend to the static directory
 # The FastAPI app must be configured to serve static files from this directory.
 COPY --from=frontend-builder /app/frontend/dist /app/static
+# Serve the integration shell only through the backend's active-plugin check.
+COPY --from=frontend-builder /app/frontend/plugin-shell.html /app/plugin-shell.html
 
 # Copy version.txt so the backend can read the installed version
 COPY version.txt /app/version.txt
@@ -100,4 +113,7 @@ ENTRYPOINT ["docker-entrypoint.sh"]
 
 # The command to run the application with Gunicorn and multiple Uvicorn workers
 # nginx (port 8000) -> Gunicorn (port 8001) for static file performance
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "127.0.0.1:8001", "--timeout", "120", "--keep-alive", "5", "--access-logfile", "-", "app.main:app"]
+# Gunicorn reads the worker count from WEB_CONCURRENCY; each worker holds a
+# full copy of the app (~90 MB), so small hosts can run fewer.
+ENV WEB_CONCURRENCY=4
+CMD ["gunicorn", "--config", "/app/gunicorn.conf.py", "-k", "uvicorn.workers.UvicornWorker", "--bind", "127.0.0.1:8001", "--timeout", "120", "--keep-alive", "5", "--pid", "/tmp/filaman-gunicorn.pid", "--access-logfile", "-", "app.main:app"]

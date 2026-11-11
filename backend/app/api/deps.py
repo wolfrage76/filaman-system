@@ -1,5 +1,5 @@
-from typing import Annotated
 import logging
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import async_session_maker
 from app.core.security import Principal
-from app.models import Device, Role, User
+from app.models import Role, User
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,9 @@ def RequirePermission(permission_key: str):
                 },
             )
 
-        if principal.is_superadmin:
+        if principal.is_superadmin and (
+            principal.scopes is None or permission_key in principal.scopes
+        ):
             return principal
 
         if principal.auth_type == "device":
@@ -119,3 +121,51 @@ def RequirePermission(permission_key: str):
         return principal
 
     return Depends(dependency)
+
+
+async def ensure_any_permission(
+    db: AsyncSession,
+    principal: Principal,
+    *permission_keys: str,
+) -> set[str]:
+    """Return permitted requested keys, or raise 403 when none are allowed."""
+    if principal.is_superadmin and (
+        principal.scopes is None
+        or any(key in principal.scopes for key in permission_keys)
+    ):
+        return set(permission_keys) if principal.scopes is None else set(permission_keys).intersection(principal.scopes)
+
+    if principal.auth_type == "device":
+        if principal.scopes is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "forbidden",
+                    "message": "Device has no scopes assigned",
+                },
+            )
+        if not any(key in principal.scopes for key in permission_keys):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "forbidden",
+                    "message": f"One of {permission_keys} required",
+                },
+            )
+        return set(permission_keys).intersection(principal.scopes)
+
+    rbac_permissions = await resolve_user_permissions(db, principal.user_id)
+    if principal.scopes is not None:
+        effective = rbac_permissions.intersection(set(principal.scopes))
+    else:
+        effective = rbac_permissions
+
+    if not any(key in effective for key in permission_keys):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "forbidden",
+                "message": f"One of {permission_keys} required",
+            },
+        )
+    return effective.intersection(permission_keys)

@@ -4,9 +4,12 @@ import { VERSION } from '../version.js'
 
 interface Props {
   title: string
+  /** When true, removes main padding so the content can fill edge-to-edge.
+   *  Used by plugin-view pages that embed a full-height iframe. */
+  noPadding?: boolean
 }
 
-const { title } = Astro.props
+const { title, noPadding = false } = Astro.props
 ---
 
 <html lang="en" data-theme="brand">
@@ -23,15 +26,15 @@ const { title } = Astro.props
     <title>{title}</title>
     <script is:inline>
       (function() {
-        var t = localStorage.getItem('theme') || 'brand';
+        const t = localStorage.getItem('theme') || 'brand';
         document.documentElement.setAttribute('data-theme', t);
-        var l = localStorage.getItem('lang') || 'en';
+        const l = localStorage.getItem('lang') || 'en';
         document.documentElement.setAttribute('lang', l);
         
         // Sidebar state
-        var s = localStorage.getItem('sidebar-collapsed');
-        var isMobile = window.innerWidth <= 768;
-        if (s === 'true' || isMobile) {
+        const s = localStorage.getItem('sidebar-collapsed');
+        const isCompact = window.innerWidth < 1280;
+        if (s === 'true' || isCompact) {
           document.documentElement.classList.add('sidebar-collapsed');
         }
       })();
@@ -40,11 +43,12 @@ const { title } = Astro.props
   <body>
     <div id="fm-page" class="fm-page" style="visibility: hidden;">
       <aside class="fm-sidebar fm-surface">
-        <button id="sidebar-toggle" class="fm-sidebar-toggle" aria-label="Toggle Sidebar">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        <button id="sidebar-toggle" class="fm-sidebar-toggle" aria-label="Toggle Sidebar" data-i18n-aria-label="nav.toggleSidebar" aria-controls="sidebar-content" aria-expanded="true">
+          <svg class="sidebar-chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+          <svg class="sidebar-menu-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16 M4 12h16 M4 18h16"/></svg>
         </button>
 
-        <div class="fm-sidebar-content">
+        <div id="sidebar-content" class="fm-sidebar-content">
           <!-- Logo -->
           <div class="fm-logo-container">
             <img src="/logo.png" alt="FilaMan" style="width: 42px; height: 42px; border-radius: 14px; flex-shrink: 0;" />
@@ -57,28 +61,32 @@ const { title } = Astro.props
           <!-- Navigation -->
           <nav style="display: grid; gap: 6px;">
             <a href="/" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-dashboard"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-dashboard"></use></svg></span>
               <span data-i18n="nav.dashboard">Dashboard</span>
             </a>
             <a href="/manufacturers" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-manufacturers"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-manufacturers"></use></svg></span>
               <span data-i18n="nav.manufacturers">Manufacturers</span>
             </a>
             <a href="/filaments" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-filaments"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-filaments"></use></svg></span>
               <span data-i18n="nav.filaments">Filaments</span>
             </a>
             <a href="/spools" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-spools"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-spools"></use></svg></span>
               <span data-i18n="nav.spools">Spools</span>
             </a>
-            <a href="/locations" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-locations"></use></svg></span>
-              <span data-i18n="nav.locations">Locations</span>
-            </a>
             <a href="/printers" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-printers"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-printers"></use></svg></span>
               <span data-i18n="nav.printers">Printers</span>
+            </a>
+            <a href="/display" class="fm-nav-item">
+              <span class="fm-nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7.5" y1="5" x2="7.5" y2="19"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="16.5" y1="5" x2="16.5" y2="19"/></svg></span>
+              <span data-i18n="nav.display">AMS View</span>
+            </a>
+            <a href="/locations" class="fm-nav-item">
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-locations"></use></svg></span>
+              <span data-i18n="nav.locations">Locations</span>
             </a>
             <a href="/spool-log" class="fm-nav-item">
               <span class="fm-nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
@@ -91,7 +99,7 @@ const { title } = Astro.props
               <hr class="fm-divider" style="margin-bottom: 8px;" />
               <div class="hide-collapsed" style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;" data-i18n="nav.admin">Admin</div>
               <a href="/admin" class="fm-nav-item">
-                <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-admin"></use></svg></span>
+                <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-admin"></use></svg></span>
                 <span data-i18n="nav.adminPanel">Admin Panel</span>
               </a>
             </div>
@@ -127,7 +135,7 @@ const { title } = Astro.props
               </div>
             </div>
 
-            <div class="fm-theme-toggle" role="group" aria-label="Theme toggle">
+            <div class="fm-theme-toggle" role="group" aria-label="Theme toggle" data-i18n-aria-label="theme.toggle">
               <button type="button" data-theme="brand" class="active" data-i18n="theme.default">Default</button>
               <button type="button" data-theme="light" data-i18n="theme.light">Light</button>
               <button type="button" data-theme="dark" data-i18n="theme.dark">Dark</button>
@@ -141,7 +149,18 @@ const { title } = Astro.props
               </a>
             </div>
 
-            <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center;">{'v' + VERSION}</div>
+            <div id="sidebar-version-container" style="font-size: 0.7rem; color: var(--text-muted); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div id="sidebar-version-label">{'v' + VERSION}</div>
+              <a
+                id="sidebar-version-update"
+                href="/admin"
+                class="invisible"
+                style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; font-size: 0.65rem; font-weight: 600; color: var(--info-text, #93c5fd); background: var(--info-bg, rgba(59, 130, 246, 0.15)); border: 1px solid var(--info-border, rgba(59, 130, 246, 0.4)); border-radius: 9999px; text-decoration: none; transition: opacity var(--transition);"
+              >
+                <span class="fm-dot" style="background: #60a5fa; width: 6px; height: 6px;"></span>
+                <span id="sidebar-version-update-text">Update</span>
+              </a>
+            </div>
             <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center;">
               <a href="https://www.filaman.app" target="_blank" style="color: var(--text-muted); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
                 Made with <img src="/coffeecup.svg" width="14" height="14" style="vertical-align: middle;"> and <img src="/heart.svg" width="14" height="14" style="vertical-align: middle;"> by Manuel Weiser
@@ -154,13 +173,41 @@ const { title } = Astro.props
       </aside>
       <div id="sidebar-backdrop" class="fm-sidebar-backdrop"></div>
 
-      <main style="padding: 32px; overflow-y: auto;">
+      <main class:list={['fm-main', { 'fm-main--flush': noPadding }]}>
         <slot />
       </main>
     </div>
 
+    <div class="pc-print-prompt-stack">
+      <div id="pc-print-prompt" class="pc-print-prompt hidden" role="status" aria-live="polite">
+        <div class="pc-print-prompt-header">
+          <strong class="pc-print-prompt-title"></strong>
+          <span class="pc-print-prompt-age" hidden></span>
+        </div>
+        <img class="pc-print-prompt-preview" alt="" hidden />
+        <p class="pc-print-prompt-message"></p>
+        <p class="pc-print-prompt-error" role="alert" hidden></p>
+        <div class="pc-print-prompt-actions">
+          <button type="button" class="fm-btn fm-btn-primary pc-print-prompt-print" disabled>
+            <svg aria-hidden="true"><use href="/icons.svg?v=2#icon-print"></use></svg><span></span>
+          </button>
+          <a class="fm-btn fm-btn-primary pc-print-prompt-download" download="label.pdf" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14" /></svg><span></span>
+          </a>
+          <button type="button" class="fm-btn fm-btn-outline pc-print-prompt-edit">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5-12 12H4v-5zM14 5l5 5" /></svg><span></span>
+          </button>
+          <button type="button" class="fm-btn fm-btn-outline pc-print-prompt-close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></svg>
+          </button>
+        </div>
+        <small class="pc-print-prompt-note"></small>
+      </div>
+      <div id="pc-print-prompt-waiting" role="status" hidden></div>
+    </div>
+
     <!-- Global confirm / alert modal -->
-    <div id="fm-confirm-overlay" class="fm-modal-overlay">
+    <dialog id="fm-confirm-overlay" class="fm-modal-overlay" aria-labelledby="fm-confirm-title">
       <div class="fm-modal">
         <h3 id="fm-confirm-title" class="fm-modal-title"></h3>
         <p id="fm-confirm-message" class="fm-modal-message"></p>
@@ -173,24 +220,45 @@ const { title } = Astro.props
           <button id="fm-confirm-ok" class="fm-btn fm-btn-danger"></button>
         </div>
       </div>
-    </div>
+    </dialog>
 
 
     <script>
-      import { t, initI18n, syncLangFromUser, translatePage, getLang } from '../lib/i18n'
+      import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
       import { getAbortSignal } from '../lib/abort'
+      import type { User } from '../lib/auth'
+      import type { AppDialogs } from '../lib/form-dialog'
+      import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
+      import { setupPcPrintPrompt } from '../lib/label-pc-print-prompt'
+      import { navHrefFor } from '../lib/plugin-nav'
+      import { createPluginIcon } from '../lib/plugin-icon'
+      import { loginUrlWithNext } from '../lib/login-redirect'
+      import {
+        isAutoOpenEnabled,
+        getBoundReaderId,
+        lastScanUrl,
+        mayNavigate,
+        rememberJump,
+        takeRememberedJump,
+      } from '../lib/tag-scanner'
 
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
 
+      const layoutWindow = window as typeof window & Partial<AppDialogs> & {
+        __t?: typeof t
+        __translatePage?: typeof translatePage
+        __syncLangFromUser?: typeof syncLangFromUser
+      }
+
       // Expose t and translatePage globally for page scripts
-      ;(window as any).__t = t
-      ;(window as any).__translatePage = translatePage
-      ;(window as any).__syncLangFromUser = syncLangFromUser
+      layoutWindow.__t = t
+      layoutWindow.__translatePage = translatePage
+      layoutWindow.__syncLangFromUser = syncLangFromUser
 
       /* ── Global confirm / alert modal ────────────────────────── */
       ;(function setupFmModal() {
-        const overlay = document.getElementById('fm-confirm-overlay')!
+        const overlay = document.getElementById('fm-confirm-overlay') as HTMLDialogElement
         const titleEl = document.getElementById('fm-confirm-title')!
         const messageEl = document.getElementById('fm-confirm-message')!
         const okBtn = document.getElementById('fm-confirm-ok')!
@@ -200,10 +268,17 @@ const { title } = Astro.props
         const checkboxInput = document.getElementById('fm-confirm-checkbox') as HTMLInputElement
         const checkboxLabel = document.getElementById('fm-confirm-checkbox-label')!
 
-        let resolveFn: ((v: any) => void) | null = null
-        let checkboxMode = false
+        type ModalCheckbox = { label: string; checked?: boolean }
+        type CheckboxResult = { confirmed: boolean; checked: boolean }
+        type ModalResult = boolean | CheckboxResult
 
-        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean, checkbox?: { label: string; checked?: boolean }): Promise<any> {
+        let resolveFn: ((v: ModalResult) => void) | null = null
+        let checkboxMode = false
+        let returnFocus: HTMLElement | null = null
+
+        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean): Promise<boolean>
+        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean, checkbox: ModalCheckbox | undefined): Promise<ModalResult>
+        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean, checkbox?: ModalCheckbox): Promise<ModalResult> {
           titleEl.textContent = title
           messageEl.textContent = message
           okBtn.textContent = okLabel
@@ -226,15 +301,21 @@ const { title } = Astro.props
             checkboxRow.style.display = 'none'
           }
 
+          returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+          overlay.showModal()
           overlay.classList.add('open')
+          okBtn.focus()
 
-          return new Promise<any>(resolve => {
+          return new Promise<ModalResult>(resolve => {
             resolveFn = resolve
           })
         }
 
         function closeModal(result: boolean) {
+          overlay.close()
           overlay.classList.remove('open')
+          returnFocus?.focus()
+          returnFocus = null
           if (resolveFn) {
             if (checkboxMode) {
               resolveFn(result ? { confirmed: true, checked: checkboxInput.checked } : { confirmed: false, checked: false })
@@ -250,25 +331,30 @@ const { title } = Astro.props
         overlay.addEventListener('click', (e) => {
           if (e.target === overlay) closeModal(false)
         })
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal(false)
+        overlay.addEventListener('cancel', (e) => {
+          e.preventDefault()
+          closeModal(false)
         })
 
         // fmConfirm(message, options?) – replacement for window.confirm()
-        ;(window as any).__fmConfirm = function(message: string, options?: { title?: string; okLabel?: string; isDanger?: boolean; checkbox?: { label: string; checked?: boolean } }): Promise<any> {
+        type ConfirmOptions = { title?: string; okLabel?: string; isDanger?: boolean }
+        function fmConfirm(message: string, options: ConfirmOptions & { checkbox: ModalCheckbox }): Promise<CheckboxResult>
+        function fmConfirm(message: string, options?: ConfirmOptions): Promise<boolean>
+        function fmConfirm(message: string, options?: ConfirmOptions & { checkbox?: ModalCheckbox }): Promise<ModalResult> {
           const title = options?.title || t('common.confirmTitle') || t('common.delete')
           const okLabel = options?.okLabel || t('common.delete')
           const isDanger = options?.isDanger !== undefined ? options.isDanger : true
           return openModal(title, message, okLabel, t('common.cancel'), isDanger, options?.checkbox)
         }
+        layoutWindow.__fmConfirm = fmConfirm
 
         // fmAlert(message) – replacement for window.alert()
-        ;(window as any).__fmAlert = function(message: string): Promise<boolean> {
+        layoutWindow.__fmAlert = function(message: string): Promise<boolean> {
           return openModal(t('common.errorTitle') || 'Error', message, t('common.close'), null, false)
         }
 
         // fmSuccess(message) – success-style alert with green title
-        ;(window as any).__fmSuccess = function(message: string): Promise<boolean> {
+        layoutWindow.__fmSuccess = function(message: string): Promise<boolean> {
           return openModal(t('common.successTitle') || 'Success', message, t('common.close'), null, false)
         }
       })()
@@ -313,11 +399,14 @@ const { title } = Astro.props
             // Server explicitly rejected auth — clear cookies and redirect
             document.cookie = 'session_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
             document.cookie = 'csrf_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
-            window.location.href = '/login'
+            window.location.href = loginUrlWithNext(window.location)
             return
           }
 
-          const user = await response.json()
+          const user: User = await response.json()
+          await ensureLabelPresetBrowserMigration(user.id).catch(error => {
+            console.warn('Could not migrate label presets to the database', error)
+          })
 
           // Sync language from user profile
           syncLangFromUser(user.language)
@@ -332,6 +421,7 @@ const { title } = Astro.props
           }
 
           loadPluginNav()
+          checkSystemVersion(user)
 
           // Auth succeeded — reveal page content
           document.getElementById('fm-page')!.style.visibility = 'visible'
@@ -343,11 +433,59 @@ const { title } = Astro.props
           // Genuine network error (e.g. disconnected backend) — clear cookies and redirect
           document.cookie = 'session_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
           document.cookie = 'csrf_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
-          window.location.href = '/login'
+          window.location.href = loginUrlWithNext(window.location)
         }
       }
 
       checkAuth()
+
+      /* ── System version check ────────────────────────────────── */
+      type VersionStatus = { update_available: boolean; latest_version: string | null }
+
+      async function checkSystemVersion(user: User) {
+        try {
+          const cachedRaw = sessionStorage.getItem('fm_version_check')
+          if (cachedRaw) {
+            try {
+              const cached: { ts: number; data: VersionStatus } | null = JSON.parse(cachedRaw)
+              if (cached?.ts && Date.now() - cached.ts < 30 * 60 * 1000 && cached.data) {
+                applyVersionStatus(cached.data, user)
+                return
+              }
+            } catch { /* ignore corrupted cache */ }
+          }
+
+          const resp = await fetch('/api/v1/admin/system/version-check', {
+            credentials: 'include',
+            signal: getAbortSignal(),
+          })
+          if (!resp.ok) return
+          const data: VersionStatus = await resp.json()
+          sessionStorage.setItem('fm_version_check', JSON.stringify({ ts: Date.now(), data }))
+          applyVersionStatus(data, user)
+        } catch { /* Version check is non-critical */ }
+      }
+
+      function applyVersionStatus(data: VersionStatus, user: User) {
+        if (!data?.update_available) return
+        const updateBadge = document.getElementById('sidebar-version-update') as HTMLAnchorElement | null
+        const updateText = document.getElementById('sidebar-version-update-text')
+        if (!updateBadge || !updateText) return
+
+        const isAdmin = Boolean(user?.is_superadmin || (user?.permissions || []).some((p: string) => p.startsWith('admin:')))
+        if (isAdmin) {
+          updateBadge.href = '/admin'
+        } else {
+          updateBadge.href = 'https://github.com/Fire-Devils/filaman-system/releases/latest'
+          updateBadge.target = '_blank'
+          updateBadge.rel = 'noopener noreferrer'
+        }
+
+        const label = t('nav.updateAvailable') || 'Update available'
+        updateText.textContent = data.latest_version ? `${label}: v${data.latest_version}` : label
+        updateBadge.title = `${label}: v${data.latest_version || ''}`
+        updateBadge.classList.remove('invisible')
+      }
 
       /* ── Plugin navigation ───────────────────────────────────── */
       const pluginNav = document.getElementById('plugin-nav')!
@@ -356,7 +494,7 @@ const { title } = Astro.props
         try {
           const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include', signal: getAbortSignal() })
           if (!resp.ok) return
-          const plugins: { plugin_key: string; name: string; page_url: string }[] = await resp.json()
+          const plugins: { plugin_key: string; name: string; page_url: string; icon_url?: string | null }[] = await resp.json()
           if (!plugins.length) return
 
           const hr = document.createElement('hr')
@@ -373,9 +511,13 @@ const { title } = Astro.props
 
           for (const p of plugins) {
             const a = document.createElement('a')
-            a.href = p.page_url
+            a.href = navHrefFor(p.page_url)
             a.className = 'fm-nav-item'
-            a.innerHTML = `<span class="fm-nav-icon"><svg><use href="/icons.svg#icon-plugin"></use></svg></span><span>${p.name}</span>`
+            const icon = createPluginIcon(p.icon_url)
+            icon.classList.add('fm-nav-icon')
+            const name = document.createElement('span')
+            name.textContent = p.name
+            a.append(icon, name)
             pluginNav.appendChild(a)
           }
 
@@ -392,22 +534,28 @@ const { title } = Astro.props
           .find(row => row.startsWith('csrf_token='))
           ?.split('=')[1]
 
-        await fetch('/auth/logout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': decodeURIComponent(csrfToken || ''),
-          },
-          credentials: 'include',
-        })
-
-        localStorage.removeItem('lang')
-        window.location.href = '/login'
+        try {
+          await fetch('/auth/logout', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': decodeURIComponent(csrfToken || ''),
+            },
+            credentials: 'include',
+          })
+        } finally {
+          clearLabelPresetBrowserStorage()
+          localStorage.removeItem('lang')
+          window.location.href = '/login'
+        }
       })
 
       /* ── Active nav highlighting ─────────────────────────────── */
       function highlightActiveNav() {
         const currentPath = window.location.pathname
+        // Plugin pages are told apart by their query, so the entry for the one
+        // currently open is only found with it.
+        const currentTarget = currentPath + window.location.search
         let bestNavMatch: Element | null = null
         let bestNavLen = 0
         const items = document.querySelectorAll('.fm-nav-item')
@@ -415,7 +563,7 @@ const { title } = Astro.props
           item.classList.remove('active')
           const href = item.getAttribute('href')
           if (!href) return
-          if (href === currentPath || (href !== '/' && currentPath.startsWith(href + '/'))) {
+          if (href === currentPath || href === currentTarget || (href !== '/' && currentPath.startsWith(href + '/'))) {
             if (href.length > bestNavLen) {
               bestNavLen = href.length
               bestNavMatch = item
@@ -426,17 +574,19 @@ const { title } = Astro.props
       }
       highlightActiveNav()
 
+      setupPcPrintPrompt()
+
       /* ── Sidebar toggle ──────────────────────────────────────── */
       const page = document.getElementById('fm-page')!
       const sidebarToggle = document.getElementById('sidebar-toggle')!
       const html = document.documentElement
 
-      // Sync fm-page class with html class on load
-      if (html.classList.contains('sidebar-collapsed')) {
-        page.classList.add('collapsed')
-      }
+      const mobileSidebar = window.matchMedia('(max-width: 599px)')
+      const compactSidebar = window.matchMedia('(max-width: 1279px)')
+      const main = document.querySelector<HTMLElement>('main')!
+      const sidebarContent = document.getElementById('sidebar-content')!
 
-      function setSidebarCollapsed(collapsed: boolean) {
+      function setSidebarCollapsed(collapsed: boolean, persist = true) {
         if (collapsed) {
           page.classList.add('collapsed')
           html.classList.add('sidebar-collapsed')
@@ -444,11 +594,36 @@ const { title } = Astro.props
           page.classList.remove('collapsed')
           html.classList.remove('sidebar-collapsed')
         }
+        sidebarToggle.setAttribute('aria-expanded', String(!collapsed))
+        sidebarContent.inert = mobileSidebar.matches && collapsed
+        main.inert = mobileSidebar.matches && !collapsed
         // Only persist sidebar state on desktop
-        if (window.innerWidth > 768) {
+        if (persist && !mobileSidebar.matches) {
           localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false')
         }
       }
+      setSidebarCollapsed(html.classList.contains('sidebar-collapsed'), false)
+
+      const syncSidebarWidth = () => setSidebarCollapsed(compactSidebar.matches || localStorage.getItem('sidebar-collapsed') === 'true', false)
+      mobileSidebar.addEventListener('change', syncSidebarWidth)
+      compactSidebar.addEventListener('change', syncSidebarWidth)
+
+      document.addEventListener('keydown', (event) => {
+        if (!mobileSidebar.matches || html.classList.contains('sidebar-collapsed')) return
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setSidebarCollapsed(true, false)
+          sidebarToggle.focus()
+        } else if (event.key === 'Tab') {
+          const controls = [...document.querySelectorAll<HTMLElement>('.fm-sidebar button, .fm-sidebar a[href]')]
+            .filter(element => !element.matches(':disabled') && element.getClientRects().length)
+          const next = event.shiftKey ? controls.at(-1) : controls[0]
+          if (document.activeElement === (event.shiftKey ? controls[0] : controls.at(-1))) {
+            event.preventDefault()
+            next?.focus()
+          }
+        }
+      })
 
       // Update sidebar state
       sidebarToggle.addEventListener('click', () => {
@@ -460,6 +635,7 @@ const { title } = Astro.props
       const sidebarBackdrop = document.getElementById('sidebar-backdrop')!
       sidebarBackdrop.addEventListener('click', () => {
         setSidebarCollapsed(true)
+        sidebarToggle.focus()
       })
 
       /* ── SSE live-update connection ──────────────────────────── */
@@ -496,6 +672,120 @@ const { title } = Astro.props
         })
 
         connect()
+      })()
+
+      /* ── Follow a tag reader to the spool it scanned ──────────── */
+      // Polled rather than pushed: drivers and the event bus are per Gunicorn
+      // worker, so an event would reach only the browsers on one of the four.
+      // The scan sits on the reader's row in tag_readers instead, which every
+      // worker can read.
+      ;(function followTagScanner() {
+        const POLL_MS = 1200
+        let lastSeenSeq: number | null = null
+        let inFlight = false
+
+        async function poll() {
+          if (inFlight || !isAutoOpenEnabled()) return
+          inFlight = true
+          try {
+            const response = await fetch(lastScanUrl(getBoundReaderId()), {
+              credentials: 'include',
+              cache: 'no-store',
+            })
+            if (!response.ok) return
+            const scan = await response.json()
+            const seq = Number(scan?.seq) || 0
+            if (!seq) return
+
+            // The first answer only sets the mark. Without that, opening a tab
+            // would jump to whatever was scanned an hour ago.
+            if (lastSeenSeq === null) {
+              lastSeenSeq = seq
+              return
+            }
+            if (seq <= lastSeenSeq) return
+            lastSeenSeq = seq
+
+            if (!scan.spool_id) {
+              showScanNote(t('scanner.unknownTag', { uid: scan.uid || '?' }))
+              return
+            }
+            // Jumping is for the pages where it continues what you were doing.
+            // Anywhere else - a plugin page, the AMS view, a form - the scan is
+            // an interruption, so it is offered instead of obeyed.
+            if (mayNavigate(document, window.location.pathname)) {
+              // Handed to the page we are about to become, so it can say why it
+              // is there. A note put up here would die with this one.
+              rememberJump({ uid: scan.uid || '', spoolId: scan.spool_id, at: Date.now() })
+              window.location.href = `/spools/${scan.spool_id}`
+              return
+            }
+            showScanNote(
+              scan.spool_label
+                ? t('scanner.offerNamed', { id: scan.spool_id, name: scan.spool_label })
+                : t('scanner.offer', { id: scan.spool_id }),
+              `/spools/${scan.spool_id}`
+            )
+          } catch {
+            // A poll that fails changes nothing; the next one tries again.
+          } finally {
+            inFlight = false
+          }
+        }
+
+        // The quiet half of the feature. An unknown tag is not an error, it is
+        // nothing to open, and naming the UID makes it obvious which spool
+        // still needs linking. With a link it becomes the offer used wherever
+        // the page must not be taken away.
+        function showScanNote(text: string, href?: string, ms?: number) {
+          document.getElementById('tag-scan-note')?.remove()
+          const note = document.createElement('div')
+          note.id = 'tag-scan-note'
+          note.className = 'fm-alert-info'
+          note.setAttribute('role', 'status')
+          note.style.cssText =
+            'position: fixed; right: 20px; bottom: 20px; z-index: 1000; max-width: 340px;' +
+            'display: flex; align-items: center; gap: 12px;'
+          const label = document.createElement('span')
+          label.style.flex = '1'
+          label.textContent = text
+          note.appendChild(label)
+          if (href) {
+            const open = document.createElement('a')
+            open.className = 'fm-btn fm-btn-primary'
+            open.href = href
+            open.textContent = t('scanner.open')
+            note.appendChild(open)
+          }
+          document.body.appendChild(note)
+          // An offer has to outlive the glance that notices it, so it waits
+          // longest. A note that only reports something gets long enough to be
+          // read and no longer, because lingering is just in the way.
+          setTimeout(() => note.remove(), ms ?? (href ? 20000 : 6000))
+        }
+
+        // A hidden tab keeps polling on purpose. Somebody watching the screen
+        // while working in another window is exactly the case this is for, and
+        // a tab that stopped listening would simply never move. It costs almost
+        // nothing: browsers throttle timers in a background tab to about once a
+        // minute by themselves, so the interval below only applies up front.
+        // A page that changed under you owes an explanation. This is the other
+        // half of the jump above, running on the page it landed on.
+        const landed = takeRememberedJump()
+        if (landed) {
+          // Longer than a plain note: this one answers "why am I suddenly
+          // here", and that question is asked after the eye has wandered.
+          showScanNote(
+            landed.uid
+              ? t('scanner.landed', { uid: landed.uid })
+              : t('scanner.landedPlain'),
+            undefined,
+            10000
+          )
+        }
+
+        setInterval(poll, POLL_MS)
+        void poll()
       })()
     </script>
   </body>

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, IPvAnyAddress
 
 
 class WeighRequest(BaseModel):
@@ -28,12 +28,15 @@ class LocateResponse(BaseModel):
 
 
 class HeartbeatRequest(BaseModel):
-    ip_address: str
+    ip_address: IPvAnyAddress
 
 
 class WriteTagRequest(BaseModel):
     spool_id: int | None = None
     location_id: int | None = None
+    # Which of the spool's two RFID slots the written chip should take when
+    # both are already filled (1 or 2). Default: the second slot.
+    replace_slot: int | None = Field(default=None, ge=1, le=2)
 
 
 class WriteTagResponse(BaseModel):

@@ -1,21 +1,38 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.cache import response_cache
-from app.core.database import get_db
-from app.api.deps import RequirePermission, PrincipalDep
-from app.models.system_extra_field import SystemExtraField
+from app.api.deps import PrincipalDep, RequirePermission
 from app.api.v1.schemas_system_extra_field import (
     SystemExtraFieldCreate,
     SystemExtraFieldResponse,
     SystemExtraFieldUpdate,
+    validate_field_type_config,
+)
+from app.core.cache import response_cache
+from app.core.database import get_db
+from app.models.system_extra_field import SystemExtraField
+from app.services.system_extra_field_compatibility import (
+    find_incompatible_existing_values,
+    find_overlapping_definition,
 )
 
 router = APIRouter()
 
 # Cache TTL in seconds (5 minutes - extra fields rarely change)
 _EXTRA_FIELDS_CACHE_TTL = 300
+_PLUGIN_MANAGED_FIELD_ERRORS = {
+    "edit": (
+        "Cannot edit plugin-managed field (source: {source}). "
+        "Plugin fields are read-only."
+    ),
+    "delete": (
+        "Cannot delete plugin-managed field (source: {source}). "
+        "Uninstall the plugin to remove its fields."
+    ),
+}
 
 
 def _invalidate_extra_fields_cache(
@@ -31,6 +48,54 @@ def _invalidate_extra_fields_cache(
         response_cache.delete(f"extra_fields:{target_type}:all")
     # Always invalidate the "all" queries
     response_cache.delete("extra_fields:all:all")
+
+
+def _raise_incompatible_values(
+    *,
+    target_type: str,
+    key: str,
+    field_type: str,
+    incompatible_count: int,
+    sample_record_ids: list[int],
+) -> None:
+    if not incompatible_count:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "incompatible_existing_values",
+            "message": (
+                f"Cannot define {target_type}.{key}: {incompatible_count} existing "
+                f"record(s) are incompatible with field type {field_type!r} — their "
+                "retained value or their record-local definition conflicts. Reuse a "
+                "compatible definition, convert those values, or clear them first."
+            ),
+            "target_type": target_type,
+            "key": key,
+            "field_type": field_type,
+            "incompatible_count": incompatible_count,
+            "sample_record_ids": sample_record_ids,
+        },
+    )
+
+
+async def _get_user_managed_field(
+    db: AsyncSession,
+    field_id: int,
+    operation: Literal["edit", "delete"],
+) -> SystemExtraField:
+    """Load an editable field while preserving operation-specific API errors."""
+    query = select(SystemExtraField).where(SystemExtraField.id == field_id)
+    result = await db.execute(query)
+    field = result.scalar_one_or_none()
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found")
+    if field.source:
+        raise HTTPException(
+            status_code=403,
+            detail=_PLUGIN_MANAGED_FIELD_ERRORS[operation].format(source=field.source),
+        )
+    return field
 
 
 @router.get("", response_model=list[SystemExtraFieldResponse])
@@ -71,14 +136,41 @@ async def create_system_extra_field(
 ):
     query = select(SystemExtraField).where(
         SystemExtraField.target_type == field.target_type,
-        SystemExtraField.key == field.key,
     )
     existing = await db.execute(query)
-    if existing.scalar_one_or_none():
+    overlapping = find_overlapping_definition(
+        existing.scalars(),
+        field.target_type,
+        field.key,
+    )
+    if overlapping:
+        if overlapping.key == field.key:
+            detail = "Field with this key already exists for this target type"
+        else:
+            detail = (
+                "Field key overlaps an existing parent or child path "
+                f"({overlapping.key!r})"
+            )
         raise HTTPException(
             status_code=400,
-            detail="Field with this key already exists for this target type",
+            detail=detail,
         )
+
+    incompatible_count, sample_record_ids = await find_incompatible_existing_values(
+        db,
+        target_type=field.target_type,
+        key=field.key,
+        field_type=field.field_type,
+        options=field.options,
+        config=field.config,
+    )
+    _raise_incompatible_values(
+        target_type=field.target_type,
+        key=field.key,
+        field_type=field.field_type,
+        incompatible_count=incompatible_count,
+        sample_record_ids=sample_record_ids,
+    )
 
     new_field = SystemExtraField(**field.model_dump())
     db.add(new_field)
@@ -101,20 +193,40 @@ async def update_system_extra_field(
     db: AsyncSession = Depends(get_db),
 ):
     """Update a user-created extra field. Plugin-managed fields cannot be edited."""
-    query = select(SystemExtraField).where(SystemExtraField.id == field_id)
-    result = await db.execute(query)
-    field = result.scalar_one_or_none()
-    if not field:
-        raise HTTPException(status_code=404, detail="Field not found")
-
-    if field.source:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Cannot edit plugin-managed field (source: {field.source}). Plugin fields are read-only.",
-        )
+    field = await _get_user_managed_field(db, field_id, "edit")
 
     # Apply updates (only non-None values)
     update_dict = update_data.model_dump(exclude_unset=True)
+
+    effective_field_type = update_dict.get("field_type", field.field_type)
+    effective_options = update_dict.get("options", field.options)
+    effective_config = update_dict.get("config", field.config)
+    try:
+        validate_field_type_config(
+            effective_field_type,
+            effective_options,
+            effective_config,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if {"field_type", "options", "config"}.intersection(update_dict):
+        incompatible_count, sample_record_ids = await find_incompatible_existing_values(
+            db,
+            target_type=field.target_type,
+            key=field.key,
+            field_type=effective_field_type,
+            options=effective_options,
+            config=effective_config,
+        )
+        _raise_incompatible_values(
+            target_type=field.target_type,
+            key=field.key,
+            field_type=effective_field_type,
+            incompatible_count=incompatible_count,
+            sample_record_ids=sample_record_ids,
+        )
+
     for key, value in update_dict.items():
         setattr(field, key, value)
 
@@ -135,17 +247,7 @@ async def delete_system_extra_field(
     field_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(SystemExtraField).where(SystemExtraField.id == field_id)
-    result = await db.execute(query)
-    field = result.scalar_one_or_none()
-    if not field:
-        raise HTTPException(status_code=404, detail="Field not found")
-
-    if field.source:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Cannot delete plugin-managed field (source: {field.source}). Uninstall the plugin to remove its fields.",
-        )
+    field = await _get_user_managed_field(db, field_id, "delete")
 
     # Store for cache invalidation before deletion
     target_type = field.target_type
